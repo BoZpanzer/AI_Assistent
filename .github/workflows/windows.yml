@@ -1,0 +1,59 @@
+name: Windows Build & Test
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten (gepinnt, package-lock)
+        run: npm ci
+      - name: Unit- & Integrationstests
+        run: npm test
+      - name: NSIS installieren
+        run: choco install nsis -y --no-progress
+      - name: Icons erzeugen (falls nicht eingecheckt)
+        shell: pwsh
+        run: if (!(Test-Path build/icon.ico)) { npx electron scripts/make-icons.js }
+      - name: Windows-Build (JARVIS.exe + JARVIS_Setup.exe)
+        env:
+          MAKENSIS: C:\Program Files (x86)\NSIS\makensis.exe
+        run: npm run dist:win
+      - name: Smoke-Test der gebauten JARVIS.exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "release\win-unpacked\JARVIS.exe" -ArgumentList "--smoke" -PassThru -Wait
+          Get-Content "$env:TEMP\jarvis-smoke-report.json"
+          if ($p.ExitCode -ne 0) { throw "Smoke-Test fehlgeschlagen ($($p.ExitCode))" }
+      - name: Installer still installieren, starten, deinstallieren
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\JARVIS-Install"
+          $i = Start-Process -FilePath "release\JARVIS_Setup.exe" -ArgumentList "/S","/D=$dir" -PassThru -Wait
+          if ($i.ExitCode -ne 0) { throw "Installation fehlgeschlagen" }
+          if (!(Test-Path "$dir\JARVIS.exe")) { throw "JARVIS.exe fehlt nach Installation" }
+          if (!(Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\JARVIS\JARVIS.lnk")) { throw "Startmenü-Eintrag fehlt" }
+          $s = Start-Process -FilePath "$dir\JARVIS.exe" -ArgumentList "--smoke" -PassThru -Wait
+          if ($s.ExitCode -ne 0) { throw "Installierte App: Smoke-Test fehlgeschlagen" }
+          $u = Start-Process -FilePath "$dir\Uninstall JARVIS.exe" -ArgumentList "/S" -PassThru -Wait
+          Start-Sleep -Seconds 5
+          if (Test-Path "$dir\JARVIS.exe") { throw "Deinstallation unvollständig" }
+          Write-Host "Installation, Start und Deinstallation erfolgreich"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Windows
+          path: |
+            release/JARVIS_Setup.exe
+            release/SHA256SUMS.txt
+            release/update-channel.example.json

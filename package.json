@@ -1,0 +1,98 @@
+{
+  "name": "jarvis",
+  "version": "3.0.0",
+  "description": "JARVIS – Personal Intelligence System",
+  "main": "src/main/index.js",
+  "scripts": {
+    "build:renderer": "node scripts/build-renderer.mjs",
+    "dev": "node scripts/build-renderer.mjs && electron .",
+    "start": "electron .",
+    "test": "node --test tests/*.test.js tests/*.test.mjs",
+    "test:e2e": "node scripts/build-renderer.mjs && electron tests/e2e/run.js",
+    "icons": "electron scripts/make-icons.js",
+    "dist:win": "node scripts/build-renderer.mjs && node scripts/build-win.mjs"
+  },
+  "keywords": [],
+  "author": "BoZ",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@fontsource-variable/exo-2": "5.3.0",
+    "@fontsource/rajdhani": "5.3.0",
+    "electron": "44.7.0",
+    "electron-builder": "26.17.0",
+    "esbuild": "0.28.2",
+    "lucide-preact": "1.55.0",
+    "onnxruntime-web": "1.30.0",
+    "preact": "10.29.8",
+    "resedit": "3.1.0"
+  },
+  "dependencies": {
+    "@google/genai": "2.28.0",
+    "fflate": "0.8.3",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299"
+  },
+  "productName": "JARVIS",
+  "private": true,
+  "build": {
+    "appId": "de.boz.jarvis",
+    "productName": "JARVIS",
+    "copyright": "© 2026 BoZ",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "build/tray.png",
+      "build/update-public-key.pem",
+      "package.json",
+      "!src/renderer/src/**",
+      "!**/*.map",
+      "!tests/**",
+      "!node_modules/@napi-rs/**",
+      "!node_modules/pdfjs-dist/build/**",
+      "!node_modules/pdfjs-dist/web/**",
+      "!node_modules/pdfjs-dist/image_decoders/**",
+      "!node_modules/pdfjs-dist/standard_fonts/**",
+      "!node_modules/pdfjs-dist/cmaps/**",
+      "!node_modules/pdfjs-dist/wasm/**",
+      "!node_modules/pdfjs-dist/legacy/web/**",
+      "!node_modules/pdfjs-dist/legacy/build/*.min.mjs",
+      "!node_modules/pdfjs-dist/legacy/build/pdf.sandbox*",
+      "!node_modules/pdfjs-dist/**/*.d.*ts",
+      "!node_modules/**/{README,CHANGELOG,HISTORY}*",
+      "!node_modules/**/*.md",
+      "!node_modules/**/{test,tests,__tests__,docs,example,examples}/**"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "src/main/services/extract/**",
+      "node_modules/pdfjs-dist/**",
+      "node_modules/fflate/**"
+    ],
+    "electronVersion": "44.7.0",
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "executableName": "JARVIS"
+    },
+    "extraMetadata": {
+      "main": "src/main/index.js"
+    },
+    "electronLanguages": [
+      "de",
+      "en-US"
+    ]
+  }
+}
