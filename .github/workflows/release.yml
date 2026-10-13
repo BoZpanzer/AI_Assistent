@@ -85,6 +85,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release view $env:TAG 2>$null
-          if ($LASTEXITCODE -eq 0) { gh release upload $env:TAG release/JARVIS_Setup.exe release/update.json release/SHA256SUMS.txt --clobber }
-          else { gh release create $env:TAG release/JARVIS_Setup.exe release/update.json release/SHA256SUMS.txt --title "JARVIS $env:VERSION" --notes-file release/RELEASE_NOTES.md --target $env:GITHUB_SHA }
+          $assets = @('release/JARVIS_Setup.exe', 'release/update.json', 'release/SHA256SUMS.txt')
+          $out = ''
+          for ($i = 1; $i -le 3; $i++) {
+            gh release view $env:TAG *> $null
+            if ($LASTEXITCODE -eq 0) { $out = gh release upload $env:TAG @assets --clobber 2>&1 }
+            else { $out = gh release create $env:TAG @assets --title "JARVIS $env:VERSION" --notes-file release/RELEASE_NOTES.md --target $env:GITHUB_SHA 2>&1 }
+            if ($LASTEXITCODE -eq 0) { Write-Host ($out -join "`n"); exit 0 }
+            $msg = ($out -join ' ') -replace '[\r\n]+', ' '
+            Write-Host "::warning::Veröffentlichen, Versuch $i fehlgeschlagen: $msg"
+            Start-Sleep -Seconds 20
+          }
+          Write-Host "::error::Release konnte nicht veröffentlicht werden: $msg"
+          exit 1
