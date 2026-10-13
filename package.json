@@ -9,6 +9,8 @@
     "start": "electron .",
     "pretest": "node scripts/build-renderer.mjs",
     "test": "node --test tests/*.test.js tests/*.test.mjs",
+    "pretest:ci": "node scripts/build-renderer.mjs",
+    "test:ci": "node scripts/ci-test.mjs",
     "test:e2e": "node scripts/build-renderer.mjs && electron tests/e2e/run.js",
     "icons": "electron scripts/make-icons.js",
     "dist:win": "node scripts/build-renderer.mjs && node scripts/build-win.mjs"

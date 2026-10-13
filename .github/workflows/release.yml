@@ -52,7 +52,7 @@ jobs:
         run: npm ci
 
       - name: Unit- & Integrationstests
-        run: npm test
+        run: npm run test:ci
 
       - name: NSIS installieren
         run: choco install nsis -y --no-progress
