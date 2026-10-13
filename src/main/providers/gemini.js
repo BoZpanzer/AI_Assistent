@@ -50,7 +50,7 @@ class Gemini {
     const all = this.settings.get('availableModels') || [];
     const avail = all.filter((n) => !this.blocked(String(n).replace(/^models\//, '')));
     if (role === 'liveThinking') return pickModel('liveThinking', avail);
-    const anyFlash = avail.map((n) => String(n).replace(/^models\//, '')).find((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|lite)/.test(n));
+    const anyFlash = avail.map((n) => String(n).replace(/^models\//, '')).find((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|lite|omni)/.test(n));
     const chosen = m[role] || pickModel(role, avail) || (['fast', 'research', 'reasoning'].includes(role) ? anyFlash : null) || pickModel(role, all) || '';
     // Reasoning-Modell gerade nicht nutzbar (z. B. nicht im kostenlosen Tarif) → schnelles Modell
     if (role === 'reasoning' && (!chosen || this.blocked(chosen))) return this.model('fast');
@@ -189,7 +189,7 @@ class Gemini {
    */
   async withFallback(model, fn, { sleep = this.sleep || ((ms) => new Promise((res) => setTimeout(res, ms))), onWait, maxWaitMs = 65000, block = true } = {}) {
     const avail = (this.settings.get('availableModels') || []).map((n) => String(n).replace(/^models\//, ''));
-    const usable = (n) => !/(image|tts|live|audio|embedding|thinking-exp|vision|aqa|imagen|veo)/.test(n);
+    const usable = (n) => !/(image|tts|live|audio|embedding|thinking-exp|vision|aqa|imagen|veo|omni|nano|banana|robotics|computer-use)/.test(n);
     const flash = avail.filter((n) => /flash/.test(n) && usable(n)).sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
     const pro = avail.filter((n) => /pro/.test(n) && usable(n)).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }));
     let last; let waited = 0;
@@ -289,7 +289,12 @@ class Gemini {
 
 /** 503/500/504 – Gemini überlastet oder kurz nicht erreichbar (nicht dein Kontingent). */
 function isOverloaded(e) { const m = String(e?.message || e); return [500, 502, 503, 504].includes(e?.status) || /\b(500|502|503|504)\b|UNAVAILABLE|overloaded|high demand|Service Unavailable|INTERNAL|DEADLINE_EXCEEDED/i.test(m); }
-function isQuota(e) { return /RESOURCE_EXHAUSTED|quota|\b429\b/i.test(String(e?.message || e)) || e?.status === 429; }
+/** 402: Abrechnung aktiv, aber Vorauszahlungsguthaben leer – kein Limit, Warten/Ausweichen hilft nicht. */
+function isPayment(e) { return e?.status === 402 || /\b402\b|PAYMENT_REQUIRED|PaymentRequired|prepay|prepayment|billing.*(balance|credit)/i.test(String(e?.message || e)); }
+function isQuota(e) {
+  if (isPayment(e)) return false;
+  return /RESOURCE_EXHAUSTED|quota|\b429\b/i.test(String(e?.message || e)) || e?.status === 429;
+}
 /** Liest aus Googles Fehler, welches Limit gegriffen hat (Anfragen/Token, pro Minute/Tag, Wert, Modell). */
 function quotaInfo(e) {
   const msg = String(e?.message || e || '');
@@ -320,6 +325,7 @@ function innerMessage(msg) {
 
 function friendlyError(e) {
   const msg = String(e?.message || e);
+  if (isPayment(e)) return 'Dein Gemini-Konto hat kein Guthaben (402). Die Abrechnung ist aktiv, aber das Vorauszahlungsguthaben steht auf 0 € – im Google AI Studio unter „Abrechnung“ Guthaben aufladen (z. B. 5 €, automatisches Aufladen aus). Danach wird dein monatliches Abo-Guthaben automatisch zuerst verbraucht.';
   const q = isQuota(e) ? quotaInfo(e) : null;
   if (q && q.limit === 0) return `Dein Gemini-Schlüssel darf ${q.model || 'dieses Modell'} im kostenlosen Tarif nicht nutzen. JARVIS nimmt ab jetzt automatisch ein anderes Modell – bitte nochmal versuchen.`;
   if (isQuota(e) && isDaily(e)) return 'Das Tageskontingent deines Gemini-Schlüssels ist aufgebraucht (kostenloser Tarif). Es wird täglich um 9:00 Uhr deutscher Zeit zurückgesetzt – oder du aktivierst im Google AI Studio die Abrechnung für höhere Limits.';
@@ -332,4 +338,4 @@ function friendlyError(e) {
   return innerMessage(msg).slice(0, 300);
 }
 
-module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, retryDelayMs, quotaInfo };
+module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo };

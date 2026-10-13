@@ -648,3 +648,21 @@ test('Gemini 429: „limit 0“-Modell wird übersprungen, Minutenlimit → abwa
   assert.match(out, /^ok:/); assert.equal(notices.length, 1); assert.ok(notices[0] >= 20000 && notices[0] <= 65000);
   cleanup();
 });
+
+test('Gemini 402 (Guthaben leer): sofort klare Meldung, keine Wiederholungen; Omni-Modelle nie als Ausweichmodell', async () => {
+  const { friendlyError, isQuota, isPayment } = require('../src/main/providers/gemini');
+  const e402 = Object.assign(new Error('{"error":{"code":402,"message":"Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.","status":"PAYMENT_REQUIRED"}}'), { status: 402 });
+  assert.equal(isPayment(e402), true); assert.equal(isQuota(e402), false);
+  assert.match(friendlyError(e402), /kein Guthaben \(402\)/);
+  const { core, cleanup } = tempCore();
+  core.gemini.sleep = async () => {};
+  core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-omni-flash', 'gemini-omni-1.1-flash', 'gemini-3.7-flash'] });
+  let calls = 0;
+  await assert.rejects(core.gemini.withFallback('gemini-3.8-flash', async () => { calls++; throw e402; }), /402/);
+  assert.equal(calls, 1);
+  const tried = [];
+  const quota = Object.assign(new Error('{"error":{"code":429,"message":"Quota exceeded, limit: 5, model: x. Please retry in 30s.","status":"RESOURCE_EXHAUSTED"}}'), { status: 429 });
+  await core.gemini.withFallback('gemini-3.8-flash', async (m) => { tried.push(m); if (m === 'gemini-3.8-flash') throw quota; return m; });
+  assert.ok(!tried.some((m) => /omni/.test(m)), 'kein Omni-Modell: ' + tried.join(','));
+  cleanup();
+});

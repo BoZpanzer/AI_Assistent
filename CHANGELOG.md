@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.12.1 – Klare Meldung bei leerem Gemini-Guthaben
+
+- **„Kein Guthaben (402)“:** Ist die Abrechnung aktiv, das Vorauszahlungsguthaben aber 0 €, sagt JARVIS das jetzt direkt und erklärt, was zu tun ist. Vorher kam fälschlich „Limit pro Minute“, und JARVIS hat unnötig Ausweichmodelle durchprobiert.
+- Die multimodalen „Omni“-Modelle mit sehr kleinen Limits werden nicht mehr als Ausweichmodell für den Chat benutzt.
+
 ## 3.12.0 – Gemini-Limits verständlich und ohne Abbruch
 
 - **Klare Meldung, welches Limit gegriffen hat**, z. B. „Anfragen pro Minute (Limit 10) bei gemini-3.8-flash – kostenloser Tarif“, statt nur „429“.
