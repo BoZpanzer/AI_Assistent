@@ -96,7 +96,14 @@ class Updater {
     if (['downloading', 'installing'].includes(this.state.state)) return this.public();
     this.set({ state: 'checking', error: null });
     try {
-      const rel = await (await this.gh(`/repos/${this.repo()}/releases/latest`)).json();
+      let rel;
+      try { rel = await (await this.gh(`/repos/${this.repo()}/releases/latest`)).json(); } catch (e) {
+        // 404 kann „kein Release“ ODER „kein Zugriff“ heißen → am Repo selbst unterscheiden
+        if (!/nicht gefunden/.test(e.message)) throw e;
+        const repoOk = await this.gh(`/repos/${this.repo()}`).then(() => true, () => false);
+        if (repoOk) return this.set({ state: 'no-release', checkedAt: nowIso(), error: null, version: null });
+        throw new Error(this.token() ? 'Kein Zugriff auf das Repo – stimmt der Name, und darf der Token dieses Repo lesen (Contents: Read-only)?' : 'Repo nicht gefunden – bei einem privaten Repo bitte einen GitHub-Token hinterlegen');
+      }
       const assets = rel.assets || [];
       const manAsset = assets.find((a) => a.name === 'update.json');
       if (!manAsset) throw new Error(`Release ${rel.tag_name} enthält keine update.json`);

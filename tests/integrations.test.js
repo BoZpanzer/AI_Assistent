@@ -132,6 +132,12 @@ test('Updates über GitHub Releases: Signatur, Prüfsumme, privater Token, Versi
   };
   const { core, cleanup } = tempCore({ fetch });
   assert.equal((await core.updater.check()).state, 'not-configured');
+  { // Repo erreichbar, aber noch kein Release
+    const c2 = tempCore({ fetch: async (url) => (url.endsWith('/releases/latest') ? new Response('{}', { status: 404 }) : json({ full_name: 'boz/jarvis' })) });
+    c2.core.updateRepo = 'boz/jarvis';
+    assert.equal((await c2.core.updater.check()).state, 'no-release');
+    c2.cleanup();
+  }
   core.updateRepo = 'boz/jarvis'; // wie vom Release-Workflow eingebaut
   core.updatePublicKey = publicKey.export({ type: 'spki', format: 'pem' });
   // öffentliches Repo: ohne Token, direkte Download-URLs
