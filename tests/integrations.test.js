@@ -666,3 +666,16 @@ test('Gemini 402 (Guthaben leer): sofort klare Meldung, keine Wiederholungen; Om
   assert.ok(!tried.some((m) => /omni/.test(m)), 'kein Omni-Modell: ' + tried.join(','));
   cleanup();
 });
+
+test('LoL-Analyse ohne laufenden Client: gespeicherte Matches statt „starte den Client“', async () => {
+  const { core, cleanup } = tempCore();
+  core.settings.update({ gaming: { leagueDir: '/gibt/es/nicht' } });
+  for (let i = 0; i < 6; i++) core.db.run('INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', 'EUW_' + i, 'p', new Date(Date.now() - i * 3600e3).toISOString(),
+    JSON.stringify({ matchId: 'EUW_' + i, champion: 'Jhin', win: i % 2 === 0, kills: 7, deaths: 4, assists: 9, csPerMin: 7, vision: 25, goldPerMin: 400, damagePerMin: 700, killParticipation: 50, role: 'BOTTOM', duration: 1800 }));
+  const out = await core.orchestrator.execute('league_stats', { refresh: true }, { conversationId: 'x', channel: 'text' });
+  const r = out.response;
+  assert.ok(!r.error, 'kein Fehler: ' + r.error);
+  assert.equal(r.current.games, 6);
+  assert.match(r.note, /gespeicherten Matches/);
+  cleanup();
+});

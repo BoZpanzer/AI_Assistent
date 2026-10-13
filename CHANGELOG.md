@@ -2,6 +2,10 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.12.2 – LoL-Analyse auch ohne laufenden Client
+
+- „Analysiere meine letzten LoL-Games“ funktioniert jetzt auch, wenn der League-Client zu ist. JARVIS analysiert die gespeicherten Matches und nennt den Stand der letzten Synchronisierung. Neue Spiele kommen automatisch dazu, sobald der Client das nächste Mal läuft.
+
 ## 3.12.1 – Klare Meldung bei leerem Gemini-Guthaben
 
 - **„Kein Guthaben (402)“:** Ist die Abrechnung aktiv, das Vorauszahlungsguthaben aber 0 €, sagt JARVIS das jetzt direkt und erklärt, was zu tun ist. Vorher kam fälschlich „Limit pro Minute“, und JARVIS hat unnötig Ausweichmodelle durchprobiert.

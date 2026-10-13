@@ -249,7 +249,18 @@ function buildTools(s) {
 
   def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights). refresh=true liest neue Matches aus dem laufenden League-Client (kein Schlüssel nötig) bzw. der Riot-API.',
     schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches von der Riot-API holen' } } },
-    run: async ({ refresh }) => { if (refresh) await s.gaming.league.syncMatches(); const st = s.gaming.league.stats(); return { ...st, recent: st.recent.slice(0, 5), note: st.current ? undefined : 'Noch keine Matches gespeichert – der Nutzer soll den League-Client starten, dann liest JARVIS sie automatisch aus.' }; } });
+    run: async ({ refresh }) => {
+      // Gespeicherte Matches reichen für die Analyse – ein geschlossener Client ist kein Fehler
+      let sync = null;
+      if (refresh) { try { sync = await s.gaming.league.syncMatches(); } catch (e) { sync = { skipped: e.message }; } }
+      const L = s.gaming.league; const st = L.stats();
+      const last = L.cache.get('lol:lastsync', { allowStale: true })?.value?.at || null;
+      return {
+        ...st, recent: st.recent.slice(0, 5), lastSync: last,
+        note: !st.current ? 'Noch keine Matches gespeichert – sobald der League-Client einmal läuft, liest JARVIS sie automatisch aus.'
+          : sync?.skipped ? `Analyse aus den gespeicherten Matches (Stand: ${last ? new Date(last).toLocaleString('de-DE') : 'unbekannt'}). Neue Spiele kommen automatisch dazu, wenn der Client das nächste Mal läuft – den Nutzer NICHT bitten, den Client zu starten, sondern direkt analysieren.` : undefined,
+      };
+    } });
   def({ name: 'league_live', mode: 'read', description: 'Aktuelles LoL-Match (Live Client Data API): Champion, KDA, CS, Gold, Lane-Gegner, Hinweise.', schema: { type: 'object', properties: {} },
     run: () => s.gaming.league.live() });
   def({ name: 'league_champion', mode: 'read', description: 'Championinfos (Data Dragon, aktueller Patch): Fähigkeiten, Tipps.', schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
