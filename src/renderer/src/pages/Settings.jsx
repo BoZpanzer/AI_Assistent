@@ -125,11 +125,14 @@ function Google({ s }) {
   const secretSaved = useStore((x) => x.secrets)?.['google.client_secret'];
   const [sec, setSec] = useState('');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
   const connect = async () => {
     setBusy(true);
-    const r = await guard(() => rpc('google.connect', { clientId: cid, clientSecret: sec }));
+    setErr(null);
+    let r = null;
+    try { r = await rpc('google.connect', { clientId: cid, clientSecret: sec }); } catch (e) { setErr(String(e.message).replace(/^Error invoking remote method 'rpc': (Error: )?/, '')); }
     setBusy(false);
-    if (r) { toast('Google verbunden: ' + (r.account || 'OK')); setState({ google: await rpc('calendar.status') }); }
+    if (r) { toast('Google verbunden: ' + (r.account || 'OK')); setSec(''); setState({ google: await rpc('calendar.status'), secrets: await rpc('secrets.status') }); }
   };
   const row = (Icon, name, ok, note) => <div class="conn-row"><span class="gico"><Icon size={18} /></span><span>{name}</span><span class="st"><StatusDot state={ok ? 'ok' : 'off'} /><span class={ok ? 'ok' : 'muted'}>{ok ? 'Verbunden' : note || 'Nicht verbunden'}</span></span></div>;
   return (
@@ -143,7 +146,8 @@ function Google({ s }) {
           <Field label="Client-Secret" hint={secretSaved ? 'Gespeichert (verschlüsselt). Nur ausfüllen, um es zu ersetzen.' : 'Steht in der JSON-Datei oder in der Google Console unter Clients → „Secret hinzufügen“'} wide><input class="inp" type="password" value={sec} onInput={(e) => setSec(e.currentTarget.value)} placeholder={secretSaved ? '•••••••• gespeichert' : 'GOCSPX-…'} /></Field>
           {secInfo && !secInfo.hasSecret && !secretSaved && <div class="notice warn small">Die JSON-Datei enthält kein Client-Secret – Google zeigt es nur direkt beim Erstellen. Öffne in der Google Console <b>Google Auth Platform → Clients → deinen Client → „Secret hinzufügen“</b>, kopiere das neue Secret und füge es hier ein.</div>}
           {secInfo?.type === 'web' && <div class="notice warn small">Das ist ein Client vom Typ „Webanwendung“. Bitte einen Client vom Typ <b>Desktop-App</b> anlegen, sonst lehnt Google die Anmeldung ab.</div>}
-          <div class="row gap-s"><button class="btn xs" onClick={async () => { const r = await guard(() => rpc('google.importClientJson')); if (r) { setCid(r.clientId); setSecInfo(r); setState({ secrets: await rpc('secrets.status') }); toast(r.hasSecret ? 'Client-ID und Secret übernommen' : 'Client-ID übernommen – die Datei enthält KEIN Secret', r.hasSecret ? undefined : 'error', 7000); } }}>JSON-Datei laden</button><span class="grow" /><button class="btn sm primary" disabled={!cid || busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={14} />}Im Browser anmelden</button></div>
+          <div class="row gap-s"><button class="btn xs" onClick={async () => { const r = await guard(() => rpc('google.importClientJson')); if (r) { setCid(r.clientId); setSecInfo(r); setState({ secrets: await rpc('secrets.status') }); toast(r.hasSecret ? 'Client-ID und Secret übernommen' : 'Client-ID übernommen – die Datei enthält KEIN Secret', r.hasSecret ? undefined : 'error', 7000); } }}>JSON-Datei laden</button><span class="grow" /><button class="btn sm primary" disabled={!cid || busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={14} />}{busy ? 'Warte auf Browser …' : 'Im Browser anmelden'}</button></div>
+          {err && <div class="notice warn small mt"><b>Verbindung fehlgeschlagen:</b> {err}</div>}
         </>
       ) : (
         <>

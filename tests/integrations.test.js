@@ -313,3 +313,31 @@ test('Gemini-Kontingent: Ausweichmodell bei 429, Recherche notfalls ohne Live-Su
   assert.equal(res.results[0].title, 'Diamond'); assert.equal(res.source, 'EN'); assert.equal(res.results[0].api, 'https://example.org/api.php');
   cleanup();
 });
+
+test('Google-Anmeldung: Browser zeigt „verbunden“ erst nach erfolgreichem Token-Austausch', async () => {
+  const http = require('node:http');
+  const { GoogleClient } = require('../src/main/providers/google');
+  const run = async (tokenResponse) => {
+    const { core, cleanup } = tempCore();
+    core.settings.update({ google: { clientId: 'cid.apps.googleusercontent.com' } });
+    let page = '';
+    const g = new GoogleClient({ secrets: core.secrets, settings: core.settings,
+      fetch: async () => new Response(JSON.stringify(tokenResponse.body), { status: tokenResponse.status }),
+      platform: { openExternal: (u) => { const a = new URL(u); const back = new URL(a.searchParams.get('redirect_uri')); back.searchParams.set('code', 'abc'); back.searchParams.set('state', a.searchParams.get('state'));
+        http.get(back, (res) => { res.setEncoding('utf8'); res.on('data', (c) => { page += c; }); }); } } });
+    const out = await g.connect().then((r) => ({ ok: true, r }), (e) => ({ ok: false, e }));
+    await new Promise((r) => setTimeout(r, 50));
+    const connected = g.isConnected();
+    cleanup();
+    return { out, page, connected };
+  };
+  const bad = await run({ status: 401, body: { error: 'invalid_client', error_description: 'Unauthorized' } });
+  assert.equal(bad.out.ok, false); assert.match(bad.out.e.message, /Client-ID oder Client-Secret/);
+  assert.match(bad.page, /Verbindung fehlgeschlagen/); assert.doesNotMatch(bad.page, /ist mit Google verbunden/);
+  assert.equal(bad.connected, false);
+  const id = Buffer.from(JSON.stringify({ email: 'boz@example.com' })).toString('base64url');
+  const good = await run({ status: 200, body: { refresh_token: 'r', access_token: 'a', expires_in: 3600, id_token: `x.${id}.y`, scope: 'openid email' } });
+  assert.equal(good.out.ok, true); assert.equal(good.out.r.account, 'boz@example.com');
+  assert.match(good.page, /ist mit Google verbunden/);
+  assert.equal(good.connected, true);
+});

@@ -121,10 +121,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'google.connect': async ({ clientId, clientSecret, drive }) => {
       if (clientId) s.settings.update({ google: { clientId: String(clientId).trim() } });
       if (clientSecret) s.secrets.set('google.client_secret', String(clientSecret).trim());
-      const r = await s.google.connect({ drive: !!drive });
-      await s.calendar.sync().catch(() => {});
-      showWindow();
-      return { ...r, calendars: s.calendar.calendars() };
+      try {
+        const r = await s.google.connect({ drive: !!drive });
+        await s.calendar.sync().catch(() => {});
+        return { ...r, calendars: s.calendar.calendars() };
+      } finally { showWindow(); } // JARVIS nach der Browser-Anmeldung wieder nach vorne holen – auch bei Fehlern
     },
     'google.disconnect': () => { s.google.disconnect(); return s.calendar.status(); },
     'google.importClientJson': async () => {

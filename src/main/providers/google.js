@@ -39,18 +39,25 @@ class GoogleClient {
     const state = crypto.randomBytes(16).toString('hex');
     const scope = [SCOPES.identity, SCOPES.calendar, drive ? SCOPES.drive : null].filter(Boolean).join(' ');
 
-    const { code, redirectUri } = await new Promise((resolve, reject) => {
-      const server = http.createServer((req, res) => {
+    // Der Browser bekommt erst DANN „verbunden“ angezeigt, wenn der Token-Austausch wirklich geklappt hat.
+    const page = (ok, title, text) => `<!doctype html><meta charset="utf-8"><title>JARVIS</title><body style="background:#06101c;color:#bfefff;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh;margin:0"><div style="max-width:560px;padding:24px;text-align:center"><div style="font-size:44px">${ok ? '✅' : '⚠️'}</div><h2 style="color:${ok ? '#34d399' : '#fbbf24'}">${title}</h2><p style="line-height:1.5">${text}</p><p style="color:#7fa3b5;font-size:13px">Du kannst dieses Fenster schließen und zu JARVIS zurückkehren.</p></div>`;
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const tok = await new Promise((resolve, reject) => {
+      const server = http.createServer(async (req, res) => {
+        const url = new URL(req.url, 'http://127.0.0.1');
+        if (url.pathname !== '/oauth2callback') { res.writeHead(404); res.end(); return; }
+        const send = (ok, title, text) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" }); res.end(page(ok, title, text)); clearTimeout(timer); server.close(); };
         try {
-          const url = new URL(req.url, 'http://127.0.0.1');
-          if (url.pathname !== '/oauth2callback') { res.writeHead(404); res.end(); return; }
-          const ok = url.searchParams.get('state') === state && url.searchParams.get('code');
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" });
-          res.end(`<!doctype html><meta charset="utf-8"><body style="background:#06101c;color:#bfefff;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh"><div><h2>${ok ? 'JARVIS ist verbunden.' : 'Anmeldung fehlgeschlagen.'}</h2><p>Du kannst dieses Fenster schließen.</p></div>`);
-          clearTimeout(timer); server.close();
-          if (!ok) reject(new Error(url.searchParams.get('error') || 'Ungültige OAuth-Antwort (state)'));
-          else resolve({ code: url.searchParams.get('code'), redirectUri: `http://127.0.0.1:${server.address().port}/oauth2callback` });
-        } catch (e) { reject(e); }
+          if (url.searchParams.get('error')) {
+            const err = url.searchParams.get('error');
+            const msg = err === 'access_denied' ? 'Zugriff wurde abgelehnt – oder dein Konto ist in der Google Console nicht als Testnutzer eingetragen.' : 'Google meldet: ' + err;
+            send(false, 'Anmeldung abgebrochen', esc(msg)); return reject(new Error(msg));
+          }
+          if (url.searchParams.get('state') !== state || !url.searchParams.get('code')) { send(false, 'Anmeldung fehlgeschlagen', 'Ungültige Antwort (state).'); return reject(new Error('Ungültige OAuth-Antwort (state)')); }
+          const t = await this.exchange({ code: url.searchParams.get('code'), clientId, secret, verifier, redirectUri: `http://127.0.0.1:${server.address().port}/oauth2callback` });
+          send(true, 'JARVIS ist mit Google verbunden', 'Deine Termine werden jetzt synchronisiert.');
+          resolve(t);
+        } catch (e) { send(false, 'Verbindung fehlgeschlagen', esc(e.message)); reject(e); }
       });
       const timer = setTimeout(() => { server.close(); reject(new Error('Zeitüberschreitung bei der Google-Anmeldung')); }, timeoutMs);
       server.listen(0, '127.0.0.1', () => {
@@ -65,16 +72,6 @@ class GoogleClient {
       });
     });
 
-    const body = new URLSearchParams({ code, client_id: clientId, redirect_uri: redirectUri, grant_type: 'authorization_code', code_verifier: verifier });
-    if (secret) body.set('client_secret', secret);
-    const r = await this.fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
-    const tok = await r.json();
-    if (!r.ok || !tok.refresh_token) {
-      const why = String(tok.error_description || tok.error || r.status);
-      if (/client_secret is missing/i.test(why)) throw new Error('Google verlangt das Client-Secret. Es fehlt in deiner JSON-Datei – in der Google Console unter Clients → dein Client → „Secret hinzufügen“ ein neues erzeugen und in JARVIS ins Feld „Client-Secret“ einfügen.');
-      if (/invalid_client|unauthorized/i.test(why)) throw new Error('Google lehnt Client-ID oder Secret ab (' + why + '). Prüfe, dass beides zum selben Client vom Typ „Desktop-App“ gehört.');
-      throw new Error('Token-Austausch fehlgeschlagen: ' + why);
-    }
     this.secrets.set('google.refresh_token', tok.refresh_token);
     this.access = { token: tok.access_token, exp: Date.now() + (tok.expires_in - 60) * 1000 };
     let email = '';
@@ -85,6 +82,23 @@ class GoogleClient {
     this.settings.update({ google: { account: email } });
     log.info('Google verbunden');
     return { scopes: String(tok.scope || '').split(' '), account: email };
+  }
+
+  /** Authorization code → tokens (with clear German errors). */
+  async exchange({ code, clientId, secret, verifier, redirectUri }) {
+    const body = new URLSearchParams({ code, client_id: clientId, redirect_uri: redirectUri, grant_type: 'authorization_code', code_verifier: verifier });
+    if (secret) body.set('client_secret', secret);
+    const r = await this.fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const tok = await r.json().catch(() => ({}));
+    if (!r.ok || !tok.refresh_token) {
+      const why = String(tok.error_description || tok.error || (r.ok ? 'kein Refresh-Token erhalten' : 'HTTP ' + r.status));
+      log.warn('Google-Token-Austausch fehlgeschlagen: ' + why);
+      if (/client_secret is missing/i.test(why)) throw new Error('Google verlangt das Client-Secret. Erzeuge in der Google Console unter Clients → dein Client → „Secret hinzufügen“ ein neues und füge es in JARVIS ins Feld „Client-Secret“ ein.');
+      if (/invalid_client|unauthorized|secret/i.test(why)) throw new Error('Google lehnt Client-ID oder Client-Secret ab (' + why + '). Beides muss zum selben Client vom Typ „Desktop-App“ gehören – Secret am besten neu erzeugen und einfügen.');
+      if (/redirect_uri/i.test(why)) throw new Error('Falscher Client-Typ (' + why + '). Bitte einen Client vom Typ „Desktop-App“ verwenden.');
+      throw new Error('Token-Austausch fehlgeschlagen: ' + why);
+    }
+    return tok;
   }
 
   disconnect() {
