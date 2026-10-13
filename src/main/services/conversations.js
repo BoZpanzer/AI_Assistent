@@ -58,14 +58,19 @@ class Conversations {
     return rows.reverse().map((r) => ({ id: r.id, conversationId: r.conversation_id, role: r.role, content: r.content, meta: safeJson(r.meta, {}), channel: r.channel, createdAt: r.created_at }));
   }
   /** Model history: last N user/assistant text turns (tool details omitted). */
-  history(cid, maxTurns = 16, maxChars = 24000) {
-    const rows = this.messages(cid, { limit: maxTurns * 2 }).filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content);
+  history(cid, maxTurns = 16, maxChars = 24000, upTo) {
+    let rows = this.messages(cid, { limit: maxTurns * 2 + 4 });
+    if (upTo) { const k = rows.findIndex((m) => m.id === upTo); if (k >= 0) rows = rows.slice(0, k + 1); }
+    // Fehlermeldungen („⚠️ …“) sind keine echten Antworten → nicht als Verlauf ans Modell
+    rows = rows.filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.meta?.error).slice(-maxTurns * 2);
     const out = []; let size = 0;
     for (let i = rows.length - 1; i >= 0; i--) {
       const m = rows[i];
       size += m.content.length;
       if (size > maxChars && out.length) break;
-      out.unshift({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] });
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      if (out[0]?.role === role) out[0].parts.unshift({ text: m.content + '\n\n' });
+      else out.unshift({ role, parts: [{ text: m.content }] });
     }
     while (out.length && out[0].role !== 'user') out.shift();
     return out;

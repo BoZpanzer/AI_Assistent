@@ -151,11 +151,41 @@ class League {
   }
   async clientAvailable() { try { await this.lcuGet('/lol-summoner/v1/current-summoner'); return true; } catch { return false; } }
 
+  /**
+   * Matchliste aus dem Client. Die „current-summoner“-Liste ist ein Zwischenspeicher, den der Client
+   * erst beim Öffnen der Matchhistorie auffrischt – deshalb zuerst die PUUID-Abfrage (lädt vom Server)
+   * und die neuere der beiden Antworten nehmen.
+   */
+  async clientMatchList(me, end = 49) {
+    const range = `begIndex=0&endIndex=${end}`;
+    const lists = await Promise.all([
+      this.lcuGet(`/lol-match-history/v1/products/lol/${encodeURIComponent(me.puuid)}/matches?${range}`).catch(() => null),
+      this.lcuGet(`/lol-match-history/v1/products/lol/current-summoner/matches?${range}`).catch(() => null),
+    ]);
+    const newest = (h) => Math.max(0, ...((h?.games?.games || []).map((g) => g.gameCreation || 0)));
+    const best = lists.filter(Boolean).sort((a, b) => newest(b) - newest(a))[0];
+    return best?.games?.games || [];
+  }
+
+  /** Ein einzelnes Spiel direkt vom Server (über den Client) – unabhängig von der Matchhistorie. */
+  async clientGame(gameId) { return this.lcuGet(`/lol-match-history/v1/games/${encodeURIComponent(gameId)}`); }
+
+  /** Spiel speichern (nur Solo/Duo für die Statistik). Gibt die Zusammenfassung zurück. */
+  async storeClientGame(g, me, { queues = [420] } = {}) {
+    const champs = await this.champions().then((r) => r.value).catch(() => []);
+    const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;
+    const summary = summarizeLcuGame(g, me, champName);
+    if (!summary) return null;
+    if (!queues.length || queues.includes(g.queueId)) {
+      this.db.run('INSERT OR REPLACE INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', summary.matchId, me.puuid, new Date(g.gameCreation).toISOString(), JSON.stringify(summary));
+    }
+    return { ...summary, playedAt: new Date(g.gameCreation).toISOString() };
+  }
+
   /** Matchhistorie + Rang direkt aus dem laufenden Client (kein Schlüssel nötig). */
   async syncFromClient({ queues = [420] } = {}) {
     const me = await this.lcuGet('/lol-summoner/v1/current-summoner');
-    const hist = await this.lcuGet('/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex=49');
-    const games = hist?.games?.games || [];
+    const games = await this.clientMatchList(me, 49);
     const champs = await this.champions().then((r) => r.value).catch(() => []);
     const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;
     let added = 0;
@@ -182,8 +212,7 @@ class League {
   /** Newest game of any queue from the client (for the post-game review). */
   async latestClientGame() {
     const me = await this.lcuGet('/lol-summoner/v1/current-summoner');
-    const hist = await this.lcuGet('/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex=4');
-    const g = (hist?.games?.games || []).sort((a, b) => b.gameCreation - a.gameCreation)[0];
+    const g = (await this.clientMatchList(me, 4)).sort((a, b) => b.gameCreation - a.gameCreation)[0];
     if (!g) return null;
     const champs = await this.champions().then((r) => r.value).catch(() => []);
     const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;

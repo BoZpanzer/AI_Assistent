@@ -98,11 +98,30 @@ class Orchestrator {
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       return conversations.messages(cid, { limit: 1 })[0];
     }
+    return this.run({ cid, msg, text, channel, images });
+  }
 
+  /** Antwort auf eine fehlgeschlagene Nachricht neu erzeugen (gleiche Frage, gleiche Blase). */
+  async retry({ conversationId, messageId }) {
+    const { conversations, bus } = this.s;
+    const all = conversations.messages(conversationId, { limit: 400 });
+    const i = all.findIndex((m) => m.id === messageId);
+    const msg = all[i];
+    if (!msg || msg.role !== 'assistant' || !msg.meta?.error) throw new Error('Diese Antwort kann nicht wiederholt werden');
+    const user = [...all.slice(0, i)].reverse().find((m) => m.role === 'user');
+    if (!user) throw new Error('Keine Frage zum Wiederholen gefunden');
+    if (!this.s.gemini.hasKey()) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
+    const fresh = conversations.update(msg.id, { content: '', meta: { streaming: true, error: false, cards: [], sources: [] } });
+    bus.emit('chat:retry', { conversationId, messageId });
+    return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id });
+  }
+
+  async run({ cid, msg, text, channel, images = [], upTo }) {
+    const { conversations, gemini, bus } = this.s;
     const ac = new AbortController();
     this.cancel(cid);
     this.active.set(cid, ac);
-    const contents = conversations.history(cid, 14);
+    const contents = conversations.history(cid, 14, 24000, upTo);
     if (images.length) {
       const lastUser = [...contents].reverse().find((c) => c.role === 'user');
       if (lastUser) for (const im of images.slice(0, 3)) lastUser.parts.unshift({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } });

@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.11.0 – Gemini-Ausfälle abfangen, LoL-Spiele ohne Matchhistorie
+
+- **„Modell überlastet“ (503):** Ist Gemini überlastet, versucht JARVIS es automatisch erneut und weicht danach auf ein anderes Gemini-Modell aus (z. B. Flash-Lite oder Pro). Es bleibt alles in der Cloud, es gibt keine lokalen Modelle.
+- Klappt es trotzdem nicht, steht statt des JSON-Kauderwelschs eine verständliche Meldung im Chat, mit dem Knopf **„Nochmal versuchen“**. Die Antwort kommt dann in dieselbe Blase, ohne dass die Frage doppelt im Verlauf steht.
+- Fehlermeldungen werden nicht mehr als „Antworten“ ans Modell zurückgeschickt.
+- **League of Legends aktualisiert sich von selbst:** Nach jedem Spiel holt JARVIS das gerade beendete Spiel direkt über die Spiel-ID aus dem Client, auch wenn Riot ein paar Minuten braucht. Die Matchliste wird zusätzlich direkt vom Server geladen statt aus dem Zwischenspeicher des Clients. Beim Start des Clients gleicht JARVIS sofort ab. Du musst die Matchhistorie nicht mehr öffnen.
+
 ## 3.10.0 – Eigene Game-Seiten für deine Steam-Spiele
 
 - **Alle Spiele aus deiner Steam-Bibliothek mit mindestens einer Minute Spielzeit haben jetzt eine eigene, passende Seite**, dazu Hytale. Das sind über 40 Spiele, von ARK, Rust, CS2, EA FC und The Isle über Palworld, Elden Ring, Apex, Raft, Stardew Valley und Timberborn bis zu MX Bikes, The Crew 2 und NFS Heat.

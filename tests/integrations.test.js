@@ -587,3 +587,41 @@ test('Spiel-Kits: jedes gespielte Steam-Spiel hat passende Fragen, Layout aus fe
   assert.equal(core.gaming.layout('league').widgets[0].type, 'lol-overview');
   cleanup();
 });
+
+test('Gemini überlastet (503): erneut versuchen, dann anderes Gemini-Modell; lesbare Meldung; „Nochmal versuchen“', async () => {
+  const { friendlyError, isOverloaded } = require('../src/main/providers/gemini');
+  const raw = new Error(JSON.stringify({ error: { message: JSON.stringify({ error: { code: 503, message: 'This model is currently experiencing high demand.', status: 'UNAVAILABLE' } }), code: 503, status: 'Service Unavailable' } }));
+  assert.equal(isOverloaded(raw), true);
+  assert.match(friendlyError(raw), /überlastet/); assert.doesNotMatch(friendlyError(raw), /\{/);
+  const { core, cleanup } = tempCore();
+  core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.1-pro-preview', 'gemini-embedding-2'] });
+  const g = core.gemini; const sleep = async () => {};
+  // 2× überlastet, dann klappt es mit demselben Modell
+  let calls = [];
+  let n = 0;
+  assert.equal(await g.withFallback('gemini-3.8-flash', async (m) => { calls.push(m); if (n++ < 2) throw raw; return 'ok'; }, { sleep }), 'ok');
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash']);
+  // dauerhaft überlastet → anderes Cloud-Modell (kein lokales Modell)
+  calls = [];
+  const r = await g.withFallback('gemini-3.8-flash', async (m) => { calls.push(m); if (m === 'gemini-3.8-flash') throw raw; return m; }, { sleep });
+  assert.equal(r, 'gemini-3.8-flash-lite');
+  // Schlüssel ungültig → sofort Fehler, keine Wiederholung
+  calls = [];
+  await assert.rejects(g.withFallback('gemini-3.8-flash', async (m) => { calls.push(m); throw new Error('API key not valid'); }, { sleep }));
+  assert.equal(calls.length, 1);
+  // Chat: Fehler → Blase mit Hinweis, „Nochmal versuchen“ erzeugt die Antwort in derselben Blase
+  core.secrets.set('gemini.api_key', 'AIzaTEST'); core.settings.update({ models: { fast: 'gemini-3.8-flash' } });
+  const orig = g.stepStream.bind(g);
+  g.stepStream = async () => { throw raw; };
+  const conv = core.conversations.create();
+  const bad = await core.orchestrator.chat({ conversationId: conv.id, text: 'Analysiere meine LoL-Statistik' });
+  assert.equal(bad.meta.error, true); assert.match(bad.content, /überlastet/);
+  g.stepStream = orig;
+  core.fake = null;
+  const good = await core.orchestrator.retry({ conversationId: conv.id, messageId: bad.id });
+  assert.equal(good.id, bad.id); assert.equal(good.meta.error, false); assert.ok(good.content && !/überlastet/.test(good.content));
+  const msgs = core.conversations.messages(conv.id);
+  assert.equal(msgs.filter((m) => m.role === 'user').length, 1, 'Frage nicht doppelt');
+  assert.ok(core.conversations.history(conv.id).every((t) => !t.parts.some((p) => /⚠️/.test(p.text || ''))), 'Fehlermeldungen nicht im Verlauf ans Modell');
+  cleanup();
+});

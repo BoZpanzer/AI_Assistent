@@ -98,9 +98,15 @@ class Gemini {
     if (tools?.length) config.tools = tools;
     if (thinking) config.thinkingConfig = thinking;
     if (signal) config.abortSignal = signal;
-    const stream = await this.withFallback(model, (m) => this.client().models.generateContentStream({ model: m, contents, config }));
+    // Erst wenn der erste Teil da ist, gilt der Aufruf als erfolgreich – sonst greifen Wiederholung/Ausweichmodell
+    const { it, first } = await this.withFallback(model, async (m) => {
+      const s = await this.client().models.generateContentStream({ model: m, contents, config });
+      const iter = s[Symbol.asyncIterator]();
+      return { it: iter, first: await iter.next() };
+    });
+    const chunks = (async function* () { if (!first.done) { yield first.value; for (let n = await it.next(); !n.done; n = await it.next()) yield n.value; } })();
     const parts = []; let text = ''; let finishReason; let last;
-    for await (const chunk of stream) {
+    for await (const chunk of chunks) {
       last = chunk;
       const cand = chunk.candidates?.[0];
       if (cand?.finishReason) finishReason = cand.finishReason;
@@ -156,26 +162,38 @@ class Gemini {
   }
 
   /**
-   * Run a request; on quota errors (429) wait briefly (per-minute limits) or
-   * fall back to other available Flash models, which have separate free quotas.
+   * Run a request with retries and fallback models – only Gemini in the cloud, nothing local.
+   * - 503/500 „überlastet“: kurz warten und erneut (1,5 s, 4 s), danach ein anderes Gemini-Modell
+   * - 429 Minutenlimit: Wartezeit aus der Antwort abwarten, sonst ein anderes Flash-Modell (eigenes Kontingent)
+   * Fehler wie ungültiger Schlüssel werden sofort gemeldet.
    */
-  async withFallback(model, fn) {
+  async withFallback(model, fn, { sleep = (ms) => new Promise((res) => setTimeout(res, ms)) } = {}) {
     const avail = (this.settings.get('availableModels') || []).map((n) => String(n).replace(/^models\//, ''));
-    const flash = avail.filter((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|thinking-exp)/.test(n))
-      .sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
-    const chain = [...new Set([model, ...flash])].filter(Boolean).slice(0, 4);
+    const usable = (n) => !/(image|tts|live|audio|embedding|thinking-exp|vision|aqa|imagen|veo)/.test(n);
+    const flash = avail.filter((n) => /flash/.test(n) && usable(n)).sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
+    const pro = avail.filter((n) => /pro/.test(n) && usable(n)).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }));
     let last;
-    for (const m of chain) {
-      for (let attempt = 0; attempt < 2; attempt++) {
+    const tried = new Set();
+    const chainFor = (e) => [...new Set([model, ...(isOverloaded(e) ? [...flash.slice(0, 2), ...pro.slice(0, 1), ...flash.slice(2)] : flash)])].filter(Boolean).slice(0, 5);
+    let chain = [model];
+    for (let i = 0; i < chain.length; i++) {
+      const m = chain[i];
+      if (tried.has(m)) continue;
+      tried.add(m);
+      const tries = i === 0 ? 3 : 2; // Hauptmodell: 2 Wiederholungen, Ausweichmodelle: 1
+      for (let attempt = 0; attempt < tries; attempt++) {
         try {
           const r = await fn(m);
-          if (m !== model) log.info(`Kontingent für ${model} erschöpft – Ausweichmodell ${m} verwendet`);
+          if (m !== model) log.info(`${model} ${isOverloaded(last) ? 'überlastet' : 'Kontingent erschöpft'} – Ausweichmodell ${m} verwendet`);
           return r;
         } catch (e) {
-          if (!isQuota(e)) throw e;
+          if (/aborted|AbortError/i.test(String(e?.name) + String(e?.message))) throw e;
+          if (!isQuota(e) && !isOverloaded(e)) throw e;
           last = e;
+          if (i === 0) chain = chainFor(e);
+          if (isOverloaded(e) && attempt < tries - 1) { await sleep(attempt === 0 ? 1500 : 4000); continue; }
           const wait = retryDelayMs(e);
-          if (attempt === 0 && !isDaily(e) && wait != null && wait <= 12000) { await new Promise((res) => setTimeout(res, wait + 300)); continue; }
+          if (isQuota(e) && attempt === 0 && !isDaily(e) && wait != null && wait <= 12000) { await sleep(wait + 300); continue; }
           break;
         }
       }
@@ -230,6 +248,8 @@ class Gemini {
   }
 }
 
+/** 503/500/504 – Gemini überlastet oder kurz nicht erreichbar (nicht dein Kontingent). */
+function isOverloaded(e) { const m = String(e?.message || e); return [500, 502, 503, 504].includes(e?.status) || /\b(500|502|503|504)\b|UNAVAILABLE|overloaded|high demand|Service Unavailable|INTERNAL|DEADLINE_EXCEEDED/i.test(m); }
 function isQuota(e) { return /RESOURCE_EXHAUSTED|quota|\b429\b/i.test(String(e?.message || e)) || e?.status === 429; }
 function isDaily(e) { return /PerDay|per day|daily/i.test(String(e?.message || e)); }
 function retryDelayMs(e) {
@@ -237,15 +257,25 @@ function retryDelayMs(e) {
   return m ? Math.round(Number(m[1]) * 1000) : null;
 }
 
+/** Google verpackt Fehler gern als JSON im JSON → nur den lesbaren Text zeigen. */
+function innerMessage(msg) {
+  let cur = String(msg);
+  for (let k = 0; k < 3; k++) {
+    try { const j = JSON.parse(cur); const m = j?.error?.message ?? j?.message; if (typeof m !== 'string') break; cur = m; } catch { break; }
+  }
+  return cur.replace(/\s+/g, ' ').trim();
+}
+
 function friendlyError(e) {
   const msg = String(e?.message || e);
   if (isQuota(e) && isDaily(e)) return 'Das Tageskontingent deines Gemini-Schlüssels ist aufgebraucht (kostenloser Tarif). Es wird täglich um 9:00 Uhr deutscher Zeit zurückgesetzt – oder du aktivierst im Google AI Studio die Abrechnung für höhere Limits.';
   if (isQuota(e)) return 'Gemini-Limit pro Minute erreicht (429) – JARVIS hat schon Ausweichmodelle probiert. Bitte eine Minute warten und nochmal versuchen.';
+  if (isOverloaded(e)) return 'Gemini ist gerade überlastet (Google-Server, 503). JARVIS hat es mehrmals und mit anderen Gemini-Modellen versucht – tippe gleich auf „Nochmal versuchen“.';
   if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED|401|403/i.test(msg)) return 'Der Gemini-API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen.';
   if (/net::ERR|fetch failed|ENOTFOUND|ECONNRESET|ECONNREFUSED|network|ETIMEDOUT|EAI_AGAIN/i.test(msg)) return 'Keine Verbindung – Internetverbindung prüfen (Dienst nicht erreichbar).';
   if (/not found|404/i.test(msg) && /model/i.test(msg)) return 'Das gewählte Modell ist für deinen Schlüssel nicht verfügbar. Bitte Modellprüfung in den Einstellungen ausführen.';
   if (/aborted/i.test(msg)) return 'Abgebrochen.';
-  return msg.slice(0, 300);
+  return innerMessage(msg).slice(0, 300);
 }
 
-module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, retryDelayMs };
+module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, retryDelayMs };

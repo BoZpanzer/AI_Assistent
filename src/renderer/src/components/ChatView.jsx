@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
-import { Copy, Volume2, CircleCheck, SquareCheckBig, Brain, Timer, Gamepad2, NotebookPen, Link as LinkIcon, BookOpen, CalendarDays, Undo2, X, Check, TriangleAlert, FileText, Mic, Wrench, ChevronDown } from 'lucide-preact';
+import { Copy, Volume2, CircleCheck, SquareCheckBig, Brain, Timer, Gamepad2, NotebookPen, Link as LinkIcon, BookOpen, CalendarDays, Undo2, X, Check, TriangleAlert, FileText, Mic, Wrench, ChevronDown, RotateCcw } from 'lucide-preact';
 import { rpc, useEvent } from '../lib/api.js';
 import { useStore, setState, getState, guard, toast, navigate } from '../lib/store.js';
 import { renderMarkdown, onMarkdownClick } from '../lib/markdown.js';
@@ -74,6 +74,7 @@ export function Message({ m, tool }) {
         {tool && <div class="tool-trace"><Wrench size={12} /> {TOOL_LABEL[tool] || tool} …</div>}
         {m.meta?.attachments?.length > 0 && <div class="sources">{m.meta.attachments.map((a) => <span class="chip static"><FileText size={12} />{a.name}</span>)}</div>}
         {(m.meta?.cards || []).map((c) => <Card card={c} />)}
+        {!user && m.meta?.error && !streaming && m.conversationId && <button class="btn xs mt retry-btn" onClick={() => rpc('chat.retry', { conversationId: m.conversationId, messageId: m.id })}><RotateCcw size={12} />Nochmal versuchen</button>}
         {sources.length > 0 && (
           <div class="sources">
             {sources.map((s) => (

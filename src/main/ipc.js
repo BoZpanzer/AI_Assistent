@@ -62,6 +62,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'gemini.usage': () => s.gemini.usage,
 
     // --- chat ---
+    'chat.retry': ({ conversationId, messageId }) => { s.orchestrator.retry({ conversationId, messageId }).catch((e) => log.error('chat.retry', e)); return { ok: true }; },
     'chat.send': async ({ conversationId, text, attachments }) => {
       if (s.voice.isOpen() && s.voice.conversationId === conversationId && text && !attachments?.length) { s.voice.sendText(text); return { viaVoice: true }; }
       const files = [];

@@ -44,10 +44,15 @@ class LolFlow {
       const prev = this.phase; this.phase = phase;
       if (phase === 'ChampSelect' && this.cfg().lolChampSelect !== false) await this.champSelect();
       else if (prev === 'ChampSelect' && this.champ) { this.champ = null; this.lastSelectKey = ''; this.s.bus.emit('lol:champselect', { active: false }); }
+      if (phase === 'InProgress' && !this.gameId) {
+        const sess = await L.lcuGet('/lol-gameflow/v1/session').catch(() => null);
+        if (sess?.gameData?.gameId) this.gameId = sess.gameData.gameId;
+      }
       if (prev === 'InProgress' && phase && phase !== 'InProgress' && phase !== 'Reconnect') {
-        // Spiel vorbei → kurz warten, bis der Client die Statistik hat
+        // Spiel vorbei → das Spiel gezielt per gameId holen (ohne Umweg über die Matchhistorie)
+        const gid = this.gameId; this.gameId = null;
         clearTimeout(this.reviewPending);
-        if (this.cfg().lolReview !== false) this.reviewPending = setTimeout(() => this.review().catch((e) => log.warn('review', e)), 20000);
+        this.reviewPending = setTimeout(() => this.afterGame(gid).catch((e) => log.warn('afterGame', e)), 15000);
       }
     } finally { this.busy = false; }
   }
@@ -100,10 +105,35 @@ class LolFlow {
   remember() { if (this.champ?.myChampion) this.s.gaming.cache.set('lol:lastchamp', { ...this.champ, active: false, at: nowIso() }, 'League-Client (lokal)', 365 * 86400000); }
   state() { return this.champ || { active: false, last: this.s.gaming.cache.get('lol:lastchamp', { allowStale: true })?.value || null }; }
 
-  /** Post-game review of the newest game. */
-  async review({ force = false } = {}) {
+  /**
+   * Nach Spielende: gameId aus der Sitzung bzw. dem Endbildschirm, dann das Spiel direkt laden.
+   * Riot braucht ein paar Sekunden bis Minuten, bis das Spiel abrufbar ist → bis zu 4 Minuten erneut versuchen.
+   */
+  async afterGame(gameId, { tries = 16, delayMs = 15000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
     const L = this.s.gaming.league;
-    const m = await L.latestClientGame();
+    if (!gameId) {
+      const eog = await L.lcuGet('/lol-end-of-game/v1/eog-stats-block').catch(() => null);
+      gameId = eog?.gameId || null;
+    }
+    let me = null; let m = null;
+    for (let i = 0; i < tries && gameId; i++) {
+      try {
+        me = me || await L.lcuGet('/lol-summoner/v1/current-summoner');
+        const g = await L.clientGame(gameId);
+        if (g?.gameDuration && (g.participants || []).length) { m = await L.storeClientGame(g, me); if (m) break; }
+      } catch (e) { log.debug('Spiel noch nicht abrufbar', e); }
+      await sleep(delayMs);
+    }
+    try { await L.syncFromClient(); } catch { /* Client evtl. schon zu */ }
+    this.s.bus.emit('game:data', { game: 'league' });
+    if (this.cfg().lolReview !== false) await this.review({ match: m || undefined });
+    return m;
+  }
+
+  /** Post-game review of the newest game. */
+  async review({ force = false, match } = {}) {
+    const L = this.s.gaming.league;
+    const m = match || await L.latestClientGame();
     if (!m) return null;
     if (!force && this.s.db.get("SELECT 1 x FROM game_reviews WHERE game='league' AND ref=?", m.matchId)) return null;
     if (Date.now() - Date.parse(m.playedAt) - m.duration * 1000 > 3 * 3600_000 && !force) return null; // nur frische Spiele
