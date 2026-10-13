@@ -8,7 +8,7 @@ Stand: 12. Oktober 2026 · Build-Umgebung: Linux x64 (Container), Node 22 / Elec
 | Testart | Ergebnis |
 |---|---|
 | Unit-/Integrationstests (`npm test`, node:test) | **29 / 29 bestanden** |
-| Electron-E2E mit echter Oberfläche (`npm run test:e2e`) | **13 / 13 Schritte bestanden**, keine Renderer-Fehler, 16 Screenshots |
+| Electron-E2E mit echter Oberfläche (`npm run test:e2e`) | **13 / 13 Schritte bestanden**, keine Renderer-Fehler, 17 Screenshots |
 | Smoke-Test `--smoke` (Dev-Build, 8 Wiederholungen) | 8 / 8 (nach Behebung eines Start-Race, s. u.) |
 | Smoke-Test der **gepackten** App (asar, Linux-Paket, gleicher Code wie Windows) | alle Schritte bestanden außer „Sichere Schlüsselablage“ (DPAPI gibt es nur unter Windows – erwartet) |
 | Windows-Artefakte | PE x64, GUI-Subsystem, Icon (7 Größen) + Versionsinfo eingebettet, Asar-Integritätsressource erhalten; Installer: NSIS 3.09, per-User, mit Uninstaller |
