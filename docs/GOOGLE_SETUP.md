@@ -1,16 +1,48 @@
-# Google Kalender verbinden (einmalig, ca. 5 Minuten)
+# Google Kalender verbinden (einmalig, ca. 10 Minuten)
 
-JARVIS nutzt das offizielle OAuth-Verfahren für Desktop-Apps. Weil JARVIS kein verifiziertes Google-Produkt ist, legst du dir einen eigenen OAuth-Client an – deine Daten fließen dann nur zwischen deinem PC und Google.
+JARVIS nutzt das offizielle OAuth-Verfahren für Desktop-Apps (Loopback + PKCE). JARVIS ist kein
+von Google verifiziertes Produkt. Deshalb legst du dir einen **eigenen OAuth-Client** an. Deine
+Daten fließen dann nur zwischen deinem PC und Google.
 
-1. <https://console.cloud.google.com> öffnen → oben **Projekt auswählen → Neues Projekt** (z. B. „JARVIS“).
-2. **APIs & Dienste → Bibliothek** → „Google Calendar API“ → **Aktivieren**.
-3. **APIs & Dienste → OAuth-Zustimmungsbildschirm** → Nutzertyp **Extern** → App-Name „JARVIS“, deine E-Mail → speichern. Unter **Testnutzer** deine eigene Google-Adresse hinzufügen.
-4. **APIs & Dienste → Anmeldedaten → Anmeldedaten erstellen → OAuth-Client-ID** → Anwendungstyp **Desktop-App** → Erstellen → **JSON herunterladen**.
-5. In JARVIS: **Einstellungen → Kalender & Google → JSON-Datei laden** (oder im Einrichtungsassistenten, Schritt 4) → **Im Browser anmelden**.
-6. Im Browser das Konto wählen und den Kalenderzugriff erlauben (Hinweis „Google hat diese App nicht überprüft“ → *Erweitert → Weiter zu JARVIS*, da es dein eigener Client ist).
+## 1. Projekt anlegen
+<https://console.cloud.google.com> → oben **Projekt auswählen → Neues Projekt** → Name „JARVIS“ → Erstellen → das Projekt oben auswählen.
 
-Danach synchronisiert JARVIS alle 15 Minuten (einstellbar). Neue Termine aus Chat/Sprache landen nach deiner Bestätigung sofort in Google und erscheinen auf dem Smartphone.
+## 2. Calendar API aktivieren
+Suche oben „Google Calendar API“ (oder **APIs & Dienste → Bibliothek**) → **Aktivieren**.
 
-**Rechte:** `calendar` (Lesen/Schreiben) und `openid email` (Kontoanzeige). Das Refresh-Token wird mit Windows-DPAPI verschlüsselt gespeichert. **Trennen** in den Einstellungen widerruft das Token.
+## 3. Google Auth Platform einrichten
+Menü → **Google Auth Platform** (früher „OAuth-Zustimmungsbildschirm“) → **Jetzt starten**:
+- **App-Informationen:** Name `JARVIS`, Support-E-Mail = deine Adresse
+- **Zielgruppe:** **Extern**
+- **Kontaktdaten:** deine E-Mail → Richtlinie akzeptieren → **Erstellen**
 
-**Hinweis Testmodus:** Solange der Zustimmungsbildschirm im Status „Test“ ist, laufen Refresh-Tokens nach 7 Tagen ab. Für dauerhafte Nutzung den Status auf „In Produktion“ setzen (für den Eigengebrauch ohne Verifizierung möglich; Google zeigt dann weiterhin den Hinweis aus Schritt 6).
+## 4. Dich als Testnutzer eintragen
+Google Auth Platform → **Zielgruppe (Audience)** → **Testnutzer → + Nutzer hinzufügen** → dein Google-Konto, dessen Kalender JARVIS nutzen soll.
+
+## 5. OAuth-Client erstellen
+Google Auth Platform → **Clients → + Client erstellen**
+- Anwendungstyp: **Desktop-App**, Name: `JARVIS Desktop` → **Erstellen**
+- Im Dialog **JSON herunterladen**. Die Datei enthält Client-ID und Client-Secret. Bei Desktop-Apps gilt das Secret laut Google nicht als echtes Geheimnis, trotzdem nicht öffentlich teilen.
+
+## 6. In JARVIS verbinden
+**Einstellungen → Kalender & Google → „JSON-Datei laden“** (oder im Einrichtungsassistenten) → **Im Browser anmelden** → Konto wählen.
+Bei „Google hat diese App nicht überprüft“ → **Erweitert → Weiter zu JARVIS (unsicher)**. Das ist hier in Ordnung, weil es dein eigener Client ist. Danach Kalenderzugriff erlauben → „Verbunden“.
+
+## 7. Wichtig: dauerhaft verbunden bleiben
+Solange die App im Status **„Testen“** ist, laufen Googles Anmelde-Tokens **nach 7 Tagen** ab, und du müsstest dich wöchentlich neu anmelden. Deshalb:
+Google Auth Platform → **Zielgruppe → App veröffentlichen → Bestätigen** (Status „In Produktion“).
+Für den Eigengebrauch ist **keine Verifizierung** nötig. Google zeigt beim Anmelden nur weiter den Hinweis aus Schritt 6, und es gilt ein Limit von 100 Nutzern.
+
+## Rechte und Datenschutz
+- `calendar` (Termine lesen/schreiben) und `openid email` (Anzeige, welches Konto verbunden ist). Nichts weiter.
+- Das Refresh-Token und das Client-Secret werden mit **Windows-DPAPI** verschlüsselt gespeichert.
+- **Trennen** in den Einstellungen widerruft das Token bei Google.
+- Synchronisiert wird alle 15 Minuten (einstellbar). Neue Termine aus Chat/Sprache landen nach deiner Bestätigung sofort in Google.
+
+## Häufige Fehler
+| Meldung | Lösung |
+|---|---|
+| `Error 403: access_denied` | Du bist nicht als Testnutzer eingetragen (Schritt 4) oder hast ein anderes Konto gewählt. |
+| `Google Calendar API has not been used in project …` | Schritt 2 vergessen, oder falsches Projekt ausgewählt. |
+| `invalid_client` / `redirect_uri_mismatch` | Der Client ist nicht vom Typ **Desktop-App**. Lege einen neuen an (Schritt 5). |
+| Nach einer Woche „Neu anmelden“ | Die App steht noch auf „Testen“ → Schritt 7. |

@@ -135,8 +135,9 @@ function Google({ done }) {
       <H icon={Link2} t="Google Kalender" s="Termine zwischen PC und Smartphone synchronisieren (optional)." />
       <ol class="small" style={{ color: 'var(--text-2)', lineHeight: 1.6, margin: 0, paddingLeft: 18 }}>
         <li>console.cloud.google.com → Projekt anlegen → „Google Calendar API“ aktivieren.</li>
-        <li>OAuth-Zustimmungsbildschirm (extern, dich selbst als Testnutzer) einrichten.</li>
-        <li>Anmeldedaten → OAuth-Client-ID → Typ <b>Desktop-App</b> → JSON herunterladen.</li>
+        <li>Google Auth Platform → Jetzt starten (Zielgruppe <b>Extern</b>) → unter <b>Zielgruppe</b> dich als Testnutzer eintragen.</li>
+        <li>Google Auth Platform → <b>Clients</b> → Client erstellen → Typ <b>Desktop-App</b> → JSON herunterladen.</li>
+        <li>Danach unter <b>Zielgruppe → App veröffentlichen</b>, sonst musst du dich alle 7 Tage neu anmelden.</li>
       </ol>
       <div class="row mt"><button class="btn sm" onClick={async () => { const r = await guard(() => rpc('google.importClientJson')); if (r) setCid(r.clientId); }}>Client-JSON laden</button><span class="small muted">oder manuell:</span></div>
       <Field label="Client-ID" wide><input class="inp" value={cid} onInput={(e) => setCid(e.currentTarget.value)} /></Field>
