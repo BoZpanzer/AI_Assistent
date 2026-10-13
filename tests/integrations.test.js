@@ -428,9 +428,9 @@ test('Steam-Bibliothek: Spielzeit aus localconfig, Updates aus Manifest, Game-Se
   w(path.join(lib2, 'steamapps', 'appmanifest_228980.acf'), acf(228980, 'Steamworks Common Redistributables', 4));
   w(path.join(lib2, 'steamapps', 'appmanifest_1000.acf'), acf(1000, 'Nie gespielt', 4));
   // Spielzeit (Minuten) – 440 ist nicht installiert, Name kommt aus dem Store; 999 ist ein Soundtrack (Store-Typ „music“)
-  const apps = { 264710: 125, 892970: 3000, 440: 61, 999: 5, 2000: 0 };
+  const apps = { 264710: 125, 892970: 3000, 440: 61, 999: 5, 2000: 0, 2669320: 600, 3405690: 120, 629520: 900 };
   w(path.join(steamDir, 'userdata', id3, 'config', 'localconfig.vdf'), `"UserLocalConfigStore"\n{\n\t"Software"\n\t{\n\t\t"Valve"\n\t\t{\n\t\t\t"Steam"\n\t\t\t{\n\t\t\t\t"apps"\n\t\t\t\t{\n${Object.entries(apps).map(([id, m]) => `\t\t\t\t\t"${id}"\n\t\t\t\t\t{\n\t\t\t\t\t\t"LastPlayed"\t\t"${m ? 1760000000 + m : 0}"\n\t\t\t\t\t\t"Playtime"\t\t"${m}"\n\t\t\t\t\t}`).join('\n')}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n`);
-  const store = { 440: { name: 'Team Fortress 2', type: 'game', header_image: 'https://shared.akamai.steamstatic.com/440.jpg' }, 999: { name: 'Irgendwas Original Soundtrack', type: 'music' }, 1000: { name: 'Nie gespielt', type: 'game' } };
+  const store = { 2669320: { name: 'EA SPORTS FC™ 25', type: 'game' }, 3405690: { name: 'EA SPORTS FC™ 26', type: 'game' }, 440: { name: 'Team Fortress 2', type: 'game', header_image: 'https://shared.akamai.steamstatic.com/440.jpg' }, 999: { name: 'Irgendwas Original Soundtrack', type: 'music' }, 1000: { name: 'Nie gespielt', type: 'game' } };
   let storeCalls = 0;
   const { core, cleanup } = tempCore({ fetch: async (url) => {
     const appid = String(url).match(/appids=(\d+)/)[1]; storeCalls++;
@@ -440,7 +440,7 @@ test('Steam-Bibliothek: Spielzeit aus localconfig, Updates aus Manifest, Game-Se
   const steam = core.gaming.steam;
   const lib = await steam.library();
   assert.equal(lib.available, true); assert.equal(lib.account, id64);
-  assert.deepEqual(lib.games.map((g) => g.name), ['Valheim', 'Subnautica', 'Team Fortress 2', 'Nie gespielt'], 'nach Spielzeit sortiert, ohne Redistributable/Soundtrack');
+  assert.deepEqual(lib.games.map((g) => g.name), ['Valheim', 'EA SPORTS FC™ 25', 'Subnautica', 'EA SPORTS FC™ 26', 'Team Fortress 2', 'Nie gespielt'], 'nach Spielzeit sortiert, ohne Redistributable/Soundtrack/Soundpad');
   const val = lib.games.find((g) => g.appid === 892970);
   assert.equal(val.hours, 50); assert.equal(val.updateRequired, true); assert.equal(val.installed, true);
   assert.equal(lib.games.find((g) => g.appid === 440).installed, false);
@@ -449,7 +449,10 @@ test('Steam-Bibliothek: Spielzeit aus localconfig, Updates aus Manifest, Game-Se
   const before = storeCalls;
   const r = await steam.importProfiles({ minMinutes: 1 });
   assert.equal(storeCalls, before, 'Store-Daten kommen aus dem Cache');
-  assert.equal(r.created, 2); assert.equal(r.matched, 1);
+  assert.equal(r.created, 2); assert.equal(r.matched, 3);
+  const fc = core.gaming.context.profile('ea_fc');
+  assert.equal(fc.playtimeMin, 720, 'FC 25 + FC 26 → eine Seite, Spielzeit addiert'); assert.equal(fc.genre, 'sports');
+  assert.equal(core.gaming.context.profile('subnautica').playtimeMin, 125);
   const ids = core.gaming.context.profiles().filter((p) => p.source === 'steam').map((p) => p.id).sort();
   assert.deepEqual(ids, ['steam_440', 'steam_892970']);
   assert.equal(core.gaming.context.profile('steam_440').header, 'https://shared.akamai.steamstatic.com/440.jpg');
@@ -554,5 +557,33 @@ test('Geburtstage aus dem Brain → jährlicher ganztägiger Termin (anlegen, ä
   core.settings.update({ birthdaysToCalendar: false });
   core.brain.add({ content: 'Geburtstag von Ben: 02.03.', domain: 'personal', kind: 'fact' });
   assert.equal((await core.birthdays.sync()).created, 0);
+  cleanup();
+});
+
+test('Spiel-Kits: jedes gespielte Steam-Spiel hat passende Fragen, Layout aus festen Bausteinen, geprüfte https-Links', () => {
+  const { KITS, kitLayout } = require('../src/main/services/gaming/kits');
+  const { WIDGET_TYPES } = require('../src/main/services/gaming');
+  const profiles = require('../src/main/services/gaming/profiles.json');
+  const { core, cleanup } = tempCore();
+  for (const id of Object.keys(KITS)) {
+    assert.ok(profiles.some((p) => p.id === id), 'Profil fehlt für Kit ' + id);
+    const p = core.gaming.context.profile(id);
+    assert.ok(p.kit && p.genre, id);
+    assert.ok(p.questions.length >= 2, 'Fragen fehlen: ' + id);
+    for (const l of p.links) assert.match(l.url, /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}\//, id);
+    for (const c of p.checklists) assert.ok(c.items.length && c.items.every((x) => typeof x === 'string' && x.length <= 120), id);
+    if (p.wiki) assert.match(p.wiki.api, /^https:\/\/.+api\.php$/, id);
+    const layout = core.gaming.layout(id);
+    assert.ok(layout.widgets.every((w) => WIDGET_TYPES.includes(w.type)), id);
+    assert.equal(layout.widgets[0].type, 'ask', id);
+    assert.deepEqual(kitLayout(p).map((w) => w.type), layout.widgets.map((w) => w.type));
+  }
+  // Checklisten-Vorlage, bis der Nutzer etwas ändert
+  const cl = core.gaming.checklist('eldenring', 'Hauptbosse');
+  assert.equal(cl.preset, true); assert.ok(cl.items.some((i) => /Malenia/.test(i.text)));
+  core.gaming.saveChecklist('eldenring', 'Hauptbosse', cl.items.map((i, n) => ({ ...i, done: n === 0 })));
+  assert.equal(core.gaming.checklist('eldenring', 'Hauptbosse').items.filter((i) => i.done).length, 1);
+  // Spezialintegrationen bleiben unverändert
+  assert.equal(core.gaming.layout('league').widgets[0].type, 'lol-overview');
   cleanup();
 });

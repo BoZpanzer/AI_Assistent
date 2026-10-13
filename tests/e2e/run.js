@@ -144,6 +144,21 @@ app.whenReady().then(async () => {
     core.gaming.context.setActive('rok', 'manual'); await sleep(600); await shot('63-gaming-rok');
     core.gaming.context.setActive('ark', 'manual'); await sleep(600); await shot('64-gaming-ark');
   });
+  await step('Spiel-Kits: Rust mit Fragen, Force-Wipe-Termin, Checkliste; Elden Ring mit Bossliste', async () => {
+    core.gaming.context.setState('steam:stats', { rust: { minutes: 16638, lastPlayed: '2024-04-01T18:00:00Z', appid: 252490, appids: [252490] } });
+    await nav('dashboard'); await nav('gaming');
+    core.gaming.context.setActive('rust', 'manual'); await sleep(800);
+    await waitFor(() => js(`document.body.textContent.includes('Frag JARVIS zu Rust') && document.body.textContent.includes('Monatlicher Force-Wipe') && document.body.textContent.includes('Nach dem Wipe')`), 8000);
+    if (!(await js(`document.body.textContent.includes('277,3 h gespielt')`))) throw new Error('Steam-Spielzeit fehlt');
+    await shot('66-gaming-rust-kit');
+    // Frage mit „…“ landet im Eingabefeld statt sofort gesendet zu werden
+    await js(`[...document.querySelectorAll('.ask-chip')].find(c=>c.textContent.includes('…')).click()`); await sleep(200);
+    const v = await js(`document.querySelector('.panel input.inp.grow').value`);
+    if (!v || v.includes('…')) throw new Error('Platzhalter-Frage nicht übernommen: ' + v);
+    core.gaming.context.setActive('eldenring', 'manual'); await sleep(800);
+    await waitFor(() => js(`document.body.textContent.includes('Hauptbosse') && document.body.textContent.includes('Malenia')`), 8000);
+    await shot('67-gaming-eldenring-kit');
+  });
   await step('Spielstand: „Sun Tzu ist Level 40“ → gemerkt, im Widget sichtbar, im Kontext', async () => {
     await nav('gaming');
     core.gaming.context.setActive('rok', 'manual');

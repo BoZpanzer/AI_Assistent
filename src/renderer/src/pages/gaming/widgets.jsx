@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
-import { Map as MapIcon, Maximize2, Minimize2, Plus, Minus, Crosshair, Footprints, Package, TriangleAlert, Target, KeyRound, MapPin, Trash2, Undo2, Layers, Route, ImagePlus, Search, ExternalLink, Timer, NotebookPen, Globe, Bell, ListChecks, Trophy, RefreshCw, Swords, Eye, TrendingUp, TrendingDown, GraduationCap, Shield, BarChart3, Radio, Sparkles, X, Check, Ruler, Skull, Castle, FlaskConical, Hammer, Link as LinkIcon } from 'lucide-preact';
+import { Map as MapIcon, Maximize2, Minimize2, Plus, Minus, Crosshair, Footprints, Package, TriangleAlert, Target, KeyRound, MapPin, Trash2, Undo2, Layers, Route, ImagePlus, Search, ExternalLink, Timer, NotebookPen, Globe, Bell, ListChecks, Trophy, RefreshCw, Swords, Eye, TrendingUp, TrendingDown, GraduationCap, Shield, BarChart3, Radio, Sparkles, X, Check, Ruler, Skull, Castle, FlaskConical, Hammer, Link as LinkIcon, MessageCircleQuestion, CalendarClock, SendHorizontal } from 'lucide-preact';
 import { rpc, useRpc, useEvent, cleanErr } from '../../lib/api.js';
-import { guard, toast, setState } from '../../lib/store.js';
+import { guard, toast, setState, getState } from '../../lib/store.js';
 import { Panel, Checkbox, Empty, SourceTag, Spinner, useNow, ask, Select } from '../../components/ui.jsx';
 import { countdown, ago, fmtDateTime } from '../../lib/format.js';
 import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
-  map: 'w-7', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-4', 'other-games': 'w-6',
+  map: 'w-7', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
   'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6',
-  timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
+  ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
 // ---------------------------------------------------------------- Map
@@ -231,9 +231,67 @@ function Checklist({ game, params }) {
   const [txt, setTxt] = useState('');
   const save = (items) => rpc('game.saveChecklist', { game: game.id, name, items }).then(reload);
   return (
-    <Panel title={name} right={<button class="btn xs ghost" onClick={() => save((cl?.items || []).map((i) => ({ ...i, done: false })))}>Zurücksetzen</button>}>
-      {(cl?.items || []).map((i) => <div class={`sub-row ${i.done ? 'done' : ''}`}><Checkbox checked={i.done} onChange={(v) => save(cl.items.map((x) => (x.id === i.id ? { ...x, done: v } : x)))} /><span class="grow">{i.text}</span><X size={13} style={{ cursor: 'pointer', color: 'var(--text-3)' }} onClick={() => save(cl.items.filter((x) => x.id !== i.id))} /></div>)}
+    <Panel icon={ListChecks} title={name} sub={cl?.items?.length ? `${cl.items.filter((i) => i.done).length}/${cl.items.length} erledigt${cl.preset ? ' · Vorlage, änderbar' : ''}` : undefined} right={<button class="btn xs ghost" onClick={() => save((cl?.items || []).map((i) => ({ ...i, done: false })))}>Zurücksetzen</button>}>
+      <div class="col" style={{ gap: 0, maxHeight: 260, overflow: 'auto' }}>{(cl?.items || []).map((i) => <div class={`sub-row ${i.done ? 'done' : ''}`}><Checkbox checked={i.done} onChange={(v) => save(cl.items.map((x) => (x.id === i.id ? { ...x, done: v } : x)))} /><span class="grow">{i.text}</span><X size={13} style={{ cursor: 'pointer', color: 'var(--text-3)' }} onClick={() => save(cl.items.filter((x) => x.id !== i.id))} /></div>)}</div>
       <div class="add-row mt"><Plus size={14} /><input placeholder="Punkt hinzufügen" value={txt} onInput={(e) => setTxt(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter' && txt.trim()) { save([...(cl?.items || []), { text: txt.trim(), done: false }]); setTxt(''); } }} /></div>
+    </Panel>
+  );
+}
+
+// ---------------------------------------------------------------- Kit: Fragen & Links
+const ASK_FALLBACK = ['Was sollte ich als Nächstes machen?', 'Wo finde ich …?', 'Wie funktioniert …?', 'Was ist im letzten Update neu?'];
+
+/** Fragen, die zu diesem Spiel passen – Klick stellt sie JARVIS (mit Spielkontext). „…“ = erst ergänzen. */
+function AskWidget({ game }) {
+  const [txt, setTxt] = useState('');
+  const ref = useRef();
+  const qs = game.questions?.length ? game.questions : ASK_FALLBACK;
+  const send = (q) => {
+    const t = q.trim(); if (!t) return;
+    setTxt('');
+    setState({ miniChatOpen: true });
+    guard(() => rpc('chat.send', { conversationId: getState().conversationId, text: `Zu ${game.name}: ${t}` }));
+  };
+  const pick = (q) => { if (q.includes('…')) { setTxt(q.replace(/\s*…\s*/, '  ').replace(/ {2}\?/, ' ?')); setTimeout(() => { const el = ref.current; if (el) { el.focus(); const pos = q.indexOf('…'); el.setSelectionRange(pos, pos); } }, 0); } else send(q); };
+  return (
+    <Panel icon={MessageCircleQuestion} title={`Frag JARVIS zu ${game.short || game.name}`} sub="Antwort mit Quellen, dein Spielstand fließt mit ein">
+      <div class="row wrap gap-s">{qs.map((q) => <span class="chip ask-chip" title={q.includes('…') ? 'Ins Eingabefeld übernehmen und ergänzen' : 'Direkt fragen'} onClick={() => pick(q)}>{q}</span>)}</div>
+      <div class="row mt gap-s"><input ref={ref} class="inp grow" placeholder={`Eigene Frage zu ${game.name} …`} value={txt} onInput={(e) => setTxt(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && send(txt)} /><button class="btn sm" onClick={() => send(txt)} disabled={!txt.trim()}><SendHorizontal size={14} /></button></div>
+    </Panel>
+  );
+}
+
+/** Nächster Termin nach einer festen Regel (z. B. Rust-Force-Wipe: erster Donnerstag im Monat). */
+function nextScheduled(s, now = new Date()) {
+  if (s?.rule !== 'first-thursday') return null;
+  const [h, m] = String(s.utc || '19:00').split(':').map(Number);
+  for (let k = 0; k < 3; k++) {
+    const y = now.getUTCFullYear(), mo = now.getUTCMonth() + k;
+    const first = new Date(Date.UTC(y, mo, 1));
+    const day = 1 + ((4 - first.getUTCDay() + 7) % 7);
+    const t = new Date(Date.UTC(y, mo, day, h, m));
+    if (t > now) return t;
+  }
+  return null;
+}
+
+function LinksWidget({ game }) {
+  useNow(60000);
+  const next = game.schedule ? nextScheduled(game.schedule) : null;
+  const links = [...(game.links || [])];
+  if (game.steamAppId && !links.some((l) => l.url.includes('/news/app/'))) links.push({ label: 'Patchnotes & News (Steam)', url: `https://store.steampowered.com/news/app/${game.steamAppId}` });
+  return (
+    <Panel icon={LinkIcon} title="Tools & Links" sub="Geprüfte Seiten – öffnen im Browser">
+      {next && (
+        <div class="result-row" style={{ cursor: 'default', marginBottom: 6 }}>
+          <CalendarClock size={18} style={{ color: 'var(--cyan)' }} />
+          <div class="grow"><div class="small" style={{ fontWeight: 600 }}>{game.schedule.label}: {next.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}, ca. {next.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</div><div class="tiny muted">noch {countdown(next.toISOString())} · {game.schedule.note}</div></div>
+        </div>
+      )}
+      <div class="col" style={{ gap: 6 }}>
+        {links.map((l) => <div class="result-row" onClick={() => rpc('shell.openExternal', { url: l.url })}><Globe size={15} /><div class="grow"><div class="small ellipsis">{l.label}</div><div class="tiny muted ellipsis">{l.url.replace(/^https:\/\//, '').replace(/\/$/, '')}</div></div><ExternalLink size={13} /></div>)}
+        {!links.length && <Empty>Keine Links hinterlegt.</Empty>}
+      </div>
     </Panel>
   );
 }
@@ -284,7 +342,7 @@ function Timers({ game, params }) {
           </div>); })}
       </div>
       <div class="row mt gap-s">
-        <input class="inp grow" placeholder="z. B. Rathaus Stufe 22" value={f.label} onInput={(e) => setF({ ...f, label: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <input class="inp grow" placeholder={game.id === 'rok' ? 'z. B. Rathaus Stufe 22' : 'Wofür läuft der Timer?'} value={f.label} onInput={(e) => setF({ ...f, label: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <Select style={{ width: 120 }} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={kinds.map((k) => ({ value: k, label: TIMER_KINDS[k]?.[0] || k }))} />
         <input class="inp" type="number" min="0" style={{ width: 60 }} value={f.h} onInput={(e) => setF({ ...f, h: e.currentTarget.value })} title="Stunden" /><span class="tiny muted">h</span>
         <input class="inp" type="number" min="0" max="59" style={{ width: 60 }} value={f.m} onInput={(e) => setF({ ...f, m: e.currentTarget.value })} title="Minuten" /><span class="tiny muted">m</span>
@@ -591,8 +649,6 @@ const PROGRESS_HINT = {
 const PROGRESS_CATS = {
   rok: [['commander', 'Kommandanten', 'Sun Tzu', 'Level 40 · 5-5-5-5'], ['building', 'Gebäude', 'Rathaus', 'Stufe 22'], ['research', 'Forschung', 'Ausrüstung', 'fertig'], ['resource', 'Ressourcen', 'Speedups', '3 Tage']],
   eft: [['quest', 'Quests', 'Debut', ''], ['base', 'Versteck', 'Wasseraufbereitung', 'Stufe 2'], ['character', 'PMC', 'PMC-Level', '34'], ['item', 'Items & Schlüssel', 'Marked Key', 'vorhanden']],
-  ark: [['creature', 'Zähmungen', 'Rex', 'Level 220'], ['base', 'Basis', 'Hauptbasis', 'Red Obelisk'], ['item', 'Items', 'Tek-Rüstung', ''], ['achievement', 'Bosse', 'Broodmother', 'besiegt']],
-  ark_asa: [['creature', 'Zähmungen', 'Rex', 'Level 220'], ['base', 'Basis', 'Hauptbasis', ''], ['item', 'Items', '', ''], ['achievement', 'Bosse', '', 'besiegt']],
   league: [['hero', 'Champions', 'Kai\'Sa', 'Main'], ['achievement', 'Erfolge', 'Gold erreicht', '']],
 };
 const DEFAULT_CATS = [['quest', 'Quests & Aufgaben', 'Hauptquest Akt 2', ''], ['achievement', 'Erfolge & Bosse', '', 'geschafft'], ['item', 'Items & Ausrüstung', '', ''], ['skill', 'Fähigkeiten & Level', '', ''], ['other', 'Sonstiges', '', '']];
@@ -600,7 +656,7 @@ const DEFAULT_CATS = [['quest', 'Quests & Aufgaben', 'Hauptquest Akt 2', ''], ['
 function Progress({ game, params }) {
   const [data, reload] = useRpc('game.progress', { game: game.id }, { events: ['game:progress'] });
   const [cat, setCat] = useState(params.category || '');
-  const gameCats = PROGRESS_CATS[game.id] || DEFAULT_CATS;
+  const gameCats = PROGRESS_CATS[game.id] || game.progressCats || DEFAULT_CATS;
   const [f, setF] = useState({ category: gameCats[0][0], name: '', value: '', status: '' });
   const curCat = gameCats.find((c) => c[0] === f.category) || gameCats[0];
   const items = (data?.items || []).filter((x) => !cat || x.category === cat);
@@ -682,5 +738,6 @@ export const WIDGETS = {
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview,
-  'rok-planner': RokPlanner, progress: Progress,
+  'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
 };
+export { nextScheduled };

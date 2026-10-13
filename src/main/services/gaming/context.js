@@ -2,6 +2,7 @@
 const { execFile } = require('node:child_process');
 const { nowIso, normText, safeJson } = require('../../core/util');
 const PROFILES = require('./profiles.json');
+const { applyKit } = require('./kits');
 const log = require('../../core/logger').scope('game-context');
 
 /**
@@ -21,7 +22,13 @@ class GameContext {
 
   profiles() {
     const custom = safeJson(this.getState('custom_profiles'), []) || [];
-    return [...PROFILES, ...custom];
+    const stats = safeJson(this.getState('steam:stats'), {}) || {};
+    return [...PROFILES, ...custom].map((p) => {
+      const st = stats[p.id];
+      const q = applyKit(p);
+      if (!st) return q;
+      return { ...q, steamAppId: q.steamAppId || st.appid, steamAppIds: st.appids, playtimeMin: st.minutes, lastPlayed: st.lastPlayed, header: q.header || st.header };
+    });
   }
   profile(gid) { return this.profiles().find((p) => p.id === gid) || null; }
 
@@ -116,7 +123,7 @@ class GameContext {
     if (this.steam && this.platform === 'win32') {
       try {
         const appid = await this.steam.runningAppId();
-        if (appid) { const sp = this.profiles().find((p) => p.steamAppId === appid); if (sp && !found.includes(sp.id)) found.push(sp.id); }
+        if (appid) { const sp = this.profiles().find((p) => p.steamAppId === appid || (p.steamAppIds || []).includes(appid)); if (sp && !found.includes(sp.id)) found.push(sp.id); }
       } catch { /* ignore */ }
     }
     const prev = this.running;

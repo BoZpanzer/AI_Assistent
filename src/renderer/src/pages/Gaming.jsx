@@ -6,6 +6,8 @@ import { ChatBar } from '../components/Shell.jsx';
 import { Empty, ask } from '../components/ui.jsx';
 import { WIDGETS, SPAN } from './gaming/widgets.jsx';
 
+const GENRE_LABEL = { survival: 'Survival', shooter: 'Shooter', racing: 'Racing', sports: 'Sport', builder: 'Aufbau & Simulation', rpg: 'Rollenspiel', training: 'Aim-Training', casual: 'Casual & Party' };
+const fmtHours = (min) => (min >= 60 ? `${(min / 60).toLocaleString('de-DE', { maximumFractionDigits: 1 })} h gespielt` : `${min} Min. gespielt`);
 const SOURCE_LABEL = { explicit: 'Aus deiner Aussage erkannt', manual: 'Manuell ausgewählt', process: 'Automatisch erkannt (laufender Prozess)', last: 'Zuletzt bestätigt' };
 
 export function Gaming() {
@@ -27,7 +29,8 @@ export function Gaming() {
               <div class="col" style={{ gap: 2, maxWidth: 300, flex: 'none' }}>
                 <div class="hud-label">{active?.id === p.id ? 'Aktuelles Spiel' : 'Ansicht'}</div>
                 {active?.id === p.id ? <div class="detected"><CircleCheck size={15} />{SOURCE_LABEL[active.source] || 'Aktiv'}</div> : <div class="small muted">Nicht als aktives Spiel gesetzt</div>}
-                {p.integration === 'generic' && <div class="tiny muted">Universelle Oberfläche: Recherche, {p.wiki ? 'Wiki, ' : ''}Notizen, Timer, Quellen</div>}
+                {p.integration === 'generic' && (p.kit ? <div class="tiny muted">{GENRE_LABEL[p.genre] || 'Spiel'}-Oberfläche{p.wiki ? ` · Wiki: ${p.wiki.label}` : ''}</div> : <div class="tiny muted">Universelle Oberfläche: Recherche, {p.wiki ? 'Wiki, ' : ''}Notizen, Timer, Quellen</div>)}
+                {p.playtimeMin > 0 && <div class="tiny" style={{ color: 'var(--text-2)' }}>Steam: {fmtHours(p.playtimeMin)}{p.lastPlayed ? ` · zuletzt ${new Date(p.lastPlayed).toLocaleDateString('de-DE')}` : ''}</div>}
               </div>
               <h2 class="ellipsis" style={{ marginLeft: 18, minWidth: 0, flex: '0 1 auto' }} title={p.name}>{p.name}</h2>
               <span class="grow" />
@@ -43,8 +46,8 @@ export function Gaming() {
               </section>
             )}
             <div class="widgets">
-              {layout.widgets.map((w) => (
-                <div class={SPAN[w.type] || 'w-6'}><Widget game={p} w={w} title={layout.widgetTitles[w.type]} activeId={active?.id} /></div>
+              {layout.widgets.map((w, i) => (
+                <div key={`${p.id}:${w.type}:${w.params?.name || i}`} class={SPAN[w.type] || 'w-6'}><Widget game={p} w={w} title={layout.widgetTitles[w.type]} activeId={active?.id} /></div>
               ))}
             </div>
           </>

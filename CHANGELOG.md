@@ -2,6 +2,17 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.10.0 – Eigene Game-Seiten für deine Steam-Spiele
+
+- **Alle Spiele aus deiner Steam-Bibliothek mit mindestens einer Minute Spielzeit haben jetzt eine eigene, passende Seite**, dazu Hytale. Das sind über 40 Spiele, von ARK, Rust, CS2, EA FC und The Isle über Palworld, Elden Ring, Apex, Raft, Stardew Valley und Timberborn bis zu MX Bikes, The Crew 2 und NFS Heat.
+- **„Frag JARVIS“:** Pro Spiel gibt es typische Fragen zum Anklicken, z. B. „Was mache ich direkt nach dem Wipe zuerst?“ (Rust), „Wie funktioniert Zucht und Imprinting?“ (ARK) oder „Welche SBCs lohnen sich gerade?“ (FC). Fragen mit „…“ landen im Eingabefeld, damit du sie ergänzen kannst.
+- **Oberfläche je Spielart:** Survival bekommt Timer, Basis und Bosse, Shooter Rang, Loadouts und Aufwärmen, Racing Fahrzeuge, Strecken und Setups, FC Ultimate Team und Rivals, Aufbau-Spiele Karten und Forschung. Passend dazu gibt es eigene Kategorien für „Mein Spielstand“.
+- **Checklisten-Vorlagen:** ARK-Bosse und Artefakte, Elden-Ring-Hauptbosse, Palworld-Turmbosse, Raft-Story-Inseln, Stardew-Gemeinschaftszentrum, JWE-Inseln, NFS-Heat-Sammelobjekte, Rust „Nach dem Wipe“, CS2 „Aufwärmen“ u. a. Alles abhakbar und änderbar.
+- **Geprüfte Tools & Links:** Dododex, RustMaps, paldb, Apex Legends Status (aktuelle Map), Leetify, FUTBIN, Elden-Ring-Karte, Content Manager, GamesLantern und für jedes Spiel die Steam-Patchnotes. Bei Rust zeigt JARVIS den nächsten Force-Wipe mit Countdown.
+- **Wikis** für die Recherche: wiki.gg, Fandom, das deutsche Stardew-Wiki und das Bohemia-Wiki für Arma 3.
+- Die Seite zeigt deine **Steam-Spielzeit** und wann du zuletzt gespielt hast. EA FC 25 und FC 26 laufen auf einer Seite zusammen. Soundpad, Wallpaper Engine und Crosshair V2 gelten nicht als Spiele.
+- Game-Seiten aus 3.8.0, auf denen du noch nichts gespeichert hast, werden mit den neuen Seiten zusammengeführt.
+
 ## 3.9.0 – Brain aufgeräumt, Geburtstage in den Kalender
 
 - **Brain-Layout repariert:** Die Karten rechts (Übersicht, Kategorien, Projekte, Pflege) überlappen sich nicht mehr, die Spalte scrollt stattdessen. Der Wissensgraph passt sich der Fenstergröße an: Beschriftungen stehen unter den Knoten, die Anzahl als kleines Abzeichen, und Einträge werden nur so lang angezeigt, wie Platz ist. Mit der Maus siehst du den vollen Titel. Kategorien ohne Einträge sind gedimmt, und unter „Kategorien“ stehen jetzt auch Technologie und Gaming.

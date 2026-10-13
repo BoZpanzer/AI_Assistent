@@ -369,7 +369,7 @@ a:hover { text-decoration: underline; }
 .game-hero .gicon { width: 58px; height: 58px; border-radius: 12px; display: grid; place-items: center; font-family: var(--font-hud); font-weight: 700; font-size: 24px; border: 1px solid var(--line-strong); background: radial-gradient(circle at 30% 30%, rgba(34, 211, 238, 0.28), rgba(8, 47, 73, 0.6)); color: white; text-shadow: 0 0 10px var(--cyan); flex: none; }
 .game-hero h2 { margin: 0; font-size: 24px; font-weight: 700; }
 .game-hero .detected { color: var(--green); font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.widgets { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; align-content: start; }
+.widgets { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-flow: row dense; gap: 10px; align-content: start; }
 .w-12 { grid-column: span 12; } .w-8 { grid-column: span 8; } .w-7 { grid-column: span 7; } .w-6 { grid-column: span 6; } .w-5 { grid-column: span 5; } .w-4 { grid-column: span 4; } .w-3 { grid-column: span 3; }
 @media (max-width: 1500px) { .w-4 { grid-column: span 6; } .w-3 { grid-column: span 6; } }
 .stat { padding: 14px; display: flex; flex-direction: column; gap: 6px; }
@@ -477,3 +477,5 @@ a:hover { text-decoration: underline; }
 .steam-card img { width: 100%; aspect-ratio: 460 / 215; object-fit: cover; border-radius: 5px; background: rgba(56, 189, 248, 0.08); }
 .chip.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
 .game-hero .gheader { height: 64px; aspect-ratio: 460 / 215; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.chip.ask-chip { height: auto; min-height: 28px; padding: 5px 11px; white-space: normal; line-height: 1.3; font-size: 12.5px; color: var(--text); text-align: left; }
+.chip.ask-chip:hover { border-color: var(--cyan); color: white; background: rgba(34, 211, 238, 0.1); }

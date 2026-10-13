@@ -1,4 +1,5 @@
 'use strict';
+const { kitLayout } = require('./kits');
 const fs = require('node:fs');
 const path = require('node:path');
 const { id, nowIso, safeJson, truncate } = require('../../core/util');
@@ -38,13 +39,15 @@ const WIDGETS = {
   'lol-champselect': { title: 'Championauswahl', params: {} },
   'lol-review': { title: 'Nachbesprechung', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
+  ask: { title: 'Frag JARVIS', params: {} },
+  links: { title: 'Tools & Links', params: {} },
 };
 
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
   league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
   rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
-  generic: [{ type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
+  generic: [{ type: 'ask' }, { type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
 };
 
 const TIMER_SCHEMA = { type: 'object', additionalProperties: false, properties: {
@@ -72,7 +75,7 @@ class Gaming {
     if (!p) return null;
     const base = LAYOUTS[p.integration] || LAYOUTS.generic;
     const custom = safeJson(this.context.getState('layout:' + gid), null);
-    let widgets = (custom || base).map((w) => ({ ...w, params: w.params || {} }));
+    let widgets = (custom || (p.kit && p.integration === 'generic' ? kitLayout(p) : base)).map((w) => ({ ...w, params: w.params || {} }));
     if (p.integration === 'generic' && !p.wiki) widgets = widgets.filter((w) => w.type !== 'wiki');
     const focus = this.focus && this.focus.game === gid ? this.focus : null;
     return { game: p, widgets, focus, widgetTitles: Object.fromEntries(Object.entries(WIDGETS).map(([k, v]) => [k, v.title])) };
@@ -226,6 +229,8 @@ class Gaming {
     if (gid === 'eft' && name === 'Raid-Checkliste') {
       return { name, items: ['Ausrüstung geprüft', 'Heilung dabei', 'Munition & Magazine', 'Quest-Items', 'Schlüssel', 'Rucksack frei', 'Exit-Route geplant'].map((t) => ({ id: id('ci'), text: t, done: false })) };
     }
+    const preset = (this.context.profile(gid)?.checklists || []).find((c) => c.name === name);
+    if (preset) return { name, preset: true, items: preset.items.map((t, i) => ({ id: 'p' + i, text: t, done: false })) };
     return { name, items: [] };
   }
   saveChecklist(gid, name, items) {
@@ -294,4 +299,4 @@ class Gaming {
   }
 }
 
-module.exports = { Gaming, WIDGETS, LAYOUTS };
+module.exports = { Gaming, WIDGETS, LAYOUTS, WIDGET_TYPES: Object.keys(WIDGETS) };

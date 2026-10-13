@@ -14,8 +14,10 @@ const log = require('../../core/logger').scope('steam');
  * Nur lesend; „Aktualisieren“ übergibt an den Steam-Client (steam://-Links).
  */
 const STEAM64_BASE = 76561197960265728n;
-// Steam-Werkzeuge/Redistributables, die keine Spiele sind
-const NOT_GAMES = new Set([7, 228980, 250820, 431960, 1007, 1070560, 1391110, 1493710, 1628350, 1826330, 2180100, 2348590]);
+/** Name-Vergleich ohne ™/®/© („EA SPORTS FC™ 25“ = „ea sports fc 25“). */
+const gameKey = (n) => normText(String(n || '').replace(/[™®©]/g, ' '));
+// Steam-Werkzeuge, die keine Spiele sind (Soundpad, Wallpaper Engine, Crosshair V2 …) und Redistributables
+const NOT_GAMES = new Set([629520, 431960, 1366800, 7, 228980, 250820, 431960, 1007, 1070560, 1391110, 1493710, 1628350, 1826330, 2180100, 2348590]);
 
 /** Minimal KeyValues (VDF) parser – text format used by Steam config files. */
 function parseVdf(text) {
@@ -163,7 +165,7 @@ class Steam {
       }
       if (!name) continue; // unbekannt (z. B. entfernt) → nicht anzeigen
       if (type && !['game', 'unknown'].includes(type)) continue; // DLC, Soundtrack, Tool …
-      if (/soundtrack|dedicated server|redistributable|sdk|benchmark/i.test(name)) continue;
+      if (/soundtrack|dedicated server|redistributable|sdk|benchmark|playtest|staging branch|^soundpad$|^wallpaper engine$|^crosshair v2$/i.test(name)) continue;
       games.push({ appid, name, minutes: p.minutes, hours: +(p.minutes / 60).toFixed(1), lastPlayed: p.lastPlayed, installed: !!i, updateRequired: !!i?.updateRequired, updating: !!i?.updating, sizeOnDisk: i?.sizeOnDisk || 0, lastUpdated: i?.lastUpdated || null, header });
     }
     games.sort((a, b) => b.minutes - a.minutes || String(b.lastPlayed).localeCompare(String(a.lastPlayed)));
@@ -178,22 +180,44 @@ class Steam {
     const lib = await this.library();
     if (!lib.available) throw new Error(lib.reason);
     const ctx = this.s.gaming.context;
-    const custom = safeJson(ctx.getState('custom_profiles'), []) || [];
-    let created = 0; let updated = 0; let matched = 0;
+    const builtins = ctx.profiles().filter((p) => !p.custom);
+    let custom = safeJson(ctx.getState('custom_profiles'), []) || [];
+    const stats = {};
+    let created = 0; let updated = 0; let matched = 0; let merged = 0;
     for (const g of lib.games.filter((x) => x.minutes >= minMinutes)) {
-      const nn = normText(g.name);
-      const builtin = ctx.profiles().find((p) => !p.custom && p.steamAppId === g.appid) || ctx.profiles().find((p) => !p.custom && [p.name, ...(p.aliases || [])].some((a) => normText(a) === nn));
-      if (builtin) { matched++; continue; }
-      const pid = 'steam_' + g.appid;
-      const prof = { id: pid, name: g.name, aliases: [g.name.toLowerCase()], processes: [], integration: 'generic', custom: true, steamAppId: g.appid, header: g.header, playtimeMin: g.minutes, lastPlayed: g.lastPlayed, source: 'steam' };
-      const i = custom.findIndex((c) => c.id === pid || (c.custom && c.name.toLowerCase() === g.name.toLowerCase()));
+      const nn = gameKey(g.name);
+      const builtin = builtins.find((p) => p.steamAppId === g.appid) || builtins.find((p) => [p.name, ...(p.aliases || [])].some((a) => gameKey(a) === nn));
+      const pid = builtin ? builtin.id : 'steam_' + g.appid;
+      const st = stats[pid] || { minutes: 0, lastPlayed: null, appids: [] };
+      st.minutes += g.minutes; st.appids.push(g.appid);
+      if (!st.appid || g.minutes > (st.top || 0)) { st.appid = g.appid; st.top = g.minutes; st.header = g.header; }
+      if (g.lastPlayed && (!st.lastPlayed || g.lastPlayed > st.lastPlayed)) st.lastPlayed = g.lastPlayed;
+      stats[pid] = st;
+      if (builtin) {
+        matched++;
+        // Aus 3.8.0 stammende Steam-Seite für ein Spiel, das jetzt ein eigenes Kit hat → zusammenführen, wenn dort noch nichts gespeichert ist
+        const old = custom.findIndex((c) => c.source === 'steam' && c.id === 'steam_' + g.appid);
+        if (old >= 0 && !this.hasData(custom[old].id)) { custom.splice(old, 1); merged++; }
+        continue;
+      }
+      const prof = { id: pid, name: g.name, aliases: [g.name.toLowerCase()], processes: [], integration: 'generic', custom: true, steamAppId: g.appid, header: g.header, source: 'steam' };
+      const i = custom.findIndex((c) => c.id === pid || (c.custom && gameKey(c.name) === nn));
       if (i >= 0) { custom[i] = { ...custom[i], ...prof, id: custom[i].id }; updated++; } else { custom.push(prof); created++; }
     }
+    for (const st of Object.values(stats)) delete st.top;
     ctx.setState('custom_profiles', custom);
-    ctx.setState('steam:lastImport', { at: nowIso(), created, updated, matched, total: lib.games.length });
+    ctx.setState('steam:stats', stats);
+    ctx.setState('steam:lastImport', { at: nowIso(), created, updated, matched, merged, total: lib.games.length });
     this.s.bus.emit('game:profiles', {});
-    log.info(`Steam-Import: ${created} neu, ${updated} aktualisiert, ${matched} vorhanden`);
-    return { created, updated, matched, games: lib.games.length, eligible: lib.games.filter((x) => x.minutes >= minMinutes).length };
+    log.info(`Steam-Import: ${created} neu, ${updated} aktualisiert, ${matched} mit eigenem Kit${merged ? `, ${merged} zusammengeführt` : ''}`);
+    return { created, updated, matched, merged, games: lib.games.length, eligible: lib.games.filter((x) => x.minutes >= minMinutes).length };
+  }
+
+  /** Hat der Nutzer zu dieser Game-Seite schon etwas gespeichert? */
+  hasData(gid) {
+    const db = this.s.db;
+    return !!(db.get('SELECT 1 FROM game_progress WHERE game=? LIMIT 1', gid) || db.get('SELECT 1 FROM knowledge WHERE game=? LIMIT 1', gid)
+      || db.get('SELECT 1 FROM game_timers WHERE game=? LIMIT 1', gid) || db.get("SELECT 1 FROM game_state WHERE key LIKE ? LIMIT 1", `checklist:${gid}:%`));
   }
 
   async updates() {

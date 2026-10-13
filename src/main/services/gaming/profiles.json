@@ -171,14 +171,22 @@
       "ea fc",
       "fifa",
       "fc 26",
-      "fc26"
+      "fc26",
+      "ea sports fc 25",
+      "ea sports fc 26",
+      "ea sports fc 27",
+      "fc 25",
+      "fc25",
+      "fc 27"
     ],
     "processes": [
       "FC26.exe",
       "FC25.exe",
-      "FC24.exe"
+      "FC24.exe",
+      "FC27.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 2669320
   },
   {
     "id": "factorio",
@@ -336,7 +344,8 @@
       "TheIsle-Win64-Shipping.exe",
       "TheIsle.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 376210
   },
   {
     "id": "timberborn",
@@ -347,7 +356,8 @@
     "processes": [
       "Timberborn.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 1062090
   },
   {
     "id": "valorant",
@@ -367,12 +377,15 @@
     "aliases": [
       "cs2",
       "counter strike",
-      "counter-strike"
+      "counter-strike",
+      "counter-strike 2",
+      "cs"
     ],
     "processes": [
       "cs2.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 730
   },
   {
     "id": "baldursgate3",
@@ -417,5 +430,377 @@
       "custom"
     ],
     "accent": "#f5a524"
+  },
+  {
+    "id": "jwe",
+    "name": "Jurassic World Evolution",
+    "short": "JWE",
+    "aliases": [
+      "jurassic world evolution",
+      "jwe"
+    ],
+    "processes": [
+      "JWE.exe"
+    ],
+    "integration": "generic",
+    "accent": "#7cb342",
+    "steamAppId": 648350
+  },
+  {
+    "id": "jwe2",
+    "name": "Jurassic World Evolution 2",
+    "short": "JWE2",
+    "aliases": [
+      "jurassic world evolution 2",
+      "jwe2",
+      "jwe 2"
+    ],
+    "processes": [
+      "JWE2.exe"
+    ],
+    "integration": "generic",
+    "accent": "#7cb342",
+    "steamAppId": 1244460
+  },
+  {
+    "id": "raft",
+    "name": "Raft",
+    "aliases": [
+      "raft"
+    ],
+    "processes": [
+      "Raft.exe"
+    ],
+    "integration": "generic",
+    "accent": "#4fc3f7",
+    "steamAppId": 648800
+  },
+  {
+    "id": "mxbikes",
+    "name": "MX Bikes",
+    "aliases": [
+      "mx bikes",
+      "mxbikes"
+    ],
+    "processes": [
+      "mxbikes.exe"
+    ],
+    "integration": "generic",
+    "accent": "#ff7043",
+    "steamAppId": 655500
+  },
+  {
+    "id": "thecrew2",
+    "name": "The Crew 2",
+    "aliases": [
+      "the crew 2",
+      "crew 2"
+    ],
+    "processes": [
+      "TheCrew2.exe"
+    ],
+    "integration": "generic",
+    "accent": "#ef5350",
+    "steamAppId": 646910
+  },
+  {
+    "id": "aimlabs",
+    "name": "Aimlabs",
+    "aliases": [
+      "aimlabs",
+      "aim lab",
+      "aimlab"
+    ],
+    "processes": [
+      "AimLab_tb.exe"
+    ],
+    "integration": "generic",
+    "accent": "#29b6f6",
+    "steamAppId": 714010
+  },
+  {
+    "id": "nfsheat",
+    "name": "Need for Speed Heat",
+    "short": "NFS Heat",
+    "aliases": [
+      "need for speed heat",
+      "nfs heat"
+    ],
+    "processes": [
+      "NeedForSpeedHeat.exe"
+    ],
+    "integration": "generic",
+    "accent": "#ec407a",
+    "steamAppId": 1222680
+  },
+  {
+    "id": "arma3",
+    "name": "Arma 3",
+    "aliases": [
+      "arma 3",
+      "arma3",
+      "arma"
+    ],
+    "processes": [
+      "arma3_x64.exe",
+      "arma3.exe"
+    ],
+    "integration": "generic",
+    "accent": "#9e9d24",
+    "steamAppId": 107410
+  },
+  {
+    "id": "stardew",
+    "name": "Stardew Valley",
+    "short": "Stardew",
+    "aliases": [
+      "stardew valley",
+      "stardew"
+    ],
+    "processes": [
+      "Stardew Valley.exe",
+      "StardewModdingAPI.exe"
+    ],
+    "integration": "generic",
+    "accent": "#8bc34a",
+    "steamAppId": 413150
+  },
+  {
+    "id": "pixark",
+    "name": "PixARK",
+    "aliases": [
+      "pixark"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#5fb3a1",
+    "steamAppId": 593600
+  },
+  {
+    "id": "sandstorm",
+    "name": "Insurgency: Sandstorm",
+    "short": "Sandstorm",
+    "aliases": [
+      "insurgency sandstorm",
+      "insurgency",
+      "sandstorm"
+    ],
+    "processes": [
+      "InsurgencyClient-Win64-Shipping.exe"
+    ],
+    "integration": "generic",
+    "accent": "#a1887f",
+    "steamAppId": 581320
+  },
+  {
+    "id": "tfd",
+    "name": "The First Descendant",
+    "short": "TFD",
+    "aliases": [
+      "the first descendant",
+      "tfd"
+    ],
+    "processes": [
+      "M1-Win64-Shipping.exe"
+    ],
+    "integration": "generic",
+    "accent": "#7e57c2",
+    "steamAppId": 2074920
+  },
+  {
+    "id": "readyornot",
+    "name": "Ready or Not",
+    "short": "RoN",
+    "aliases": [
+      "ready or not"
+    ],
+    "processes": [
+      "ReadyOrNot-Win64-Shipping.exe"
+    ],
+    "integration": "generic",
+    "accent": "#78909c",
+    "steamAppId": 1144200
+  },
+  {
+    "id": "shellshock",
+    "name": "ShellShock Live",
+    "aliases": [
+      "shellshock live",
+      "shellshock"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#ffca28",
+    "steamAppId": 326460
+  },
+  {
+    "id": "supermarket",
+    "name": "Supermarket Together",
+    "aliases": [
+      "supermarket together"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#66bb6a",
+    "steamAppId": 2709570
+  },
+  {
+    "id": "humanfallflat",
+    "name": "Human Fall Flat",
+    "short": "HFF",
+    "aliases": [
+      "human fall flat",
+      "hff"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#ffb74d",
+    "steamAppId": 477160
+  },
+  {
+    "id": "throneandliberty",
+    "name": "Throne and Liberty",
+    "short": "TL",
+    "aliases": [
+      "throne and liberty",
+      "tl"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#b39ddb",
+    "steamAppId": 2429640
+  },
+  {
+    "id": "theforest",
+    "name": "The Forest",
+    "aliases": [
+      "the forest"
+    ],
+    "processes": [
+      "TheForest.exe"
+    ],
+    "integration": "generic",
+    "accent": "#558b2f",
+    "steamAppId": 242760
+  },
+  {
+    "id": "raceroom",
+    "name": "RaceRoom Racing Experience",
+    "short": "RaceRoom",
+    "aliases": [
+      "raceroom racing experience",
+      "raceroom",
+      "r3e"
+    ],
+    "processes": [
+      "RRRE64.exe",
+      "RRRE.exe"
+    ],
+    "integration": "generic",
+    "accent": "#e53935",
+    "steamAppId": 211500
+  },
+  {
+    "id": "otter",
+    "name": "That One Otter Game",
+    "short": "Otter",
+    "aliases": [
+      "that one otter game"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#8d6e63"
+  },
+  {
+    "id": "tabg",
+    "name": "Totally Accurate Battlegrounds",
+    "short": "TABG",
+    "aliases": [
+      "totally accurate battlegrounds",
+      "tabg"
+    ],
+    "processes": [
+      "TotallyAccurateBattlegrounds.exe"
+    ],
+    "integration": "generic",
+    "accent": "#ffee58",
+    "steamAppId": 823130
+  },
+  {
+    "id": "pubg",
+    "name": "PUBG: BATTLEGROUNDS",
+    "short": "PUBG",
+    "aliases": [
+      "pubg battlegrounds",
+      "pubg",
+      "playerunknowns battlegrounds"
+    ],
+    "processes": [
+      "TslGame.exe"
+    ],
+    "integration": "generic",
+    "accent": "#f9a825",
+    "steamAppId": 578080
+  },
+  {
+    "id": "vrchat",
+    "name": "VRChat",
+    "aliases": [
+      "vrchat"
+    ],
+    "processes": [
+      "VRChat.exe"
+    ],
+    "integration": "generic",
+    "accent": "#26c6da",
+    "steamAppId": 438100
+  },
+  {
+    "id": "vigor",
+    "name": "Vigor",
+    "aliases": [
+      "vigor"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#8d6e63"
+  },
+  {
+    "id": "overwatch",
+    "name": "Overwatch",
+    "short": "OW",
+    "aliases": [
+      "overwatch",
+      "overwatch 2",
+      "ow2"
+    ],
+    "processes": [
+      "Overwatch.exe"
+    ],
+    "integration": "generic",
+    "accent": "#ff9800",
+    "steamAppId": 2357570
+  },
+  {
+    "id": "onearmedcook",
+    "name": "One-armed cook",
+    "aliases": [
+      "one armed cook"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#ffab91"
+  },
+  {
+    "id": "supremacyww3",
+    "name": "Supremacy: World War 3",
+    "short": "Supremacy",
+    "aliases": [
+      "supremacy world war 3",
+      "supremacy ww3"
+    ],
+    "processes": [],
+    "integration": "generic",
+    "accent": "#90a4ae"
   }
 ]
