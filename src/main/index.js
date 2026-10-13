@@ -167,7 +167,10 @@ app.whenReady().then(async () => {
   core = createCore({
     dataDir: app.getPath('userData'), version: VERSION,
     cipher: isE2E && !safeStorage.isEncryptionAvailable() ? require('./core/secrets').memoryCipher : cipher(),
-    fetch: (url, init) => net.fetch(url, init),
+    // Electron's net.fetch bricht bei redirect:'manual' mit „Redirect was cancelled“ ab, statt die
+    // 3xx-Antwort zu liefern. Für manuelle Weiterleitungen (SSRF-Prüfung, private GitHub-Downloads
+    // ohne Token-Weitergabe) deshalb Nodes eigenes fetch verwenden.
+    fetch: (url, init) => (init?.redirect === 'manual' ? globalThis.fetch(url, init) : net.fetch(url, init)),
     platform: {
       toast,
       captureScreen,
@@ -255,6 +258,13 @@ async function runSmoke() {
     report.steps.push({ name: 'Wake-Word-Modelle (ONNX/WASM, lokal)', ok: wake === 'ready', detail: wake });
     const { selfTest } = require('./ipc');
     for (const st of await selfTest(core)) report.steps.push({ name: st.name, ok: st.ok || /optional|nicht hinterlegt/.test(String(st.detail)), detail: st.detail });
+    // Manuelle Weiterleitungen (Update-Download aus privatem Repo, SSRF-geprüfte Webabrufe) müssen die 3xx-Antwort liefern
+    const redirectOk = await new Promise((resolve) => {
+      const srv = require('node:http').createServer((q, r) => { r.writeHead(302, { location: 'https://example.com/x' }); r.end(); }).listen(0, '127.0.0.1', async () => {
+        try { const r = await core.fetch(`http://127.0.0.1:${srv.address().port}/`, { redirect: 'manual' }); resolve(r.status === 302 ? 'OK' : 'Status ' + r.status); } catch (e) { resolve(e.message); } finally { srv.close(); }
+      });
+    });
+    report.steps.push({ name: 'Weiterleitungen (Update-Download)', ok: redirectOk === 'OK', detail: redirectOk });
     const t = core.tasks.create({ title: 'Smoke' }); core.tasks.complete(t.id); report.steps.push({ name: 'Aufgabe anlegen/abschließen', ok: core.tasks.get(t.id).done });
     report.steps.push({ name: 'Tray', ok: !!tray });
     app.getAppMetrics(); // prime CPU counters
