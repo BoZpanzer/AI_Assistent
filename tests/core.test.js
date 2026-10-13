@@ -144,7 +144,7 @@ test('Studium: PDF/MD indexieren, inkrementell, Duplikat, Suche mit Seitenzitat'
   fs.mkdirSync(path.join(folder, 'Mathe'), { recursive: true });
   fs.copyFileSync(path.join(__dirname, 'fixture.pdf'), path.join(folder, 'Mathe', 'Analysis.pdf'));
   fs.writeFileSync(path.join(folder, 'Mathe', 'notizen.md'), '# Neuronale Netze\n\nBackpropagation berechnet Gradienten mit der Kettenregel.');
-  core.settings.update({ study: { folder, enabled: true } });
+  core.settings.update({ study: { folder, source: 'folder', enabled: true } });
   assert.equal(core.study.checkFolder(folder).ok, true);
   await core.study.scan();
   const st = core.study.status();

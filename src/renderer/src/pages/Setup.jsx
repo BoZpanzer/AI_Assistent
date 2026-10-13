@@ -165,7 +165,7 @@ function Study({ done }) {
   const pick = async () => {
     const f = await rpc('dialog.pickFolder'); if (!f) return;
     const c = await rpc('study.check', { folder: f }); setCheck({ ...c, folder: f });
-    if (c.ok) { await upd({ study: { folder: f, enabled: true } }); done(true); setT('loading'); setT(await rpc('study.testIndex', { folder: f }).catch((e) => ({ ok: false, error: e.message }))); }
+    if (c.ok) { await upd({ study: { folder: f, source: 'folder', enabled: true } }); done(true); setT('loading'); setT(await rpc('study.testIndex', { folder: f }).catch((e) => ({ ok: false, error: e.message }))); }
   };
   return (
     <>

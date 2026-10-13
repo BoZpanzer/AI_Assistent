@@ -170,7 +170,7 @@ function StudyCard({ s }) {
       <Field label="Quelle"><Select value={st.source || 'folder'} onChange={(v) => upd({ study: { source: v } })} options={[{ value: 'drive', label: 'Google Drive' }, { value: 'folder', label: 'Ordner auf diesem PC (z. B. OneDrive)' }]} /></Field>
       {st.source === 'drive' ? <DriveSource st={st} /> : (
         <Field label="Importordner" wide>
-          <div class="row gap-s" style={{ width: '100%' }}><input class="inp" value={st.folder} readOnly placeholder="nicht gewählt" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { const c = await rpc('study.check', { folder: f }); if (!c.ok) return toast(c.error, 'error'); upd({ study: { folder: f, enabled: true } }); } }}><FolderOpen size={14} /></button></div>
+          <div class="row gap-s" style={{ width: '100%' }}><input class="inp" value={st.folder} readOnly placeholder="nicht gewählt" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { const c = await rpc('study.check', { folder: f }); if (!c.ok) return toast(c.error, 'error'); upd({ study: { folder: f, source: 'folder', enabled: true } }); } }}><FolderOpen size={14} /></button></div>
         </Field>
       )}
       <Field label="Ordner überwachen & automatisch indexieren"><Toggle checked={st.enabled} onChange={(v) => upd({ study: { enabled: v } })} /></Field>

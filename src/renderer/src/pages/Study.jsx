@@ -38,7 +38,7 @@ export function Study() {
     if (!f) return;
     const c = await rpc('study.check', { folder: f });
     if (!c.ok) return toast(c.error, 'error');
-    await guard(() => rpc('settings.update', { study: { folder: f, enabled: true } }), `Ordner verbunden (${c.files} Dateien gefunden) – Indexierung läuft`);
+    await guard(() => rpc('settings.update', { study: { folder: f, source: 'folder', enabled: true } }), `Ordner verbunden (${c.files} Dateien gefunden) – Indexierung läuft`);
     reloadStatus();
   };
   const p = status?.progress;
