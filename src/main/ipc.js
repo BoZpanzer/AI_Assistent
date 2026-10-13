@@ -240,7 +240,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.sources': ({ game }) => s.gaming.sources(game),
     'game.research': ({ game, query }) => s.gaming.research(game, query),
     'game.wikiSearch': async ({ game, q }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) return { results: [], available: false }; return s.gaming.wiki.search(p.wiki, q); },
-    'game.wikiPage': async ({ game, title }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) throw new Error('Kein Wiki'); return s.gaming.wiki.page(p.wiki, title, 12000); },
+    'game.wikiPage': async ({ game, title, api }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) throw new Error('Kein Wiki'); return s.gaming.wiki.page(p.wiki, title, 12000, api); },
     'game.others': ({ active }) => s.gaming.otherGameNotifications(active),
     'tarkov.maps': async () => { const r = await s.gaming.tarkov.maps(); return { maps: r.value.map((m) => ({ name: m.name, id: m.normalizedName, players: m.players, raidDuration: m.raidDuration })), source: r.source, fetchedAt: r.fetchedAt, offline: r.offline }; },
     'tarkov.map': async ({ map }) => { const r = await s.gaming.tarkov.map(map); return r ? { map: r.value, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline } : null; },

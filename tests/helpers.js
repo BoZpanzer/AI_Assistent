@@ -41,7 +41,7 @@ function fakeSdk(script = [], { models = ['gemini-3.8-flash', 'gemini-3.1-pro-pr
 function tempCore(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-test-'));
   const fake = fakeSdk(opts.script || []);
-  const core = createCore({ dataDir: dir, version: '3.0.0', genaiSdk: fake.sdk, fetch: opts.fetch || (async () => { throw new Error('offline'); }), platform: { toast: opts.toast } });
+  const core = createCore({ dataDir: dir, version: '3.0.0', genaiSdk: opts.genaiSdk || fake.sdk, fetch: opts.fetch || (async () => { throw new Error('offline'); }), platform: { toast: opts.toast } });
   return { core, dir, fake, cleanup: () => { core.stop(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 

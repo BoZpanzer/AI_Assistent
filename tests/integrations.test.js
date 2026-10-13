@@ -268,3 +268,42 @@ test('Performance: Vektorsuche über 20.000 Einträge < 100 ms, FTS-Suche < 30 m
   console.log(`  Vektorsuche 20k×768: ${ms.toFixed(1)} ms · Brain-FTS 2k Einträge: ${ms2.toFixed(1)} ms`);
   cleanup();
 });
+
+test('Gemini-Kontingent: Ausweichmodell bei 429, Recherche notfalls ohne Live-Suche, Wiki-Fallback', async () => {
+  const { fakeSdk } = require('./helpers');
+  const fk = fakeSdk([]);
+  const calls = [];
+  const quota = () => Object.assign(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}'), { status: 429 });
+  class G extends fk.sdk.GoogleGenAI {
+    constructor(o) {
+      super(o);
+      this.models.generateContent = async (req) => {
+        calls.push({ model: req.model, search: !!req.config?.tools?.some((t) => t.googleSearch) });
+        if (req.model === 'gemini-3.8-flash') throw quota();
+        if (req.config?.tools?.some((t) => t.googleSearch)) throw quota(); // Suche überall erschöpft
+        return { text: 'Antwort aus Modellwissen', candidates: [{}] };
+      };
+    }
+  }
+  const { core, cleanup } = tempCore({ genaiSdk: { GoogleGenAI: G } });
+  core.secrets.set('gemini.api_key', 'x');
+  core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.8-flash-lite', 'gemini-3.8-flash-image'] });
+  const t = await core.gemini.generate({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
+  assert.equal(t, 'Antwort aus Modellwissen');
+  assert.deepEqual(calls.map((c) => c.model).slice(0, 2), ['gemini-3.8-flash', 'gemini-3.5-flash'], 'nächstes Flash-Modell, kein Bild-Modell');
+  calls.length = 0;
+  const r = await core.gemini.research('Beste Strategie für Diamanten');
+  assert.equal(r.grounded, false);
+  assert.match(r.text, /Ohne Live-Websuche/);
+  assert.ok(!calls.some((c) => /image/.test(c.model)));
+  const { friendlyError } = require('../src/main/providers/gemini');
+  assert.match(friendlyError(quota()), /Tageskontingent/);
+  // Wiki: deutscher Begriff → deutsches Wiki leer → Fallback-Wiki
+  const { Wiki } = require('../src/main/services/gaming/wiki');
+  const { GameCache } = require('../src/main/services/gaming/cache');
+  const w = new Wiki({ fetch: null, gameCache: new GameCache(core.db) });
+  w.json = async (url) => ({ query: { search: String(url).includes('de.example') ? [] : [{ title: 'Diamond', snippet: 'A <b>diamond</b>' }] } }); // ohne Netz/DNS
+  const res = await w.search({ api: 'https://de.example.org/api.php', label: 'DE', fallback: [{ api: 'https://example.org/api.php', label: 'EN' }] }, 'Diamant');
+  assert.equal(res.results[0].title, 'Diamond'); assert.equal(res.source, 'EN'); assert.equal(res.results[0].api, 'https://example.org/api.php');
+  cleanup();
+});

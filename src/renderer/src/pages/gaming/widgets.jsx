@@ -360,7 +360,7 @@ function Wiki({ game, params }) {
   const [page, setPage] = useState(null);
   const [busy, setBusy] = useState(false);
   const search = async (t = q) => { if (!t.trim()) return; setBusy(true); setPage(null); const r = await guard(() => rpc('game.wikiSearch', { game: game.id, q: t })); setHits(r); setBusy(false); };
-  const open = async (title) => { setBusy(true); setPage(await guard(() => rpc('game.wikiPage', { game: game.id, title }))); setBusy(false); };
+  const open = async (title, api) => { setBusy(true); setPage(await guard(() => rpc('game.wikiPage', { game: game.id, title, api }))); setBusy(false); };
   useEffect(() => { if (params.page) open(params.page); else if (params.query) search(params.query); }, [params.query, params.page]);
   return (
     <Panel icon={Globe} title="Wiki" sub={game.wiki?.label || 'Wiki'}>
@@ -373,8 +373,9 @@ function Wiki({ game, params }) {
         </div>
       ) : (
         <div class="col mt" style={{ gap: 6, maxHeight: 260, overflow: 'auto' }}>
-          {(hits?.results || []).map((h) => <div class="result-row" onClick={() => open(h.title)}><Globe size={14} /><div class="grow"><div class="small">{h.title}</div><div class="tiny muted ellipsis">{h.snippet}</div></div></div>)}
-          {hits && !hits.results?.length && <Empty>Keine Treffer.</Empty>}
+          {(hits?.results || []).map((h) => <div class="result-row" onClick={() => open(h.title, h.api)}><Globe size={14} /><div class="grow"><div class="small">{h.title}</div><div class="tiny muted ellipsis">{h.snippet}</div></div></div>)}
+          {hits && !hits.results?.length && <Empty>Keine Treffer im Wiki. Tipp: Begriff auf Englisch versuchen oder oben „Recherchieren“ nutzen.</Empty>}
+          {hits?.results?.length > 0 && hits.source && hits.source !== game.wiki?.label && <div class="tiny muted">Treffer aus: {hits.source}</div>}
         </div>
       )}
     </Panel>

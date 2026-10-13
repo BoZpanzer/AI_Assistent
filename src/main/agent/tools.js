@@ -253,7 +253,7 @@ function buildTools(s) {
       const p = s.gaming.context.resolve(game, { create: false });
       if (!p?.wiki) return { available: false, hint: 'Für dieses Spiel ist kein Wiki angebunden – web_research verwenden.' };
       const r = await s.gaming.wiki.search(p.wiki, query, 5);
-      const page = readFirst && r.results[0] ? await s.gaming.wiki.page(p.wiki, r.results[0].title, 5000) : null;
+      const page = readFirst && r.results[0] ? await s.gaming.wiki.page(p.wiki, r.results[0].title, 5000, r.results[0].api) : null;
       return { source: r.source, results: r.results, article: page ? { title: page.title, url: page.url, text: page.text } : null };
     } });
 
