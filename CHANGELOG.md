@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.7.0 – Spieldaten im Brain
+
+- **Spieldaten landen jetzt dauerhaft im Brain** (Bereich Gaming): Pro Spiel gibt es einen Eintrag „Spielstand: …“, der sich bei jeder Änderung selbst aktualisiert (mit Verlauf). Für League kommen „Statistik & Rang“ (Winrate, KDA, CS, Champions, Rollen, Ziele) und eine Nachbesprechung je Spiel dazu. JARVIS kennt das alles auch, wenn das Spiel oder der Client gerade nicht läuft.
+- **Nichts ist mehr „leer“, nur weil League gerade zu ist:** „Live-Match“ zeigt deinen letzten Live-Stand und das letzte gespeicherte Spiel, die Championauswahl deine letzte Auswahl mit den Tipps.
+- **„Mein Spielstand“ passt jetzt zum Spiel:** RoK hat Kommandanten, Gebäude, Forschung und Ressourcen, Tarkov Quests, Versteck, PMC und Items, ARK Zähmungen, Basis, Items und Bosse. Andere Spiele bekommen allgemeine Kategorien, und die Beispiele im Eingabefeld passen zum Spiel. Bei League fällt der Kasten weg, dort kommt alles automatisch aus dem Client.
+
 ## 3.6.0 – Stundenplan-Abo (Campus Dual)
 
 - **Kalender-Abos:** Unter Kalender → „Abos & Stundenplan“ einen ICS-Link einfügen (z. B. deinen Campus-Dual-Stundenplan) → „Abonnieren“.

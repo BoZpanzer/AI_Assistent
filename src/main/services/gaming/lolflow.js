@@ -72,6 +72,7 @@ class LolFlow {
       try { const c = await L.champion(e); if (c?.enemytips?.[0]) tips.push(`${c.name}: ${c.enemytips[0]}`); } catch { /* ignore */ }
     }
     this.champ = { active: true, myChampion, locked, role, enemies, tips, advice: this.champ?.adviceKey === key ? this.champ.advice : null };
+    this.remember();
     this.s.bus.emit('lol:champselect', this.champ);
     if (myChampion && enemies.length && this.s.gemini.hasKey()) this.advise(key, myChampion, role, enemies).catch((e) => log.debug('advice', e));
   }
@@ -92,8 +93,12 @@ class LolFlow {
     }
     if (this.lastSelectKey !== key || !this.champ) return;
     this.champ = { ...this.champ, advice, adviceKey: key };
+    this.remember();
     this.s.bus.emit('lol:champselect', this.champ);
   }
+
+  remember() { if (this.champ?.myChampion) this.s.gaming.cache.set('lol:lastchamp', { ...this.champ, active: false, at: nowIso() }, 'League-Client (lokal)', 365 * 86400000); }
+  state() { return this.champ || { active: false, last: this.s.gaming.cache.get('lol:lastchamp', { allowStale: true })?.value || null }; }
 
   /** Post-game review of the newest game. */
   async review({ force = false } = {}) {

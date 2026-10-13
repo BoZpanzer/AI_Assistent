@@ -28,6 +28,7 @@ const { Drive } = require('./services/drive');
 const { Feeds } = require('./services/ics');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
+const { GameBrainSync } = require('./services/gaming/brainsync');
 
 /**
  * Composition root. Pure Node (no Electron imports) so the complete service
@@ -64,6 +65,7 @@ function createCore(opts) {
   s.gaming = new Gaming(s);
   s.gaming.tracker = new TarkovTracker(s);
   s.gaming.lolflow = new LolFlow(s);
+  s.gaming.brainSync = new GameBrainSync(s);
   s.system = new System(s);
   s.updater = new Updater(s);
   s.briefing = () => briefing(s);
@@ -78,13 +80,14 @@ function createCore(opts) {
     s.gaming.context.start();
     s.study.start();
     s.scheduler.start();
+    s._brainSyncTimer = setTimeout(() => s.gaming.brainSync.syncAll(), 30_000);
     bus.on('settings:changed', ({ keys }) => {
       if (keys.includes('study')) { s.study.start(); s.scheduler.runNow('study-scan'); if (s.drive.active()) s.scheduler.runNow('drive-sync'); }
       if (keys.includes('gaming')) s.gaming.context.start();
     });
   };
   s.stop = () => {
-    try { s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._brainSyncTimer); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

@@ -227,7 +227,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'tracker.disconnect': () => s.gaming.tracker.disconnect(),
     'lol.reviews': ({ limit } = {}) => s.gaming.lolflow.reviews(limit || 10),
     'lol.reviewNow': () => s.gaming.lolflow.review({ force: true }),
-    'lol.champselect': () => s.gaming.lolflow.champ || { active: false },
+    'lol.champselect': () => s.gaming.lolflow.state(),
     'game.lastMap': ({ game }) => (game ? s.gaming.lastMap(game) : { map: null, hasImage: false, markers: [] }),
     'game.setLastMap': ({ game, map }) => s.gaming.setLastMap(game, map),
     'game.addMarker': ({ game, map, marker }) => s.gaming.addMarker(game, map, marker),

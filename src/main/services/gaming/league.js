@@ -60,10 +60,12 @@ class League {
       } else state.loggedAt = this.lastLive.loggedAt;
       state.tips = this.liveTips(state);
       this.lastLive = state;
+      // Letzten Live-Stand merken – wird angezeigt, wenn gerade kein Match läuft
+      if (!this._lastSaved || Date.now() - this._lastSaved > 20000) { this._lastSaved = Date.now(); this.cache.set('lol:lastlive', { ...state, at: nowIso() }, 'Live Client Data API (lokal)', 365 * 86400000); }
       return state;
     } catch {
       this.liveSession = null; this.lastLive = null;
-      return { connected: false, reason: 'Kein laufendes Match erkannt (Live Client API nicht erreichbar).' };
+      return { connected: false, reason: 'Gerade läuft kein Match.', last: this.cache.get('lol:lastlive', { allowStale: true })?.value || null, lastMatch: this.matches(1)[0] || null };
     }
   }
 

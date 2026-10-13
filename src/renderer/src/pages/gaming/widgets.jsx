@@ -480,13 +480,26 @@ function LolLive() {
   useEvent('lol:live', (d) => setLive(d));
   return (
     <Panel icon={Radio} title="Live-Match" sub="Live Client Data API (lokal, nur während eines Matches)" right={busy ? <Spinner /> : null}>
-      {!live?.connected ? <div class="notice">{live?.reason || 'Kein laufendes Match.'}</div> : <>
+      {!live?.connected ? <LastMatch live={live} /> : <>
         <div class="row"><b style={{ fontSize: 17 }}>{live.champion}</b><span class="chip static">Lvl {live.level}</span><span class="chip static">{Math.floor(live.seconds / 60)}:{String(live.seconds % 60).padStart(2, '0')}</span><span class="grow" /><b>{live.kills}/{live.deaths}/{live.assists}</b></div>
         <div class="small mt">CS {live.cs} ({live.csPerMin ?? '–'}/min) · Gold {live.gold} · Vision {Math.round(live.ward || 0)}</div>
         {live.opponent && <div class="small muted">Lane-Gegner: {live.opponent.champion} · Lvl {live.opponent.level} · CS {live.opponent.cs}</div>}
         <div class="col mt" style={{ gap: 4 }}>{(live.tips || []).map((t) => <div class="small"><Sparkles size={12} style={{ color: 'var(--cyan)' }} /> {t}</div>)}{!live.tips?.length && <div class="small muted">Keine Hinweise – läuft gut.</div>}</div>
       </>}
     </Panel>
+  );
+}
+
+function LastMatch({ live }) {
+  const l = live?.last; const m = live?.lastMatch;
+  if (!l && !m) return <div class="notice">{live?.reason || 'Gerade läuft kein Match.'} Sobald du spielst, erscheinen hier deine Live-Werte – und bleiben danach als „letztes Match“ stehen.</div>;
+  return (
+    <div class="col" style={{ gap: 6 }}>
+      <div class="tiny muted">Gerade läuft kein Match – zuletzt gespeichert:</div>
+      {l && <div class="row"><b style={{ fontSize: 16 }}>{l.champion}</b><span class="chip static">Lvl {l.level}</span><span class="chip static">{Math.floor(l.seconds / 60)}:{String(l.seconds % 60).padStart(2, '0')}</span><span class="grow" /><b>{l.kills}/{l.deaths}/{l.assists}</b></div>}
+      {l && <div class="small muted">CS {l.cs} ({l.csPerMin ?? '–'}/min) · Gold {l.gold} · Live-Stand {ago(l.at)}</div>}
+      {m && <div class="small" style={{ borderTop: l ? '1px solid var(--line)' : 'none', paddingTop: l ? 6 : 0 }}><b class={m.win ? 'win' : 'loss'}>{m.win ? 'Sieg' : 'Niederlage'}</b> mit {m.champion} · {m.kills}/{m.deaths}/{m.assists} · {m.csPerMin} CS/min{m.vision != null ? ` · Vision ${m.vision}` : ''} <span class="tiny muted">(letztes gespeichertes Ranked-Spiel)</span></div>}
+    </div>
   );
 }
 
@@ -520,14 +533,15 @@ function LolChampion({ params }) {
 
 function LolChampSelect() {
   const [cs, setCs] = useState(null);
-  useEffect(() => { rpc('lol.champselect').then(setCs).catch(() => {}); }, []);
-  useEvent('lol:champselect', setCs);
+  useEffect(() => { rpc('lol.champselect').then((x) => setCs(x?.active ? x : x?.last ? { ...x.last, last: x.last } : x)).catch(() => {}); }, []);
+  useEvent('lol:champselect', (x) => setCs((prev) => (x?.active ? x : prev?.myChampion ? { ...prev, active: false, last: { ...prev, at: new Date().toISOString() } } : x)));
   return (
     <Panel icon={Swords} title="Championauswahl" sub="Nur Champions, keine Spielerdaten (Riot-Richtlinie) · lokaler Client">
-      {!cs?.active ? <div class="notice small">Sobald du im League-Client in der Championauswahl bist, erscheinen hier (und im Overlay) Matchup-Hinweise zu den gegnerischen Champions.</div> : <>
+      {!cs?.active && !cs?.last ? <div class="notice small">Sobald du im League-Client in der Championauswahl bist, erscheinen hier (und im Overlay) Matchup-Hinweise zu den gegnerischen Champions.</div> : <>
+        {!cs.active && <div class="tiny muted mb">Letzte Championauswahl · {ago(cs.last.at)}</div>}
         <div class="row wrap gap-s"><b style={{ fontSize: 16 }}>{cs.myChampion || 'Noch kein Pick'}</b>{cs.role && <span class="chip static">{cs.role}</span>}{cs.myChampion && !cs.locked && <span class="chip static">Vorauswahl</span>}</div>
         <div class="small muted mt">Gegner: {cs.enemies?.length ? cs.enemies.join(', ') : 'noch verdeckt'}</div>
-        {cs.advice ? <div class="md small mt" dangerouslySetInnerHTML={{ __html: renderMarkdown(cs.advice) }} /> : cs.myChampion && cs.enemies?.length ? <div class="row small mt"><Spinner /> JARVIS denkt über das Matchup nach …</div> : null}
+        {cs.advice ? <div class="md small mt" dangerouslySetInnerHTML={{ __html: renderMarkdown(cs.advice) }} /> : cs.active && cs.myChampion && cs.enemies?.length ? <div class="row small mt"><Spinner /> JARVIS denkt über das Matchup nach …</div> : null}
         {cs.tips?.length > 0 && <div class="col mt" style={{ gap: 3 }}><b class="small">Tipps gegen die Gegner (Data Dragon)</b>{cs.tips.map((t) => <div class="small muted">• {t}</div>)}</div>}
       </>}
     </Panel>
@@ -573,10 +587,22 @@ const PROGRESS_HINT = {
   league: '„Jarvis, ich bin jetzt Gold 2“ · „Kai\'Sa ist mein neuer Main“',
   ark: '„Jarvis, hab einen Rex Level 220 gezähmt“',
 };
+// Welche Kategorien in welchem Spiel Sinn ergeben (erste = Standard beim Eintragen)
+const PROGRESS_CATS = {
+  rok: [['commander', 'Kommandanten', 'Sun Tzu', 'Level 40 · 5-5-5-5'], ['building', 'Gebäude', 'Rathaus', 'Stufe 22'], ['research', 'Forschung', 'Ausrüstung', 'fertig'], ['resource', 'Ressourcen', 'Speedups', '3 Tage']],
+  eft: [['quest', 'Quests', 'Debut', ''], ['base', 'Versteck', 'Wasseraufbereitung', 'Stufe 2'], ['character', 'PMC', 'PMC-Level', '34'], ['item', 'Items & Schlüssel', 'Marked Key', 'vorhanden']],
+  ark: [['creature', 'Zähmungen', 'Rex', 'Level 220'], ['base', 'Basis', 'Hauptbasis', 'Red Obelisk'], ['item', 'Items', 'Tek-Rüstung', ''], ['achievement', 'Bosse', 'Broodmother', 'besiegt']],
+  ark_asa: [['creature', 'Zähmungen', 'Rex', 'Level 220'], ['base', 'Basis', 'Hauptbasis', ''], ['item', 'Items', '', ''], ['achievement', 'Bosse', '', 'besiegt']],
+  league: [['hero', 'Champions', 'Kai\'Sa', 'Main'], ['achievement', 'Erfolge', 'Gold erreicht', '']],
+};
+const DEFAULT_CATS = [['quest', 'Quests & Aufgaben', 'Hauptquest Akt 2', ''], ['achievement', 'Erfolge & Bosse', '', 'geschafft'], ['item', 'Items & Ausrüstung', '', ''], ['skill', 'Fähigkeiten & Level', '', ''], ['other', 'Sonstiges', '', '']];
+
 function Progress({ game, params }) {
   const [data, reload] = useRpc('game.progress', { game: game.id }, { events: ['game:progress'] });
   const [cat, setCat] = useState(params.category || '');
-  const [f, setF] = useState({ category: game.id === 'rok' ? 'commander' : game.id === 'eft' ? 'quest' : 'character', name: '', value: '', status: '' });
+  const gameCats = PROGRESS_CATS[game.id] || DEFAULT_CATS;
+  const [f, setF] = useState({ category: gameCats[0][0], name: '', value: '', status: '' });
+  const curCat = gameCats.find((c) => c[0] === f.category) || gameCats[0];
   const items = (data?.items || []).filter((x) => !cat || x.category === cat);
   const cats = data?.categories || {};
   const used = [...new Set((data?.items || []).map((x) => x.category))];
@@ -598,12 +624,12 @@ function Progress({ game, params }) {
     <Panel icon={Trophy} title="Mein Spielstand" sub="JARVIS kennt diesen Stand bei jeder Frage zum Spiel"
       right={(data?.items || []).length > 0 && <button class="btn xs ghost" title="Z. B. nach einem Wipe" onClick={async () => { if (await ask(`Spielstand ${game.name} zurücksetzen? Der alte Stand wird archiviert.`, '', { confirmOnly: true, danger: true, okLabel: 'Zurücksetzen' })) guard(() => rpc('game.progressWipe', { game: game.id }), 'Spielstand archiviert – neuer Stand beginnt'); }}>Wipe / Neustart</button>}>
       {game.id === 'eft' && <TrackerStrip />}
-      {used.length > 1 && <div class="row wrap gap-s mb"><span class={`chip ${!cat ? 'active' : ''}`} onClick={() => setCat('')}>Alle</span>{used.map((c) => <span class={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{cats[c] || c}</span>)}</div>}
+      {used.length > 1 && <div class="row wrap gap-s mb"><span class={`chip ${!cat ? 'active' : ''}`} onClick={() => setCat('')}>Alle</span>{used.map((c) => <span class={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{gameCats.find((g) => g[0] === c)?.[1] || cats[c] || c}</span>)}</div>}
       <div class="col" style={{ gap: 4, maxHeight: 250, overflow: 'auto' }}>
         {!items.length && <div class="notice small">Noch nichts gespeichert. Erzähl JARVIS einfach von deinem Fortschritt, z. B. {PROGRESS_HINT[game.id] || '„Jarvis, ich bin jetzt Level 30“'} – oder trag es unten ein.</div>}
         {Object.entries(grouped).map(([c, list]) => (
           <div>
-            <div class="hud-label" style={{ fontSize: 11, margin: '6px 0 2px' }}>{cats[c] || c} · {list.length}</div>
+            <div class="hud-label" style={{ fontSize: 11, margin: '6px 0 2px' }}>{gameCats.find((g) => g[0] === c)?.[1] || cats[c] || c} · {list.length}</div>
             {list.map((x) => (
               <div class="row small" style={{ padding: '3px 2px', cursor: 'pointer' }} onClick={() => edit(x)} title={`Zuletzt geändert ${fmtDateTime(x.updatedAt)} · Quelle: ${{ chat: 'Gespräch', voice: 'Sprache', manual: 'manuell', api: 'Schnittstelle' }[x.source] || x.source}`}>
                 {x.status === 'done' ? <Check size={14} style={{ color: 'var(--green)' }} /> : <span style={{ width: 14 }} />}
@@ -617,9 +643,9 @@ function Progress({ game, params }) {
         ))}
       </div>
       <div class="row wrap gap-s mt">
-        <Select style={{ width: 130 }} value={f.category} onChange={(v) => setF({ ...f, category: v })} options={Object.entries(cats).map(([k, l]) => ({ value: k, label: l }))} />
-        <input class="inp grow" style={{ minWidth: 140 }} placeholder="Name (z. B. Sun Tzu)" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <input class="inp" style={{ width: 120 }} placeholder="Stand (Level 40)" value={f.value} onInput={(e) => setF({ ...f, value: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <Select style={{ width: 150 }} value={f.category} onChange={(v) => setF({ ...f, category: v })} options={[...gameCats.map(([k, l]) => ({ value: k, label: l })), ...used.filter((u) => !gameCats.some((c) => c[0] === u)).map((u) => ({ value: u, label: cats[u] || u }))]} />
+        <input class="inp grow" style={{ minWidth: 140 }} placeholder={curCat[2] ? `Name (z. B. ${curCat[2]})` : 'Name'} value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <input class="inp" style={{ width: 130 }} placeholder={curCat[3] ? `Stand (${curCat[3]})` : 'Stand (optional)'} value={f.value} onInput={(e) => setF({ ...f, value: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <Select style={{ width: 105 }} value={f.status} onChange={(v) => setF({ ...f, status: v })} options={[{ value: '', label: '–' }, { value: 'done', label: 'erledigt' }, { value: 'in_progress', label: 'in Arbeit' }, { value: 'todo', label: 'offen' }]} />
         <button class="btn sm" onClick={add}><Plus size={14} /></button>
       </div>

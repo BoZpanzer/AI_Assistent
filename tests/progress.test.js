@@ -104,3 +104,25 @@ test('Migration einer bestehenden 3.0.0-Datenbank (Schema v1 → v2) – Daten b
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('Spieldaten im Brain: Spielstand-Eintrag wird angelegt und aktualisiert, LoL-Statistik und Nachbesprechung', async () => {
+  const { core, cleanup } = tempCore();
+  core.gaming.progress.upsert('rok', { category: 'commander', name: 'Sun Tzu', value: 'Level 40', source: 'chat' });
+  const e1 = core.gaming.brainSync.syncProgress('rok');
+  assert.equal(e1.domain, 'gaming'); assert.match(e1.title, /Spielstand: Rise of Kingdoms/); assert.match(e1.content, /Sun Tzu/);
+  core.gaming.progress.upsert('rok', { category: 'commander', name: 'Sun Tzu', value: 'Level 50', source: 'chat' });
+  const e2 = core.gaming.brainSync.syncProgress('rok');
+  assert.equal(e2.id, e1.id, 'derselbe Eintrag wird aktualisiert, kein Duplikat');
+  assert.match(e2.content, /Level 50/);
+  assert.equal(core.brain.list({ domain: 'gaming' }).filter((x) => /Spielstand/.test(x.title)).length, 1);
+  // LoL: gespeicherte Matches → Statistik-Eintrag
+  for (let i = 0; i < 3; i++) core.db.run('INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', 'M' + i, 'p', new Date(Date.now() - i * 3600e3).toISOString(), JSON.stringify({ matchId: 'M' + i, champion: 'Ahri', win: i !== 1, kills: 5, deaths: 3, assists: 7, cs: 180, csPerMin: 6.8, vision: 20, goldPerMin: 400, damagePerMin: 600, killParticipation: 55, role: 'MIDDLE', duration: 1600 }));
+  const st = core.gaming.brainSync.syncLeagueStats();
+  assert.match(st.content, /67% Siege/); assert.match(st.content, /Ahri \(3 Spiele/);
+  core.bus.emit('lol:review', { title: 'Ahri · Sieg', summary: '**Sieg** mit Ahri · 5/3/7', win: true });
+  assert.ok(core.brain.list({ domain: 'gaming' }).some((x) => /LoL-Nachbesprechung/.test(x.title)));
+  // Brain-Suche findet den Spielstand auch ohne laufendes Spiel
+  const r = await core.brain.search('Sun Tzu Level', { semantic: false });
+  assert.ok(r.results.some((x) => /Spielstand/.test(x.title)));
+  cleanup();
+});
