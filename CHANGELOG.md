@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.12.0 – Gemini-Limits verständlich und ohne Abbruch
+
+- **Klare Meldung, welches Limit gegriffen hat**, z. B. „Anfragen pro Minute (Limit 10) bei gemini-3.8-flash – kostenloser Tarif“, statt nur „429“.
+- **Modelle, die dein Tarif nicht erlaubt (limit: 0), überspringt JARVIS ab sofort automatisch**, z. B. Pro-Modelle im kostenlosen Tarif. „Reasoning“-Fragen gehen dann an das schnelle Modell.
+- **Minutenlimit:** Statt abzubrechen wartet JARVIS kurz (bis ca. 1 Minute) und versucht es selbst erneut. Im Chat steht solange „Gemini-Minutenlimit erreicht – JARVIS wartet kurz …“.
+- Ist ein Tageskontingent aufgebraucht, wird das Modell für ein paar Stunden übersprungen. Es geht dann direkt mit einem anderen Gemini-Modell weiter. Ein leeres Suchkontingent sperrt dabei nicht das ganze Modell.
+
 ## 3.11.0 – Gemini-Ausfälle abfangen, LoL-Spiele ohne Matchhistorie
 
 - **„Modell überlastet“ (503):** Ist Gemini überlastet, versucht JARVIS es automatisch erneut und weicht danach auf ein anderes Gemini-Modell aus (z. B. Flash-Lite oder Pro). Es bleibt alles in der Cloud, es gibt keine lokalen Modelle.

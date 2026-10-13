@@ -162,7 +162,7 @@ class Gemini {
     const contents = [{ role: 'user', parts: [{ text: query }] }];
     let r; let grounded = true;
     try {
-      r = await this.withFallback(this.requireModel('research'), (m) => this.client().models.generateContent({ model: m, contents, config: { systemInstruction: sys, tools: [{ googleSearch: {} }], temperature: 0.2 } }));
+      r = await this.withFallback(this.requireModel('research'), (m) => this.client().models.generateContent({ model: m, contents, config: { systemInstruction: sys, tools: [{ googleSearch: {} }], temperature: 0.2 } }), { block: false, maxWaitMs: 0 });
     } catch (e) {
       if (!isQuota(e)) throw e;
       // Suchkontingent erschöpft → ehrlich ohne Live-Suche antworten statt gar nicht
@@ -187,7 +187,7 @@ class Gemini {
    * - 429 Minutenlimit: Wartezeit aus der Antwort abwarten, sonst ein anderes Flash-Modell (eigenes Kontingent)
    * Fehler wie ungültiger Schlüssel werden sofort gemeldet.
    */
-  async withFallback(model, fn, { sleep = this.sleep || ((ms) => new Promise((res) => setTimeout(res, ms))), onWait, maxWaitMs = 65000 } = {}) {
+  async withFallback(model, fn, { sleep = this.sleep || ((ms) => new Promise((res) => setTimeout(res, ms))), onWait, maxWaitMs = 65000, block = true } = {}) {
     const avail = (this.settings.get('availableModels') || []).map((n) => String(n).replace(/^models\//, ''));
     const usable = (n) => !/(image|tts|live|audio|embedding|thinking-exp|vision|aqa|imagen|veo)/.test(n);
     const flash = avail.filter((n) => /flash/.test(n) && usable(n)).sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
@@ -216,8 +216,8 @@ class Gemini {
             if (isOverloaded(e) && attempt < tries - 1) { await sleep(attempt === 0 ? 1500 : 4000); continue; }
             if (isQuota(e)) {
               const q = quotaInfo(e);
-              if (q.limit === 0) { this.block(m, 24 * 3600_000, 'im aktuellen Tarif nicht verfügbar (limit: 0)'); break; }
-              if (q.perDay) { this.block(m, 6 * 3600_000, 'Tageskontingent aufgebraucht'); break; }
+              if (q.limit === 0) { if (block) this.block(m, 24 * 3600_000, 'im aktuellen Tarif nicht verfügbar (limit: 0)'); break; }
+              if (q.perDay) { if (block) this.block(m, 6 * 3600_000, 'Tageskontingent aufgebraucht'); break; }
               const wait = retryDelayMs(e);
               if (wait != null) minWait = minWait == null ? wait : Math.min(minWait, wait);
               if (attempt === 0 && wait != null && wait <= 12000) { await sleep(wait + 300); continue; }
