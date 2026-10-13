@@ -20,6 +20,8 @@ jobs:
       - name: Abhängigkeiten (gepinnt, package-lock)
         run: npm ci
       - name: Unit- & Integrationstests
+        env:
+          JARVIS_SKIP_WAKEWORD_AUDIO: '1'
         run: npm run test:ci
       - name: NSIS installieren
         run: choco install nsis -y --no-progress
