@@ -185,7 +185,7 @@ app.whenReady().then(async () => {
     updatePublicKey: loadUpdateKey(), updateRepo: loadUpdateRepo(),
     genaiSdk: isE2E && process.env.JARVIS_FAKE_GEMINI === '1' ? require('../../tests/e2e/fake-genai.js') : undefined,
   });
-  core.platform.campusDual = require('./campusdual-session').createCampusDual({ secrets: core.secrets, log: logger.scope('campusdual'), parent: () => win });
+  core.platform.campusDual = require('./campusdual-session').createCampusDual({ secrets: core.secrets, settings: core.settings, log: logger.scope('campusdual'), parent: () => win });
   if (isSmoke && process.env.JARVIS_SMOKE_ANIM) core.settings.update({ animations: process.env.JARVIS_SMOKE_ANIM, setupComplete: true });
   const log = logger.scope('main');
   log.info(`JARVIS ${VERSION} startet (Electron ${process.versions.electron})`);

@@ -481,3 +481,5 @@ a:hover { text-decoration: underline; }
 .chip.ask-chip:hover { border-color: var(--cyan); color: white; background: rgba(34, 211, 238, 0.1); }
 .fix-btn { margin-left: 8px; vertical-align: middle; }
 .toast .fix-btn { display: inline-flex; margin-top: 4px; }
+/* Panels in scrollbaren Spalten nie zusammendrücken (sonst überlappen sie) */
+.col.scroll > .panel, .col.scroll > section { flex-shrink: 0; }

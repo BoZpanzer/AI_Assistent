@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.15.1 – Campus-Dual-Anmeldung & Kalender-Layout repariert
+
+- **Campus-Dual-Anmeldefenster zeigte „404 Not found“:** JARVIS probiert jetzt nacheinander die üblichen Adressen des Campus-Dual-Launchpads. Findet es keine, kommt eine klare Anleitung. Unter Kalender → Abos → „Campus-Dual-Adresse“ kannst du die Adresse aus deinem Browser eintragen, dann nimmt JARVIS genau die.
+- Ein Campus-Dual-Link ohne Anmeldung zeigt jetzt „Bei Campus Dual anmelden“ mit Knopf statt „Keine gültige iCalendar-Datei“.
+- **Kalender-Layout:** Die Karten rechts (Google Kalender, Kalender, Abos) überlappen sich bei kleineren Fenstern nicht mehr, die Spalte scrollt. Die Monatsleiste bricht sauber um, und der Campus-Dual-Bereich passt in die schmale Spalte.
+
 ## 3.15.0 – Campus Dual mit Anmeldung, Sprach-Standby
 
 - **Campus Dual (neues Portal) mit Anmeldung:** Kalender → Abos → **„Bei Campus Dual anmelden“** öffnet ein Fenster, in dem du dich ganz normal anmeldest. JARVIS sieht und speichert dein Passwort nicht. Danach findet JARVIS deinen Stundenplan-Link selbst (oder du fügst deinen ICS-Link ein) und lädt ihn alle 15 Minuten mit deiner Anmeldung. Die Anmeldung bleibt auch nach einem Neustart erhalten (verschlüsselt gespeichert).

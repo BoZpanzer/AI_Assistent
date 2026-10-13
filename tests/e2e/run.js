@@ -216,9 +216,9 @@ app.whenReady().then(async () => {
   await step('Kalender: Campus Dual verbinden (Anleitung sichtbar)', async () => {
     await nav('calendar');
     await waitFor(() => js(`document.body.textContent.includes('Bei Campus Dual anmelden')`), 5000);
-    await js(`[...document.querySelectorAll('.btn')].find(b=>b.textContent.trim()==='Matrikelnummer + Hash')?.click()`);
+    await js(`[...document.querySelectorAll('.btn')].find(b=>b.textContent.includes('Matrikelnummer + Hash'))?.click()`);
     await waitFor(() => js(`document.body.textContent.includes('im Filter „room“')`), 5000);
-    await shot('46-campusdual');
+    win.setSize(1280, 800); await sleep(500); await shot('46-campusdual'); win.setSize(1600, 1000); await sleep(300);
   });
   await step('Kalender: ganztägiger Geburtstag mit Farbe + eigenes Dropdown', async () => {
     await nav('calendar');

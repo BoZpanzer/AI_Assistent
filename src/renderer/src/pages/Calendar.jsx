@@ -38,9 +38,9 @@ export function Calendar() {
     <div class="page">
       <div class="page-body" style={{ display: 'grid', gridTemplateColumns: '1fr 250px', gap: 10 }}>
         <section class="panel glow" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, padding: 14, gap: 10 }}>
-          <div class="row">
+          <div class="row wrap" style={{ rowGap: 8 }}>
             <CalendarDays size={28} style={{ color: 'var(--cyan)' }} />
-            <div class="hud-title" style={{ fontSize: 22, color: 'white', minWidth: 260 }}>{title}</div>
+            <div class="hud-title ellipsis" style={{ fontSize: 22, color: 'white', minWidth: 0, flex: '0 1 260px' }}>{title}</div>
             <button class="btn icon sm" onClick={() => step(-1)}><ChevronLeft size={18} /></button>
             <button class="btn sm" onClick={() => setCursor(new Date())}>Heute</button>
             <button class="btn icon sm" onClick={() => step(1)}><ChevronRight size={18} /></button>
@@ -154,6 +154,7 @@ function Feeds({ onChange }) {
   };
   const [cdSt, reloadCdSt] = useRpc('feeds.campusDualStatus', {}, { events: ['feeds:changed'], initial: null });
   const [cdIcs, setCdIcs] = useState('');
+  const settings = useStore((x) => x.settings);
   const loginCd = async () => {
     setBusy(true);
     const hasFeed = feeds.some((f) => f.kind === 'campusdual-session');
@@ -186,13 +187,15 @@ function Feeds({ onChange }) {
         {cdSt?.available ? <>
           <div class="tiny muted">Du meldest dich in einem JARVIS-Fenster ganz normal bei Campus Dual an – JARVIS sieht dein Passwort nicht und holt den Stundenplan danach alle 15 Min. Läuft die Anmeldung ab, sagt JARVIS Bescheid.</div>
           <div class="tiny" style={{ color: cdSt.loggedIn ? 'var(--cyan)' : 'var(--text-3)' }}>{cdSt.loggedIn ? '● angemeldet' : '○ nicht angemeldet'}</div>
-          {!feeds.some((f) => f.kind === 'campusdual-session') && <input class="inp" placeholder="ICS-Link aus Campus Dual (optional – JARVIS versucht ihn selbst zu finden)" value={cdIcs} onInput={(e) => setCdIcs(e.currentTarget.value)} />}
-          <div class="row gap-s" style={{ justifyContent: 'flex-end' }}>
-            {cdSt.loggedIn && <button class="btn xs ghost" title="Anmeldung in JARVIS löschen" onClick={() => guard(() => rpc('feeds.campusDualLogout'), 'Abgemeldet').then(reloadCdSt)}>Abmelden</button>}
-            <button class="btn sm primary" disabled={busy} onClick={loginCd}>{busy ? <Spinner /> : <Link2 size={14} />}{feeds.some((f) => f.kind === 'campusdual-session') ? 'Neu anmelden' : 'Bei Campus Dual anmelden'}</button>
-          </div>
+          {!feeds.some((f) => f.kind === 'campusdual-session') && <input class="inp" placeholder="ICS-Link (optional)" title="Optional – JARVIS versucht ihn selbst zu finden" value={cdIcs} onInput={(e) => setCdIcs(e.currentTarget.value)} />}
+          <button class="btn sm primary" style={{ width: '100%', justifyContent: 'center' }} disabled={busy} onClick={loginCd}>{busy ? <Spinner /> : <Link2 size={14} />}{feeds.some((f) => f.kind === 'campusdual-session') ? 'Neu anmelden' : 'Bei Campus Dual anmelden'}</button>
+          {cdSt.loggedIn && <button class="btn xs ghost" style={{ alignSelf: 'flex-end' }} title="Anmeldung in JARVIS löschen" onClick={() => guard(() => rpc('feeds.campusDualLogout'), 'Abgemeldet').then(reloadCdSt)}>Abmelden</button>}
+          <details class="tiny muted"><summary style={{ cursor: 'pointer' }}>Campus-Dual-Adresse (falls die Anmeldung „404“ zeigt)</summary>
+            <div class="mt">Im Browser bei Campus Dual anmelden und die Adresse aus der Adresszeile hier einfügen:</div>
+            <input class="inp mt" placeholder="https://….campus-dual.de/…" defaultValue={settings?.campusDualUrl || ''} onChange={(e) => guard(() => rpc('settings.update', { campusDualUrl: e.currentTarget.value.trim().split('#')[0] }), 'Adresse gespeichert')} />
+          </details>
         </> : <div class="tiny muted">Die Anmeldung ist nur in der Desktop-App verfügbar.</div>}
-        <div class="row gap-s"><span class="tiny muted grow">Altes Selfservice-Portal?</span>{!cd.open && <button class="btn xs ghost" onClick={() => setCd({ ...cd, open: true })}>Matrikelnummer + Hash</button>}</div>
+        {!cd.open && <button class="btn xs ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setCd({ ...cd, open: true })}>Altes Selfservice-Portal: Matrikelnummer + Hash</button>}
         {cd.open && <>
           <ol class="tiny" style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-2)' }}>
             <li>Bei <a onClick={() => rpc('shell.openExternal', { url: 'https://selfservice.campus-dual.de/' })}>selfservice.campus-dual.de</a> anmelden und den Stundenplan öffnen.</li>

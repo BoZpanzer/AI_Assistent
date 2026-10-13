@@ -189,6 +189,7 @@ function campusDualEvents(list) {
 const FEP = 'https://fep.campus-dual.de';
 const isFepIcs = (u) => /^https:\/\/fep\.campus-dual\.de\/ics\/ICSSet\(/i.test(String(u || ''));
 const LOGIN_FIX = ' ⟨fix:Bei Campus Dual anmelden|rpc:feeds.campusDualLogin⟩';
+const NOTFOUND_MSG = 'JARVIS hat die Anmeldeseite von Campus Dual nicht gefunden (404). Melde dich im Browser bei Campus Dual an, kopiere die Adresse aus der Adresszeile und füge sie unter Kalender → Abos → „Campus-Dual-Adresse“ ein.';
 
 // ---------- Feeds ----------
 class Feeds {
@@ -238,7 +239,7 @@ class Feeds {
   async addCampusDualSession({ name, icsUrl, color = '#a78bfa', lecture = true } = {}) {
     const cd = this.s.platform?.campusDual;
     if (!cd) throw new Error('Campus-Dual-Anmeldung ist nur in der Desktop-App verfügbar.');
-    if (!(await cd.loggedIn())) { const ok = await cd.login(); if (!ok) throw new Error('Anmeldung bei Campus Dual abgebrochen.'); }
+    if (!(await cd.loggedIn())) { const ok = await cd.login(); if (!ok) throw new Error(cd.lastReason === 'notfound' ? NOTFOUND_MSG : 'Anmeldung bei Campus Dual abgebrochen.'); }
     if (!icsUrl) icsUrl = await this.discoverCampusDualIcs().catch(() => null);
     if (!icsUrl) throw new Error('Angemeldet – aber den Kalender-Link konnte JARVIS nicht selbst finden. Bitte in Campus Dual im Stundenplan den ICS-Link erzeugen und hier einfügen.');
     const ex = this.db.get("SELECT id FROM calendar_feeds WHERE kind='campusdual-session'");
@@ -267,7 +268,7 @@ class Feeds {
     const cd = this.s.platform?.campusDual;
     if (!cd) throw new Error('Nur in der Desktop-App verfügbar.');
     const ok = await cd.login();
-    if (!ok) return { ok: false };
+    if (!ok) { if (cd.lastReason === 'notfound') throw new Error(NOTFOUND_MSG); return { ok: false }; }
     const f = this.db.get("SELECT id FROM calendar_feeds WHERE kind='campusdual-session'");
     if (!f) return { ok: true, ...(await this.addCampusDualSession({}).catch((e) => ({ error: e.message }))) };
     return { ok: true, ...(await this.refresh(f.id).catch((e) => ({ error: e.message }))) };
@@ -361,7 +362,10 @@ class Feeds {
       } else {
         const text = await this.fetchText(f);
         if (text === null) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true }; }
-        if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error(/<html/i.test(text) ? 'Der Link liefert eine Webseite statt eines Kalenders – vermutlich ist eine Anmeldung nötig.' : 'Keine gültige iCalendar-Datei (.ics)');
+        if (!/BEGIN:VCALENDAR/i.test(text)) {
+          if (/campus-dual\.de/i.test(f.url || '')) throw new Error('Campus Dual liefert ohne Anmeldung keinen Stundenplan. Nutze „Bei Campus Dual anmelden“.' + (this.s.platform?.campusDual ? LOGIN_FIX : ''));
+          throw new Error(/<html/i.test(text) ? 'Der Link liefert eine Webseite statt eines Kalenders – vermutlich ist eine Anmeldung nötig.' : 'Keine gültige iCalendar-Datei (.ics)');
+        }
         hash = sha256(text);
         parsed = parseIcs(text);
         // Campus-Dual-Exportlinks (fep.campus-dual.de/ics/…) enthalten ohne Anmeldung keine Termine
