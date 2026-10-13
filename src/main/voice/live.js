@@ -66,7 +66,9 @@ class LiveVoice {
       tools: decl,
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
       inputAudioTranscription: {}, outputAudioTranscription: {},
-      contextWindowCompression: { slidingWindow: {} },
+      // Im Sprachmodus berechnet Google bei JEDER Antwort den ganzen Sitzungsverlauf neu → Verlauf deckeln
+      // (ab ~24k Token auf ~12k kürzen ≈ die letzten Minuten Gespräch; älteres bleibt im Chatverlauf erhalten)
+      contextWindowCompression: { triggerTokens: '24000', slidingWindow: { targetTokens: '12000' } },
       sessionResumption: this.handle ? { handle: this.handle } : {},
     };
     if (this.extended) cfg.thinkingConfig = { thinkingLevel: 'low' };
@@ -131,6 +133,7 @@ class LiveVoice {
 
   async onMessage(m) {
     const sc = m.serverContent;
+    if (m.usageMetadata) this.s.gemini.record?.('voice', this.model, m.usageMetadata);
     if (m.sessionResumptionUpdate?.resumable && m.sessionResumptionUpdate.newHandle) this.handle = m.sessionResumptionUpdate.newHandle;
     if (m.goAway) { log.info('GoAway – baue Verbindung mit Resumption neu auf'); this.reconnect(); return; }
     if (sc) {

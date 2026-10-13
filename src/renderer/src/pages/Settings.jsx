@@ -109,13 +109,33 @@ function Ai({ s, secrets }) {
       {[['fast', 'Modell: schnelle Antworten'], ['reasoning', 'Modell: Reasoning'], ['research', 'Modell: Webrecherche'], ['vision', 'Modell: Multimodal/Seiten'], ['live', 'Modell: Echtzeit-Sprache'], ['embedding', 'Modell: Embeddings']].map(([role, label]) => (
         <Field label={label}><Select value={s.models[role]} onChange={(v) => upd({ models: { [role]: v } })} options={opt(role)} /></Field>
       ))}
+      <Field label="Denktiefe bei normalen Fragen" hint={s.aiCostMode === 'max' ? 'immer volle Denktiefe – kostet deutlich mehr' : 'kurzes Nachdenken; Analysen, Lernpläne usw. denken weiter voll'}><Select value={s.aiCostMode || 'spar'} onChange={(v) => upd({ aiCostMode: v })} options={[{ value: 'spar', label: 'Sparsam (empfohlen)' }, { value: 'max', label: 'Immer maximal' }]} /></Field>
       <Field label="Temperatur"><Select value={String(s.temperature)} onChange={(v) => upd({ temperature: Number(v) })} options={[['0.3', 'Präzise (0.3)'], ['0.7', 'Ausgewogen (0.7)'], ['1', 'Kreativ (1.0)']].map(([value, label]) => ({ value, label }))} /></Field>
       <Field label="Websuche für aktuelle Informationen"><Toggle checked={s.webSearch} onChange={(v) => upd({ webSearch: v })} /></Field>
       <Field label="Wichtiges automatisch merken (Brain)" hint="Sensibles nur auf ausdrücklichen Wunsch"><Toggle checked={s.autoMemory} onChange={(v) => upd({ autoMemory: v })} /></Field>
       <Field label="Geburtstage aus dem Brain in den Kalender" hint="ganztägig, jährlich – auch nach Google"><Toggle checked={s.birthdaysToCalendar !== false} onChange={(v) => upd({ birthdaysToCalendar: v })} /></Field>
       <div class="row mt"><button class="btn xs" disabled={busy || !secrets['gemini.api_key']} onClick={() => test('')}><RefreshCw size={12} />Modelle neu prüfen</button><span class="tiny muted grow">Diese Sitzung: {usage?.requests || 0} Anfragen · {Math.round(((usage?.inputTokens || 0) + (usage?.outputTokens || 0)) / 1000)}k Tokens</span></div>
+      <UsageTable />
       <div class="tiny muted mt">Hinweis: Ein Google-AI-Abo (Gemini App) ist nicht automatisch API-Kontingent – Limits gelten pro API-Schlüssel.</div>
     </Panel>
+  );
+}
+
+const FEATURE_LABEL = { chat: 'Chat', voice: 'Sprache', research: 'Webrecherche', vision: 'Bildschirm', study: 'Seiten lesen', lol: 'LoL-Tipps', embeddings: 'Suche (Embeddings)', other: 'Sonstiges' };
+const kTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + ' Mio' : Math.round(n / 1000) + 'k');
+function UsageTable() {
+  const [rep] = useRpc('gemini.usageReport', { days: 7 }, {});
+  const rows = Object.entries(rep?.features || {}).sort((a, b) => (b[1].in + b[1].out * 8 + b[1].think * 8) - (a[1].in + a[1].out * 8 + a[1].think * 8));
+  if (!rows.length) return <div class="tiny muted mt">Verbrauch: noch keine Daten (wird ab jetzt pro Funktion gezählt).</div>;
+  return (
+    <details class="mt">
+      <summary class="small">Verbrauch letzte 7 Tage (pro Funktion)</summary>
+      <table class="small" style={{ width: '100%', marginTop: 6, borderCollapse: 'collapse' }}>
+        <thead><tr class="muted tiny"><th style={{ textAlign: 'left' }}>Funktion</th><th style={{ textAlign: 'right' }}>Anfragen</th><th style={{ textAlign: 'right' }} title="Eingabe-Token, davon aus Googles Cache (günstiger)">Eingabe (Cache)</th><th style={{ textAlign: 'right' }} title="Antwort- + Denk-Token – kosten pro Token ein Vielfaches der Eingabe">Ausgabe + Denken</th></tr></thead>
+        <tbody>{rows.map(([f, x]) => <tr key={f}><td>{FEATURE_LABEL[f] || f}</td><td style={{ textAlign: 'right' }}>{x.req}</td><td style={{ textAlign: 'right' }}>{kTok(x.in)}{x.in ? ` (${Math.round((100 * x.cached) / x.in)} %)` : ''}</td><td style={{ textAlign: 'right' }}>{kTok(x.out)} + {kTok(x.think)}</td></tr>)}</tbody>
+      </table>
+      <div class="tiny muted" style={{ marginTop: 4 }}>Ausgabe- und Denk-Token kosten pro Token ein Vielfaches der Eingabe, Cache-Token nur einen Bruchteil. Genaue Euro-Beträge zeigt Google AI Studio → Abrechnung.</div>
+    </details>
   );
 }
 

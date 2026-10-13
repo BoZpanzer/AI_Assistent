@@ -4,14 +4,31 @@
  * Single source of truth for JARVIS' system instructions (text chat and live
  * voice share it — no diverging prompts).
  */
-function systemPrompt({ settings, primer = [], game, progress = '', now = new Date(), channel = 'text', capabilities = {} }) {
+function systemPrompt(opts) {
+  const { stable, context } = systemParts(opts);
+  return stable + '\n\n' + context;
+}
+
+/**
+ * Aufgeteilt für Googles automatischen Prompt-Cache: `stable` ändert sich (fast) nie und steht mit den
+ * Werkzeugen am Anfang jeder Anfrage → wird günstig aus dem Cache gelesen. `context` (Uhrzeit, Spiel,
+ * Gedächtnis, Spielstand) ändert sich ständig und wird deshalb erst an die aktuelle Nutzernachricht gehängt.
+ */
+function systemParts({ settings, primer = [], game, progress = '', now = new Date(), channel = 'text', capabilities = {} }) {
   const nick = settings.nickname || 'Chef';
   const date = now.toLocaleString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const voice = channel === 'voice';
-  return [
+  const context = [
+    '## Aktueller Kontext (von JARVIS, nicht vom Nutzer geschrieben)',
+    `Jetzt: ${date} (Zeitzone ${tz}).`,
+    game?.active ? `Aktiv gespielt: ${game.active.profile.name} (erkannt durch: ${({ explicit: 'Aussage', manual: 'manuelle Auswahl', process: 'laufenden Prozess', last: 'letzte Bestätigung' })[game.active.source] || game.active.source}).` : 'Gerade wird kein Spiel gespielt.',
+    primer.length ? '\nBekanntes über den Nutzer (kann veraltet sein):\n' + primer.join('\n') : '',
+    progress ? '\n' + progress : '',
+  ].filter(Boolean).join('\n');
+  const stable = [
     `Du bist JARVIS, der persönliche KI-Assistent deines Nutzers auf seinem Windows-PC. Antworte auf Deutsch.`,
-    `Jetzt: ${date} (Zeitzone ${tz}). ISO-Zeitpunkte für Werkzeuge immer mit Offset angeben.`,
+    `Datum, Uhrzeit, aktives Spiel und Bekanntes über den Nutzer stehen im Abschnitt „Aktueller Kontext“ (bei der neuesten Nachricht). ISO-Zeitpunkte für Werkzeuge immer mit Offset angeben.`,
     `Sprich den Nutzer gelegentlich mit „${nick}“ an (manchmal „Cheffe“), natürlich und nicht in jedem Satz.`,
     '',
     '## Stil',
@@ -47,17 +64,15 @@ function systemPrompt({ settings, primer = [], game, progress = '', now = new Da
       ? '- Wenn der Nutzer dauerhafte, nützliche Infos über sich nennt (Vorlieben, Projekte, Ziele, Gewohnheiten, Personen), speichere sie knapp mit remember. Keine Eintagsfliegen, keine Gesprächsdetails. Gesundheit, Religion, Politik, Finanzen, Sexualität und andere sensible Themen nur, wenn er ausdrücklich darum bittet.'
       : '- Speichere nur, wenn der Nutzer ausdrücklich darum bittet (remember).',
     '- Wenn sich etwas ändert (z. B. neuer Lieblingschampion), nutze denselben subjectKey, damit der alte Eintrag ersetzt wird.',
-    primer.length ? '\nBekanntes über den Nutzer (kann veraltet sein):\n' + primer.join('\n') : '',
     '',
     '## Spiele',
-    game?.active ? `Aktiv gespielt: ${game.active.profile.name} (erkannt durch: ${({ explicit: 'Aussage', manual: 'manuelle Auswahl', process: 'laufenden Prozess', last: 'letzte Bestätigung' })[game.active.source] || game.active.source}).` : 'Gerade wird kein Spiel gespielt.',
     '- Sagt der Nutzer, dass er ein Spiel spielt/startet → set_game_context(mode=playing). Fragt er nur über ein anderes Spiel → set_game_context(mode=discussing); das aktive Spiel bleibt.',
     '- Passende Widgets mit show_game_widget einblenden (z. B. Schlüssel → tarkov-item, Quest → tarkov-quests).',
     '- Spielstand merken: Erzählt der Nutzer von Fortschritt (Quest abgeschlossen/angefangen, Level, Kommandant/Champion/Held auf Stufe X, Gebäude/Forschung fertig, Item erhalten, Kreatur gezähmt, Prestige, neuer Wipe …), speichere das sofort mit update_game_progress – ohne Rückfrage, auch nebenbei im Gespräch. Mehrere Angaben in einem Aufruf. Gleicher Name = Aktualisierung des bestehenden Eintrags. Bei einem Wipe/Neustart erst nachfragen, dann reset_game_progress.',
     '- Nutze den bekannten Spielstand für Antworten (z. B. nächste offene Quests vorschlagen, Talente passend zur Kommandantenstufe). Erwähne nicht ungefragt, dass du etwas gespeichert hast – die Oberfläche zeigt eine Karte.',
-    progress ? '\n' + progress : '',
     capabilities.voice ? '' : '',
   ].filter((l) => l !== null).join('\n');
+  return { stable, context };
 }
 
 /** Heuristic model routing: avoid the expensive model for simple turns. */
@@ -67,4 +82,4 @@ function needsReasoning(text) {
   return /(lernplan|lernplanung|analysier|vergleich|erkläre ausführlich|herleit|beweis|strategie|optimier|plane mir|wochenplan|zusammenfass.*(vorlesung|skript|kapitel)|quiz|lernkarten|berechne)/.test(t);
 }
 
-module.exports = { systemPrompt, needsReasoning };
+module.exports = { systemPrompt, systemParts, needsReasoning };

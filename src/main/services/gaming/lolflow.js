@@ -89,7 +89,7 @@ class LolFlow {
     if (!advice) {
       const goals = this.s.gaming.league.goals().map((g) => g.text).slice(0, 3);
       const st = this.s.gaming.league.stats(20).current;
-      advice = await this.s.gemini.generate({
+      advice = await this.s.gemini.generate({ feature: 'lol',
         model: this.s.gemini.requireModel('fast'), temperature: 0.4,
         system: 'Du bist ein knapper League-of-Legends-Coach. Antworte auf Deutsch in max. 4 kurzen Stichpunkten (Markdown-Liste). Nur Champion-Matchup-Wissen, keine erfundenen Zahlen oder Patch-Details. Keine Aussagen über andere Spieler.',
         contents: [{ role: 'user', parts: [{ text: `Ich spiele ${myChampion}${role ? ' auf ' + role : ''}. Gegnerische Champions: ${enemies.join(', ')}.${st ? ` Meine Ø-Werte: ${st.csPerMin} CS/min, ${st.avgD} Tode.` : ''}${goals.length ? ' Meine Trainingsziele: ' + goals.join('; ') + '.' : ''} Worauf muss ich in diesem Spiel achten (Lane-Phase, gefährlichste Fähigkeiten, Item-Hinweis)?` }] }],
@@ -154,7 +154,7 @@ class LolFlow {
     if (tips.length) summary += '\n\n' + tips.map((t) => '- ' + t).join('\n');
     if (this.cfg().lolReviewAi !== false && this.s.gemini.hasKey()) {
       try {
-        const ai = await this.s.gemini.generate({
+        const ai = await this.s.gemini.generate({ feature: 'lol',
           model: this.s.gemini.requireModel('fast'), temperature: 0.4,
           system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 3 Sätze. Nutze NUR die gelieferten Zahlen, erfinde nichts.',
           contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort, Lane-Differenzen, Objectives): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives })}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel.` }] }],

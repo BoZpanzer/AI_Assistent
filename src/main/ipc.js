@@ -60,6 +60,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return { ok: r.ok, error: r.error, chosen: r.chosen, requested: r.requested, count: r.models?.length || 0, models: (r.models || []).map((m) => m.name) };
     },
     'gemini.usage': () => s.gemini.usage,
+    'gemini.usageReport': ({ days } = {}) => s.gemini.usageReport(Math.min(31, Math.max(1, Number(days) || 7))),
 
     // --- chat ---
     'chat.retry': ({ conversationId, messageId }) => { s.orchestrator.retry({ conversationId, messageId }).catch((e) => log.error('chat.retry', e)); return { ok: true }; },

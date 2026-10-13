@@ -47,7 +47,7 @@ class ScreenVision {
       'Lies Zahlen, Namen und Restzeiten (z. B. Bau-/Forschungstimer) exakt ab und nenne sie. Wenn etwas nicht eindeutig erkennbar ist, sag das ehrlich statt zu raten.',
       progress,
     ].filter(Boolean).join('\n');
-    const answer = await this.s.gemini.generate({
+    const answer = await this.s.gemini.generate({ feature: 'vision',
       model: this.s.gemini.requireModel('vision'), system, temperature: 0.2,
       contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: shot.data.toString('base64') } }, { text: question || 'Was sehe ich hier?' }] }],
     });

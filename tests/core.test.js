@@ -305,3 +305,50 @@ test('Kalender: ganztägige Termine, Geburtstags-/Kategorie-Farben, eigene Farbe
   assert.equal(plain.category, null); assert.equal(plain.color, plain.calendarColor);
   cleanup();
 });
+
+test('Kosten: fester Systemteil bleibt gleich (Cache), Kontext an der neuesten Nachricht, wenig Denken bei normalen Fragen, Verbrauch pro Funktion', async () => {
+  const script = [{ text: 'Hi Chef.' }, { text: 'Klar.' }, { text: 'Plan steht.' }];
+  const { core, fake, cleanup } = tempCore({ script });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
+    await core.gemini.discover();
+    const conv = core.conversations.current();
+    await core.orchestrator.chat({ conversationId: conv.id, text: 'Hallo Jarvis' });
+    await new Promise((r) => setTimeout(r, 1100)); // andere Uhrzeit darf den festen Teil nicht ändern
+    await core.orchestrator.chat({ conversationId: conv.id, text: 'Wie spät ist es?' });
+    const [a, b] = fake.requests;
+    assert.equal(a.config.systemInstruction, b.config.systemInstruction, 'fester Teil identisch');
+    assert.doesNotMatch(a.config.systemInstruction, /Jetzt: /);
+    const last = [...b.contents].reverse().find((c) => c.role === 'user'); // (Anfrage-Objekt wird danach um die Antwort ergänzt)
+    assert.match(last.parts[0].text, /Aktueller Kontext[\s\S]*Jetzt: /);
+    assert.match(last.parts.at(-1).text, /Wie spät ist es\?/);
+    // der Kontext der ersten Nachricht wird nicht gespeichert → Verlauf vorne bleibt gleich
+    const firstUserInB = b.contents.find((c) => c.role === 'user');
+    assert.doesNotMatch(JSON.stringify(firstUserInB), /Aktueller Kontext/);
+    assert.deepEqual(a.config.thinkingConfig, { thinkingLevel: 'low' }, 'normale Frage: wenig Denken');
+    // Analyse → Reasoning-Modell mit voller Denktiefe
+    await core.orchestrator.chat({ conversationId: conv.id, text: 'Erstelle mir einen Lernplan für Mathe' });
+    assert.deepEqual(fake.requests[2].config.thinkingConfig, { thinkingLevel: 'high' });
+    // Modus „Immer maximal“: kein Sparen
+    core.settings.update({ aiCostMode: 'max' });
+    assert.equal(core.gemini.thinkingFor('gemini-3.8-flash', 'low'), undefined);
+    assert.deepEqual(core.gemini.thinkingFor('gemini-2.5-flash', 'high'), undefined);
+    core.settings.update({ aiCostMode: 'spar' });
+    assert.deepEqual(core.gemini.thinkingFor('gemini-2.5-flash', 'low'), { thinkingBudget: 512 });
+    // Verbrauch wird pro Funktion gezählt
+    core.gemini.record('voice', 'gemini-3.8-live', { promptTokenCount: 1000, cachedContentTokenCount: 600, responseTokenCount: 50 });
+    const rep = core.gemini.usageReport(1);
+    assert.equal(rep.features.chat.req, 3);
+    assert.equal(rep.features.voice.in, 1000); assert.equal(rep.features.voice.cached, 600);
+  } finally { cleanup(); }
+});
+
+test('Kosten: Modell lehnt thinkingConfig ab → einmal ohne wiederholen, danach gemerkt', async () => {
+  const { core, cleanup } = tempCore();
+  try {
+    let calls = 0;
+    const r = await core.gemini.withThinking('gemini-x-flash', 'low', async (t) => { calls++; if (t) throw Object.assign(new Error('400 INVALID_ARGUMENT: thinking_level is not supported'), { status: 400 }); return 'ok'; });
+    assert.equal(r, 'ok'); assert.equal(calls, 2);
+    assert.equal(core.gemini.thinkingFor('gemini-x-flash', 'low'), undefined);
+  } finally { cleanup(); }
+});

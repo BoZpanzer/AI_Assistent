@@ -27,8 +27,9 @@ function pickModel(role, available) {
 
 class Gemini {
   constructor(ctx) {
-    this.secrets = ctx.secrets; this.settings = ctx.settings;
+    this.secrets = ctx.secrets; this.settings = ctx.settings; this.db = ctx.db || null;
     this._client = null; this._key = null;
+    this.noThinkingCfg = new Set(); // Modelle, die thinkingConfig ablehnen
     this.sdk = ctx.genaiSdk || require('@google/genai');
     this.usage = { requests: 0, inputTokens: 0, outputTokens: 0 };
   }
@@ -103,27 +104,90 @@ class Gemini {
     return { models, chosen: merged, requested };
   }
 
-  track(resp) {
+  /**
+   * Verbrauch zählen – pro Tag, Funktion (chat, voice, research …) und Modell, dauerhaft in der DB.
+   * cached = Eingabe-Token aus Googles automatischem Cache (deutlich günstiger), think = Denk-Token (zählen als Ausgabe).
+   */
+  track(resp, feature = 'other', model = '') {
     this.usage.requests++;
     const u = resp?.usageMetadata;
-    if (u) { this.usage.inputTokens += u.promptTokenCount || 0; this.usage.outputTokens += u.candidatesTokenCount || 0; }
+    if (u) { this.usage.inputTokens += u.promptTokenCount || 0; this.usage.outputTokens += (u.candidatesTokenCount || u.responseTokenCount || 0) + (u.thoughtsTokenCount || 0); }
+    this.record(feature, model || resp?.modelVersion || '', u);
+  }
+  record(feature, model, u) {
+    if (!this.db) return;
+    try {
+      const day = new Date().toISOString().slice(0, 10);
+      const key = 'gemini:usage:' + day;
+      const cur = JSON.parse(this.db.get('SELECT value FROM meta WHERE key=?', key)?.value || '{}');
+      const add = (bucket, name) => {
+        const b = (cur[bucket] ||= {}); const x = (b[name] ||= { req: 0, in: 0, cached: 0, out: 0, think: 0 });
+        x.req++;
+        if (u) { x.in += (u.promptTokenCount || 0) + (u.toolUsePromptTokenCount || 0); x.cached += u.cachedContentTokenCount || 0; x.out += u.candidatesTokenCount || u.responseTokenCount || 0; x.think += u.thoughtsTokenCount || 0; }
+      };
+      add('features', feature || 'other');
+      if (model) add('models', String(model).replace(/^models\//, ''));
+      this.db.run('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', key, JSON.stringify(cur));
+    } catch (e) { log.debug('usage', e); }
+  }
+  /** Verbrauch der letzten `days` Tage, summiert. */
+  usageReport(days = 7) {
+    const sum = { features: {}, models: {}, days: [] };
+    if (!this.db) return sum;
+    for (let i = 0; i < days; i++) {
+      const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      let cur = {}; try { cur = JSON.parse(this.db.get('SELECT value FROM meta WHERE key=?', 'gemini:usage:' + day)?.value || '{}'); } catch { /* ignore */ }
+      const tot = { day, req: 0, in: 0, cached: 0, out: 0, think: 0 };
+      for (const bucket of ['features', 'models']) for (const [n, x] of Object.entries(cur[bucket] || {})) {
+        const t = (sum[bucket][n] ||= { req: 0, in: 0, cached: 0, out: 0, think: 0 });
+        for (const k of Object.keys(t)) { t[k] += x[k] || 0; if (bucket === 'features') tot[k] += x[k] || 0; }
+      }
+      sum.days.push(tot);
+    }
+    return sum;
+  }
+
+  /**
+   * Denktiefe pro Modell: 'low' = wenig Denk-Token (normale Fragen, Hintergrundaufgaben), 'high'/undefined = Modellstandard.
+   * Gemini 3: thinkingLevel; Gemini 2.5: thinkingBudget. Lehnt ein Modell das ab, wird es ohne erneut versucht.
+   */
+  thinkingFor(model, effort) {
+    if (!effort || effort === 'default' || this.noThinkingCfg.has(model)) return undefined;
+    if (this.settings.get('aiCostMode') === 'max' && effort === 'low') return undefined;
+    if (/gemini-2\.5/.test(model)) return effort === 'low' ? { thinkingBudget: /pro/.test(model) ? 128 : 512 } : undefined;
+    if (/gemini-(1|2\.0)/.test(model) || /lite/.test(model)) return undefined;
+    return { thinkingLevel: effort === 'low' ? 'low' : 'high' };
+  }
+  /** Aufruf mit Denktiefe; lehnt das Modell thinkingConfig ab (400), einmal ohne wiederholen. */
+  async withThinking(m, effort, call) {
+    const t = this.thinkingFor(m, effort);
+    try { return await call(t); } catch (e) {
+      if (t && (e?.status === 400 || /\b400\b|INVALID_ARGUMENT/.test(String(e?.message))) && /thinking/i.test(String(e?.message))) {
+        this.noThinkingCfg.add(m); log.info(`${m}: thinkingConfig nicht unterstützt – ohne`);
+        return call(undefined);
+      }
+      throw e;
+    }
   }
 
   /**
    * Streams one model step. Returns { parts, text, functionCalls, finishReason }.
    * `onText` receives incremental text.
    */
-  async stepStream({ model, system, contents, tools, temperature, onText, signal, thinking, onWait }) {
-    const config = { systemInstruction: system, temperature: temperature ?? this.settings.get('temperature') };
-    if (tools?.length) config.tools = tools;
-    if (thinking) config.thinkingConfig = thinking;
-    if (signal) config.abortSignal = signal;
+  async stepStream({ model, system, contents, tools, temperature, onText, signal, thinking, effort, onWait, feature = 'chat' }) {
+    const base = { systemInstruction: system, temperature: temperature ?? this.settings.get('temperature') };
+    if (tools?.length) base.tools = tools;
+    if (signal) base.abortSignal = signal;
+    let used = model;
     // Erst wenn der erste Teil da ist, gilt der Aufruf als erfolgreich – sonst greifen Wiederholung/Ausweichmodell
-    const { it, first } = await this.withFallback(model, async (m) => {
+    const { it, first } = await this.withFallback(model, (m) => this.withThinking(m, thinking ? null : effort, async (t) => {
+      const config = { ...base, ...(thinking ? { thinkingConfig: thinking } : t ? { thinkingConfig: t } : {}) };
       const s = await this.client().models.generateContentStream({ model: m, contents, config });
       const iter = s[Symbol.asyncIterator]();
-      return { it: iter, first: await iter.next() };
-    }, { onWait });
+      const res = { it: iter, first: await iter.next() };
+      used = m;
+      return res;
+    }), { onWait });
     const chunks = (async function* () { if (!first.done) { yield first.value; for (let n = await it.next(); !n.done; n = await it.next()) yield n.value; } })();
     const parts = []; let text = ''; let finishReason; let last;
     for await (const chunk of chunks) {
@@ -140,17 +204,18 @@ class Gemini {
         } else parts.push({ ...p });
       }
     }
-    this.track(last);
+    this.track(last, feature, used);
     const functionCalls = parts.filter((p) => p.functionCall).map((p) => p.functionCall);
     return { parts, text, functionCalls, finishReason, grounding: last?.candidates?.[0]?.groundingMetadata };
   }
 
-  async generate({ model, system, contents, json, schema, temperature, tools }) {
-    const config = { systemInstruction: system, temperature: temperature ?? 0.3 };
-    if (json) { config.responseMimeType = 'application/json'; if (schema) config.responseSchema = schema; }
-    if (tools) config.tools = tools;
-    const r = await this.withFallback(model || this.requireModel('fast'), (m) => this.client().models.generateContent({ model: m, contents, config }));
-    this.track(r);
+  async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low' }) {
+    const base = { systemInstruction: system, temperature: temperature ?? 0.3 };
+    if (json) { base.responseMimeType = 'application/json'; if (schema) base.responseSchema = schema; }
+    if (tools) base.tools = tools;
+    let used = model;
+    const r = await this.withFallback(model || this.requireModel('fast'), (m) => this.withThinking(m, effort, (t) => { used = m; return this.client().models.generateContent({ model: m, contents, config: { ...base, ...(t ? { thinkingConfig: t } : {}) } }); }));
+    this.track(r, feature, used);
     const text = r.text || '';
     if (json) { try { return JSON.parse(text); } catch { throw new Error('Ungültige JSON-Antwort des Modells'); } }
     return text;
@@ -170,7 +235,7 @@ class Gemini {
       grounded = false;
       r = await this.withFallback(this.requireModel('fast'), (m) => this.client().models.generateContent({ model: m, contents, config: { systemInstruction: sys.replace('mit der Google-Suche', 'aus deinem Wissen') + ' Weise am Anfang kurz darauf hin, dass gerade keine Live-Websuche möglich war und dein Wissen veraltet sein kann.', temperature: 0.2 } }));
     }
-    this.track(r);
+    this.track(r, 'research', r?.modelVersion);
     const sources = [];
     const meta = r.candidates?.[0]?.groundingMetadata;
     for (const c of meta?.groundingChunks || []) {
@@ -248,6 +313,7 @@ class Gemini {
       const batch = texts.slice(i, i + 50);
       const r = await this.client().models.embedContent({ model, contents: batch, config: { taskType, outputDimensionality: dim } });
       this.usage.requests++;
+      this.record('embeddings', model, null);
       for (const e of r.embeddings || []) {
         const v = Float32Array.from(e.values || []);
         let n = 0; for (const x of v) n += x * x; n = Math.sqrt(n) || 1;
@@ -261,15 +327,16 @@ class Gemini {
   /** Multimodal transcription of one PDF page (handwriting / formulas). */
   async transcribePdf(pdfBytes) {
     const model = this.requireModel('vision');
+    const t = this.thinkingFor(model, 'low');
     const r = await this.client().models.generateContent({
       model,
       contents: [{ role: 'user', parts: [
         { inlineData: { mimeType: 'application/pdf', data: Buffer.from(pdfBytes).toString('base64') } },
         { text: 'Transkribiere diese Seite vollständig und originalgetreu (auch Handschrift). Formeln als LaTeX in $…$. Skizzen kurz in [Abbildung: …] beschreiben. Keine Einleitung, nur der Inhalt.' },
       ] }],
-      config: { temperature: 0 },
+      config: { temperature: 0, ...(t ? { thinkingConfig: t } : {}) },
     });
-    this.track(r);
+    this.track(r, 'study', model);
     return { text: r.text || '', model };
   }
 

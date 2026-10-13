@@ -44,6 +44,7 @@ const SCHEMA = {
     temperature: { type: 'number', minimum: 0, maximum: 1.5 },
     webSearch: { type: 'boolean' },
     autoMemory: { type: 'boolean' },
+    aiCostMode: { type: 'string', enum: ['spar', 'max'] },
     birthdaysToCalendar: { type: 'boolean' },
     // Voice
     voice: { type: 'object', properties: {
@@ -116,7 +117,7 @@ const DEFAULTS = {
   campusDualResults: { enabled: true, intervalHours: 3 },
   backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
-  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true,
+  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar',
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },

@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.17.0 – Gemini deutlich sparsamer, gleiche Antworten
+
+- **Googles Prompt-Cache greift jetzt:** Bisher stand die aktuelle Uhrzeit ganz oben in JARVIS' Anweisung. Dadurch war jede Anfrage für Google „neu“, und rund 5.500 Token Anweisung und Werkzeuge wurden jedes Mal voll berechnet. Jetzt bleibt dieser Teil gleich, und Uhrzeit, Spiel und Gedächtnis hängen an deiner neuesten Nachricht. Googles Cache liest den gleichbleibenden Teil (auch den bisherigen Verlauf und Werkzeugschritte) deutlich günstiger.
+- **Weniger unnötiges „Nachdenken“:** Bei normalen Fragen denkt das Modell kurz statt maximal. Denk-Token kosten so viel wie Antwort-Token, also ein Vielfaches der Eingabe. Analysen, Lernpläne, Vergleiche und lange Texte gehen weiter mit voller Denktiefe ans Reasoning-Modell. Hintergrundaufgaben (Bildschirmfragen, Seiten lesen, LoL-Tipps) denken ebenfalls kurz. Einstellungen → Gemini / KI → „Denktiefe bei normalen Fragen“ → „Immer maximal“ stellt das alte Verhalten wieder her.
+- **Sprachmodus:** Google berechnet bei jeder gesprochenen Antwort den gesamten Sitzungsverlauf neu. Der Verlauf wird jetzt ab etwa 24.000 Token auf die letzten etwa 12.000 gekürzt, statt bis weit über 100.000 zu wachsen. Der vollständige Verlauf bleibt im Chat.
+- **Verbrauch pro Funktion:** Einstellungen → Gemini / KI → „Verbrauch letzte 7 Tage“ zeigt Anfragen, Eingabe (mit Cache-Anteil) sowie Ausgabe- und Denk-Token für Chat, Sprache, Webrecherche, Bildschirm, Seiten lesen und LoL. So sieht man, wo das Geld hingeht.
+
 ## 3.16.0 – Campus-Dual-Stundenplan direkt, Zugangsdaten, Prüfungsergebnisse, Tarkov-Karten
 
 - **Campus Dual: Stundenplan kommt jetzt direkt aus dem Stundenplan-Dienst** (derselbe, den die Campus-Dual-Seite selbst nutzt) statt aus dem ICS-Export, der leer war. Erkennt JARVIS das Format nicht, zeigt das Abo die Feldnamen an, statt still 0 Termine zu melden. Das Format ist nicht offiziell beschrieben, deshalb erkennt JARVIS die Felder automatisch. Mit dem echten Campus Dual ist das noch nicht getestet.

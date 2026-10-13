@@ -2,7 +2,7 @@
 const { validate, toGeminiSchema } = require('../core/validate');
 const { truncate } = require('../core/util');
 const { buildTools, internalTools } = require('./tools');
-const { systemPrompt, needsReasoning } = require('./prompts');
+const { systemPrompt, systemParts, needsReasoning } = require('./prompts');
 const { friendlyError } = require('../providers/gemini');
 const log = require('../core/logger').scope('agent');
 
@@ -28,14 +28,18 @@ class Orchestrator {
     })) }];
   }
 
-  system(channel, userText = '') {
+  promptOpts(channel, userText = '') {
     const settings = this.s.settings.all();
     let progress = '';
     try { progress = this.s.gaming.progressContext(userText); } catch { /* never block a reply */ }
     const extra = [];
     for (const fn of this.s.contextProviders || []) { try { const t = fn(userText, channel); if (t) extra.push(t); } catch { /* ignore */ } }
-    return systemPrompt({ settings, primer: this.s.brain.personalPrimer(), game: this.s.gaming.context.state(), progress: [progress, ...extra].filter(Boolean).join('\n\n'), channel });
+    return { settings, primer: this.s.brain.personalPrimer(), game: this.s.gaming.context.state(), progress: [progress, ...extra].filter(Boolean).join('\n\n'), channel };
   }
+  /** Vollständige Systemanweisung (Sprachmodus: einmal pro Sitzung). */
+  system(channel, userText = '') { return systemPrompt(this.promptOpts(channel, userText)); }
+  /** Für den Text-Chat: fester Teil (cachebar) + Kontext für die aktuelle Nachricht. */
+  systemSplit(channel, userText = '') { return systemParts(this.promptOpts(channel, userText)); }
 
   /**
    * Execute a tool call coming from any channel. Returns the function response
@@ -128,12 +132,17 @@ class Orchestrator {
     }
     const role = needsReasoning(text) ? 'reasoning' : 'fast';
     const model = gemini.model(role) || gemini.requireModel('fast');
+    // Fester Teil der Anweisung + Werkzeuge + bisheriger Verlauf bleiben gleich → Googles Cache greift.
+    // Wechselnder Kontext (Uhrzeit, Spiel, Gedächtnis) hängt nur an der neuesten Nutzernachricht (wird nicht gespeichert).
+    const { stable, context } = this.systemSplit(channel, text);
+    const lastUser = [...contents].reverse().find((c) => c.role === 'user');
+    if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts]; else contents.push({ role: 'user', parts: [{ text: context }] });
     const cards = []; const sources = []; let full = '';
     bus.emit('orb:state', { state: 'thinking' });
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
         const r = await gemini.stepStream({
-          model, system: this.system(channel, text), contents, tools: this.declarations(), signal: ac.signal,
+          model, system: stable, contents, tools: this.declarations(), signal: ac.signal, feature: channel === 'voice' ? 'voice' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
           onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),
           onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); },
         });
