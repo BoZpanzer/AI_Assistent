@@ -134,8 +134,9 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       const c = j.installed || j.web;
       if (!c?.client_id) throw new Error('Keine OAuth-Client-Datei (installed.client_id fehlt)');
       s.settings.update({ google: { clientId: c.client_id } });
-      if (c.client_secret) s.secrets.set('google.client_secret', c.client_secret);
-      return { clientId: c.client_id };
+      if (c.client_secret) s.secrets.set('google.client_secret', String(c.client_secret).trim());
+      // Google zeigt Secrets neuer Clients nur beim Erstellen – später geladene JSONs enthalten oft keins.
+      return { clientId: c.client_id, hasSecret: !!c.client_secret, secretStored: s.secrets.has('google.client_secret'), type: j.installed ? 'desktop' : 'web' };
     },
 
     // --- brain ---

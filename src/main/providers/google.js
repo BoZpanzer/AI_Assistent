@@ -69,7 +69,12 @@ class GoogleClient {
     if (secret) body.set('client_secret', secret);
     const r = await this.fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
     const tok = await r.json();
-    if (!r.ok || !tok.refresh_token) throw new Error('Token-Austausch fehlgeschlagen: ' + (tok.error_description || tok.error || r.status));
+    if (!r.ok || !tok.refresh_token) {
+      const why = String(tok.error_description || tok.error || r.status);
+      if (/client_secret is missing/i.test(why)) throw new Error('Google verlangt das Client-Secret. Es fehlt in deiner JSON-Datei – in der Google Console unter Clients → dein Client → „Secret hinzufügen“ ein neues erzeugen und in JARVIS ins Feld „Client-Secret“ einfügen.');
+      if (/invalid_client|unauthorized/i.test(why)) throw new Error('Google lehnt Client-ID oder Secret ab (' + why + '). Prüfe, dass beides zum selben Client vom Typ „Desktop-App“ gehört.');
+      throw new Error('Token-Austausch fehlgeschlagen: ' + why);
+    }
     this.secrets.set('google.refresh_token', tok.refresh_token);
     this.access = { token: tok.access_token, exp: Date.now() + (tok.expires_in - 60) * 1000 };
     let email = '';

@@ -121,6 +121,8 @@ function Google({ s }) {
   const [status] = useRpc('calendar.status', {}, { events: ['calendar:sync', 'settings:changed'] });
   const [cals] = useRpc('calendar.calendars', {}, { events: ['calendar:changed'], initial: [] });
   const [cid, setCid] = useState(s.google.clientId);
+  const [secInfo, setSecInfo] = useState(null);
+  const secretSaved = useStore((x) => x.secrets)?.['google.client_secret'];
   const [sec, setSec] = useState('');
   const [busy, setBusy] = useState(false);
   const connect = async () => {
@@ -138,8 +140,10 @@ function Google({ s }) {
         <>
           <div class="tiny muted mt">Einmalig: In der Google Cloud Console einen OAuth-Client vom Typ „Desktop-App“ anlegen und die Calendar API aktivieren (Anleitung in der Dokumentation).</div>
           <Field label="OAuth-Client-ID" wide><input class="inp" value={cid} onInput={(e) => setCid(e.currentTarget.value)} placeholder="….apps.googleusercontent.com" /></Field>
-          <Field label="Client-Secret" wide><input class="inp" type="password" value={sec} onInput={(e) => setSec(e.currentTarget.value)} placeholder="optional bei Desktop-Clients" /></Field>
-          <div class="row gap-s"><button class="btn xs" onClick={async () => { const r = await guard(() => rpc('google.importClientJson')); if (r) { setCid(r.clientId); toast('Client-Datei übernommen'); } }}>JSON-Datei laden</button><span class="grow" /><button class="btn sm primary" disabled={!cid || busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={14} />}Im Browser anmelden</button></div>
+          <Field label="Client-Secret" hint={secretSaved ? 'Gespeichert (verschlüsselt). Nur ausfüllen, um es zu ersetzen.' : 'Steht in der JSON-Datei oder in der Google Console unter Clients → „Secret hinzufügen“'} wide><input class="inp" type="password" value={sec} onInput={(e) => setSec(e.currentTarget.value)} placeholder={secretSaved ? '•••••••• gespeichert' : 'GOCSPX-…'} /></Field>
+          {secInfo && !secInfo.hasSecret && !secretSaved && <div class="notice warn small">Die JSON-Datei enthält kein Client-Secret – Google zeigt es nur direkt beim Erstellen. Öffne in der Google Console <b>Google Auth Platform → Clients → deinen Client → „Secret hinzufügen“</b>, kopiere das neue Secret und füge es hier ein.</div>}
+          {secInfo?.type === 'web' && <div class="notice warn small">Das ist ein Client vom Typ „Webanwendung“. Bitte einen Client vom Typ <b>Desktop-App</b> anlegen, sonst lehnt Google die Anmeldung ab.</div>}
+          <div class="row gap-s"><button class="btn xs" onClick={async () => { const r = await guard(() => rpc('google.importClientJson')); if (r) { setCid(r.clientId); setSecInfo(r); setState({ secrets: await rpc('secrets.status') }); toast(r.hasSecret ? 'Client-ID und Secret übernommen' : 'Client-ID übernommen – die Datei enthält KEIN Secret', r.hasSecret ? undefined : 'error', 7000); } }}>JSON-Datei laden</button><span class="grow" /><button class="btn sm primary" disabled={!cid || busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={14} />}Im Browser anmelden</button></div>
         </>
       ) : (
         <>
