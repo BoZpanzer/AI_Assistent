@@ -31,6 +31,7 @@ const SCHEMA = {
       volume: { type: 'number', minimum: 0, maximum: 1 } } },
     updateChannelUrl: { type: 'string', maxLength: 500 },
     updateRepo: { type: 'string', maxLength: 140 },
+    backupDrive: { type: 'object', properties: { enabled: { type: 'boolean' }, folder: { type: 'string', maxLength: 200 }, keep: { type: 'number', minimum: 1, maximum: 100 }, intervalHours: { type: 'number', minimum: 1, maximum: 168 } } },
     updateCheck: { type: 'boolean' },
     // AI
     models: { type: 'object', properties: {
@@ -67,7 +68,7 @@ const SCHEMA = {
       detection: { type: 'boolean' }, reduceWhileGaming: { type: 'boolean' },
       riotId: { type: 'string', maxLength: 60 }, leagueDir: { type: 'string', maxLength: 500 }, riotRegion: { type: 'string', enum: ['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1'] },
       lolLiveCoach: { type: 'boolean' }, favorites: { type: 'array', items: { type: 'string' } },
-      lolChampSelect: { type: 'boolean' }, lolReview: { type: 'boolean' }, lolReviewAi: { type: 'boolean' }, tarkovTrackerSync: { type: 'boolean' } } },
+      lolChampSelect: { type: 'boolean' }, lolReview: { type: 'boolean' }, steamDir: { type: 'string', maxLength: 500 }, steamId: { type: 'string', maxLength: 20 }, steamAutoImport: { type: 'boolean' }, steamMinMinutes: { type: 'number', minimum: 0, maximum: 100000 }, lolReviewAi: { type: 'boolean' }, tarkovTrackerSync: { type: 'boolean' } } },
     // Screen analysis & in-game overlay
     screen: { type: 'object', properties: {
       enabled: { type: 'boolean' }, hotkey: { type: 'string', maxLength: 40 }, defaultQuestion: { type: 'string', maxLength: 300 } } },
@@ -109,13 +110,14 @@ const DEFAULTS = {
   animations: 'full', hudTransparency: 0.85, alwaysOnTop: false, globalHotkey: 'Control+Alt+J',
   startSound: { mode: 'off', delaySeconds: 0, file: '', volume: 0.6 },
   updateChannelUrl: '', updateRepo: '', updateCheck: true,
+  backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true,
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
-  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [], lolChampSelect: true, lolReview: true, lolReviewAi: true, tarkovTrackerSync: true },
+  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [], lolChampSelect: true, lolReview: true, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true },
   screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.' },
   overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false },
   telegram: { enabled: false, forwardMode: 'idle', idleMinutes: 10, chats: [], allowConfirm: true },

@@ -26,9 +26,11 @@ const { ScreenVision } = require('./services/screen');
 const { Updater } = require('./services/updater');
 const { Drive } = require('./services/drive');
 const { Feeds } = require('./services/ics');
+const { DriveBackup } = require('./services/drivebackup');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 const { GameBrainSync } = require('./services/gaming/brainsync');
+const { Steam } = require('./services/gaming/steam');
 
 /**
  * Composition root. Pure Node (no Electron imports) so the complete service
@@ -66,8 +68,11 @@ function createCore(opts) {
   s.gaming.tracker = new TarkovTracker(s);
   s.gaming.lolflow = new LolFlow(s);
   s.gaming.brainSync = new GameBrainSync(s);
+  s.gaming.steam = new Steam(s);
+  s.gaming.context.steam = s.gaming.steam;
   s.system = new System(s);
   s.updater = new Updater(s);
+  s.driveBackup = new DriveBackup(s);
   s.briefing = () => briefing(s);
   s.contextProviders = [];
   s.screen = new ScreenVision(s);

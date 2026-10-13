@@ -23,7 +23,7 @@ export function Gaming() {
         {!viewId ? <NoGame onPick={(id) => { setViewId(id); }} /> : !p ? <Empty>Lade …</Empty> : (
           <>
             <section class="panel glow game-hero">
-              <div class="gicon" style={p.accent ? { boxShadow: `0 0 18px ${p.accent}55` } : undefined}>{initials(p)}</div>
+              {p.header ? <img class="gheader" src={p.header} alt="" /> : <div class="gicon" style={p.accent ? { boxShadow: `0 0 18px ${p.accent}55` } : undefined}>{initials(p)}</div>}
               <div class="col" style={{ gap: 2, maxWidth: 300, flex: 'none' }}>
                 <div class="hud-label">{active?.id === p.id ? 'Aktuelles Spiel' : 'Ansicht'}</div>
                 {active?.id === p.id ? <div class="detected"><CircleCheck size={15} />{SOURCE_LABEL[active.source] || 'Aktiv'}</div> : <div class="small muted">Nicht als aktives Spiel gesetzt</div>}
@@ -79,6 +79,7 @@ function NoGame({ onPick }) {
       <div class="hud-label mt">Schnellwahl</div>
       <div class="row wrap gap-s mt">{quick.map((p) => <button class="btn sm" onClick={async () => { await rpc('game.setActive', { id: p.id }); onPick(p.id); }}>{p.name}{game.running.some((r) => r.id === p.id) ? ' · läuft' : ''}</button>)}
         <button class="btn sm ghost" onClick={async () => { const n = await ask('Welches Spiel?', ''); if (!n) return; const pr = await rpc('game.resolve', { name: n }); await rpc('game.setActive', { id: pr.id }); onPick(pr.id); }}><Plus size={14} />Anderes Spiel</button></div>
+      <SteamLibrary onPick={onPick} />
       {timers.filter((t) => !t.fired).length > 0 && <>
         <div class="hud-label mt">Laufende Timer</div>
         <ul class="bullets mt">{timers.filter((t) => !t.fired).map((t) => <li><span class="grow">{t.gameName}: {t.label}</span><span class="v">{new Date(t.endsAt).toLocaleString('de-DE')}</span></li>)}</ul>
@@ -87,17 +88,50 @@ function NoGame({ onPick }) {
   );
 }
 
+/** Steam-Bibliothek: gespielte/installierte Spiele, Spielzeit, Updates – alles lokal gelesen. */
+function SteamLibrary({ onPick }) {
+  const [lib, reload, st] = useRpc('steam.library', {}, { events: ['game:profiles'] });
+  const [busy, setBusy] = useState(false);
+  const [all, setAll] = useState(false);
+  if (st.loading && !lib) return <div class="hud-label mt">Steam-Bibliothek wird gelesen …</div>;
+  if (!lib?.available) return <div class="tiny muted mt">{lib?.reason || 'Steam nicht gefunden.'}</div>;
+  const played = lib.games.filter((g) => g.minutes > 0);
+  const shown = all ? lib.games : played;
+  const ups = lib.games.filter((g) => g.updateRequired && !g.updating);
+  const doImport = async () => { setBusy(true); const r = await guard(() => rpc('steam.import', {})); setBusy(false); if (r) { toast(`${r.created} neue Game-Seiten angelegt${r.updated ? `, ${r.updated} aktualisiert` : ''}`); reload(); } };
+  const open = async (g) => { const pr = await rpc('game.resolve', { name: g.name }); if (pr) { await rpc('game.setActive', { id: pr.id }); onPick(pr.id); } };
+  return (
+    <>
+      <div class="row mt"><span class="hud-label grow">Steam-Bibliothek · {played.length} gespielt{lib.games.length > played.length ? ` · ${lib.games.length - played.length} nie gestartet` : ''}</span>
+        <button class="btn xs ghost" onClick={() => setAll(!all)}>{all ? 'Nur gespielte' : 'Alle zeigen'}</button>
+        <button class="btn xs" disabled={busy} onClick={doImport}>{busy ? 'Lege an …' : 'Game-Seiten anlegen'}</button>
+        <button class="btn xs ghost" onClick={() => rpc('steam.open', { action: 'downloads' })}>Steam-Downloads</button>
+      </div>
+      {ups.length > 0 && <div class="notice warn small mt">Updates verfügbar: {ups.map((g) => g.name).join(', ')} <button class="btn xs" style={{ marginLeft: 8 }} onClick={() => rpc('steam.open', { action: 'downloads' })}>In Steam aktualisieren</button></div>}
+      <div class="steam-grid mt">
+        {shown.map((g) => (
+          <div class="steam-card" title={`${g.name} · ${g.hours} h${g.lastPlayed ? ' · zuletzt ' + new Date(g.lastPlayed).toLocaleDateString('de-DE') : ''}`} onClick={() => open(g)}>
+            <img src={g.header} loading="lazy" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+            <div class="row" style={{ gap: 6 }}><span class="small grow ellipsis">{g.name}</span>{g.updateRequired && <span class="chip static warn" title="Update verfügbar">Update</span>}</div>
+            <div class="tiny muted">{g.minutes ? (g.hours >= 1 ? `${g.hours} h` : `${g.minutes} min`) : 'nie gespielt'}{g.installed ? ' · installiert' : ''}</div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function Picker({ onClose, onPick }) {
   const [q, setQ] = useState('');
-  const [profiles] = useRpc('game.profiles', {}, { initial: [] });
-  const list = profiles.filter((p) => !q || (p.name + ' ' + (p.aliases || []).join(' ')).toLowerCase().includes(q.toLowerCase()));
+  const [profiles] = useRpc('game.profiles', {}, { initial: [], events: ['game:profiles'] });
+  const list = [...profiles].sort((a, b) => (b.playtimeMin || 0) - (a.playtimeMin || 0)).filter((p) => !q || (p.name + ' ' + (p.aliases || []).join(' ')).toLowerCase().includes(q.toLowerCase()));
   return (
     <div class="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div class="panel glow modal">
         <div class="row"><h2 class="grow">Spiel wählen</h2><button class="btn icon xs ghost" onClick={onClose}><X size={16} /></button></div>
         <div style={{ position: 'relative' }} class="mt"><Search size={15} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--text-3)' }} /><input class="inp" style={{ paddingLeft: 32 }} placeholder="Suchen oder neuen Namen eingeben" value={q} onInput={(e) => setQ(e.currentTarget.value)} autofocus /></div>
         <div class="col mt scroll" style={{ maxHeight: '50vh', gap: 6 }}>
-          {list.map((p) => <div class="result-row" onClick={() => onPick(p.id)}><Gamepad2 size={16} /><span class="grow">{p.name}</span><span class="tiny muted">{p.integration === 'generic' ? 'universell' : 'Spezialintegration'}</span></div>)}
+          {list.map((p) => <div class="result-row" onClick={() => onPick(p.id)}><Gamepad2 size={16} /><span class="grow">{p.name}</span><span class="tiny muted">{p.playtimeMin ? `${Math.round(p.playtimeMin / 6) / 10} h · ` : ''}{p.integration === 'generic' ? 'universell' : 'Spezialintegration'}</span></div>)}
           {q && !list.length && <div class="result-row" onClick={async () => { const pr = await rpc('game.resolve', { name: q }); onPick(pr.id); }}><Plus size={16} /><span>„{q}“ als neues Spiel (universelle Oberfläche)</span></div>}
         </div>
       </div>

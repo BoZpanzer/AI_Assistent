@@ -2,6 +2,15 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.8.0 – Steam-Bibliothek, Drive-Backup, Neustart nach Update
+
+- **Neustart nach dem Update:** JARVIS startet nach der Installation automatisch wieder und zeigt kurz „JARVIS aktualisiert“.
+- **Dashboard-Todos nach Priorität:** Rechts im Dashboard stehen zuerst die wichtigen Aufgaben (🔴 hoch, 🟡 mittel, ⚪ niedrig). Gezeigt werden alles, was heute fällig ist, tägliche Aufgaben und wichtige Aufgaben ohne Datum.
+- **Steam-Bibliothek:** JARVIS liest deine Steam-Spiele direkt von deinem PC, mit Spielzeit, installiert ja/nein und Update-Status. Das klappt auch bei privatem Profil. Für jedes Spiel ab 1 Minute Spielzeit legt JARVIS automatisch eine Game-Seite an (stündlich oder per „Game-Seiten anlegen“ unter Gaming). Läuft ein Steam-Spiel, wird es erkannt.
+- **Steam-Updates:** JARVIS meldet Spiele, die ein Update brauchen. „Steam-Downloads“ öffnet die Download-Warteschlange von Steam. Steam selbst lädt die Updates, weil Steam dafür keinen direkten Befehl anbietet.
+- **Hytale** hat eine eigene Game-Seite.
+- **Automatisches Backup in Google Drive:** Unter Einstellungen → Daten → „Drive-Backup aktivieren“. Danach sichert JARVIS einmal täglich nach „coding/“ in deinem Drive und behält die neuesten 14 Sicherungen. Gelöscht werden nur JARVIS’ eigene Sicherungsdateien. Deine Schlüssel bleiben darin mit Windows verschlüsselt.
+
 ## 3.7.0 – Spieldaten im Brain
 
 - **Spieldaten landen jetzt dauerhaft im Brain** (Bereich Gaming): Pro Spiel gibt es einen Eintrag „Spielstand: …“, der sich bei jeder Änderung selbst aktualisiert (mit Verlauf). Für League kommen „Statistik & Rang“ (Winrate, KDA, CS, Champions, Rollen, Ziele) und eine Nachbesprechung je Spiel dazu. JARVIS kennt das alles auch, wenn das Spiel oder der Client gerade nicht läuft.

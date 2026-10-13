@@ -79,7 +79,8 @@
     "wiki": {
       "api": "https://ark.wiki.gg/api.php",
       "label": "ARK Wiki (wiki.gg)"
-    }
+    },
+    "steamAppId": 346110
   },
   {
     "id": "ark_asa",
@@ -103,7 +104,8 @@
     "wiki": {
       "api": "https://ark.wiki.gg/api.php",
       "label": "ARK Wiki (wiki.gg)"
-    }
+    },
+    "steamAppId": 2399830
   },
   {
     "id": "eldenring",
@@ -117,7 +119,8 @@
       "eldenring.exe"
     ],
     "integration": "generic",
-    "accent": "#d9b45b"
+    "accent": "#d9b45b",
+    "steamAppId": 1245620
   },
   {
     "id": "nightreign",
@@ -130,7 +133,8 @@
       "nightreign.exe"
     ],
     "integration": "generic",
-    "accent": "#8f7cc9"
+    "accent": "#8f7cc9",
+    "steamAppId": 2622380
   },
   {
     "id": "apexlegends",
@@ -143,7 +147,8 @@
       "r5apex.exe",
       "r5apex_dx12.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 1172470
   },
   {
     "id": "assettocorsa",
@@ -156,7 +161,8 @@
       "acs.exe",
       "AssettoCorsa.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 244210
   },
   {
     "id": "ea_fc",
@@ -187,7 +193,8 @@
     "wiki": {
       "api": "https://wiki.factorio.com/api.php",
       "label": "Factorio Wiki"
-    }
+    },
+    "steamAppId": 427520
   },
   {
     "id": "fortnite",
@@ -210,7 +217,8 @@
       "Grounded-Win64-Shipping.exe",
       "Grounded.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 962130
   },
   {
     "id": "minecraft",
@@ -262,7 +270,8 @@
     "timerKinds": [
       "breeding",
       "crafting"
-    ]
+    ],
+    "steamAppId": 1623730
   },
   {
     "id": "planetzoo",
@@ -273,7 +282,8 @@
     "processes": [
       "PlanetZoo.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 703080
   },
   {
     "id": "rust",
@@ -284,7 +294,8 @@
     "processes": [
       "RustClient.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 252490
   },
   {
     "id": "subnautica",
@@ -295,7 +306,8 @@
     "processes": [
       "Subnautica.exe"
     ],
-    "integration": "generic"
+    "integration": "generic",
+    "steamAppId": 264710
   },
   {
     "id": "terraria",
@@ -310,7 +322,8 @@
     "wiki": {
       "api": "https://terraria.wiki.gg/api.php",
       "label": "Terraria Wiki (wiki.gg)"
-    }
+    },
+    "steamAppId": 105600
   },
   {
     "id": "theisle",
@@ -386,5 +399,23 @@
       "Cyberpunk2077.exe"
     ],
     "integration": "generic"
+  },
+  {
+    "id": "hytale",
+    "name": "Hytale",
+    "short": "HY",
+    "aliases": [
+      "hytale"
+    ],
+    "processes": [
+      "HytaleClient.exe",
+      "Hytale.exe"
+    ],
+    "integration": "generic",
+    "timerKinds": [
+      "crafting",
+      "custom"
+    ],
+    "accent": "#f5a524"
   }
 ]

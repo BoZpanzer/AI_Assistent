@@ -167,13 +167,29 @@ class Tasks {
     return this.db.all(sql, ...p).map((r) => this.toPublic(r));
   }
 
+  /**
+   * Heute relevante Aufgaben fürs Dashboard, nach Priorität sortiert:
+   * fällig bis heute Abend (inkl. tägliche/wiederkehrende), überfällige, und wichtige ohne Datum.
+   */
+  focus(limit = 6) {
+    const eod = endOfDay();
+    const rank = { high: 0, medium: 1, low: 2 };
+    const open = this.list({ filter: 'all', limit: 1000 });
+    const rel = open.filter((t) => (t.dueAt && new Date(t.dueAt) <= eod) || (!t.dueAt && (t.priority === 'high' || t.starred)));
+    rel.sort((a, b) => (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || (b.starred ? 1 : 0) - (a.starred ? 1 : 0)
+      || (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
+    return rel.slice(0, limit);
+  }
+
   /** Grouped view used by the Aufgaben page. */
   board() {
     const eod = endOfDay();
     const in7 = new Date(Date.now() + 7 * 86400000);
     const open = this.list({ filter: 'all', limit: 1000 });
-    const today = open.filter((t) => !t.recurrence && t.dueAt && new Date(t.dueAt) <= eod);
-    const recurring = open.filter((t) => t.recurrence);
+    const rank = { high: 0, medium: 1, low: 2 };
+    const byPrio = (a, b) => (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity);
+    const today = open.filter((t) => !t.recurrence && t.dueAt && new Date(t.dueAt) <= eod).sort(byPrio);
+    const recurring = open.filter((t) => t.recurrence).sort(byPrio);
     const soon = open.filter((t) => !t.recurrence && t.dueAt && new Date(t.dueAt) > eod && new Date(t.dueAt) <= in7);
     const later = open.filter((t) => !t.recurrence && (!t.dueAt || new Date(t.dueAt) > in7));
     const done = this.list({ filter: 'done', limit: 20 });

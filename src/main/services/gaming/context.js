@@ -112,6 +112,13 @@ class GameContext {
     const lc = procs.has('leagueclientux.exe');
     if (lc !== this.leagueClient) { this.leagueClient = lc; this.bus.emit('game:client', { league: lc }); }
     const found = this.profiles().filter((p) => (p.processes || []).some((x) => procs.has(x.toLowerCase())) && !p.processRequiresTitle).map((p) => p.id);
+    // Steam meldet das laufende Spiel selbst (Registry) – so werden auch Spiele ohne bekannten Prozessnamen erkannt
+    if (this.steam && this.platform === 'win32') {
+      try {
+        const appid = await this.steam.runningAppId();
+        if (appid) { const sp = this.profiles().find((p) => p.steamAppId === appid); if (sp && !found.includes(sp.id)) found.push(sp.id); }
+      } catch { /* ignore */ }
+    }
     const prev = this.running;
     const changed = found.join(',') !== prev.join(',');
     this.running = found;

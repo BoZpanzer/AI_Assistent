@@ -32,7 +32,8 @@ app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,Media
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let win = null; let tray = null; let core = null; let quitting = false; let overlay = null;
-const startHidden = process.argv.includes('--hidden');
+const startHidden = process.argv.includes('--hidden') && !process.argv.includes('--updated');
+const justUpdated = process.argv.includes('--updated');
 
 function cipher() {
   return {
@@ -63,7 +64,11 @@ function createWindow() {
   });
   win.setMenuBarVisibility(false);
   win.loadURL('app://jarvis/index.html');
-  win.once('ready-to-show', () => { if (!(startHidden || s.startMinimized)) { win.show(); win.focus(); } });
+  win.once('ready-to-show', () => {
+    // Nach einem Update immer sichtbar starten (auch wenn „minimiert starten“ aktiv ist)
+    if (justUpdated || !(startHidden || s.startMinimized)) { win.show(); win.focus(); }
+    if (justUpdated) setTimeout(() => toast('JARVIS aktualisiert', `Version ${VERSION} ist installiert – deine Daten sind unverändert.`), 1500);
+  });
   win.on('close', (e) => {
     if (!quitting && core.settings.get('closeToTray')) { e.preventDefault(); win.hide(); send('window', { visible: false }); }
   });
@@ -159,7 +164,7 @@ function forwardEvents() {
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
     'game:context', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio',
     'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported',
-    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state', 'drive:status'];
+    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }
 
@@ -207,7 +212,7 @@ app.whenReady().then(async () => {
     if (file.endsWith('.html')) {
       headers.set('Content-Security-Policy', [
         "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'", "font-src 'self' data:",
-        "img-src 'self' data: blob: https://ddragon.leagueoflegends.com", "media-src 'self' blob: data:", "connect-src 'self'",
+        "img-src 'self' data: blob: https://ddragon.leagueoflegends.com https://cdn.akamai.steamstatic.com https://shared.akamai.steamstatic.com https://cdn.cloudflare.steamstatic.com https://shared.cloudflare.steamstatic.com https://shared.fastly.steamstatic.com https://steamcdn-a.akamaihd.net", "media-src 'self' blob: data:", "connect-src 'self'",
         "worker-src 'self' blob:", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
       ].join('; '));
     }
@@ -276,7 +281,7 @@ async function runSmoke() {
   } catch (e) { report.steps.push({ name: 'Ausnahme', ok: false, detail: e.message }); clearTimeout(timer); done(1); }
 }
 
-app.on('second-instance', (_e, argv) => { showWindow(); });
+app.on('second-instance', () => { showWindow(); });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); try { core?.stop(); } catch { /* ignore */ } });
 app.on('window-all-closed', () => { /* tray keeps running */ });

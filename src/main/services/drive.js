@@ -26,7 +26,7 @@ class Drive {
 
   cfg() { return this.s.settings.get('study') || {}; }
   active() { return this.cfg().source === 'drive'; }
-  granted() { return (this.s.settings.get('google')?.scopes || []).includes(SCOPE) && this.s.google.isConnected(); }
+  granted() { const sc = this.s.settings.get('google')?.scopes || []; return (sc.includes(SCOPE) || sc.includes('https://www.googleapis.com/auth/drive')) && this.s.google.isConnected(); }
   folderName() { return this.cfg().driveFolder || 'Goodnotes'; }
   root() { return path.join(this.s.paths.data, 'drive', safeName(this.folderName())); }
   manifestFile() { return path.join(this.root(), '.jarvis-drive.json'); }

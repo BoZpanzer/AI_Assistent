@@ -100,6 +100,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'tasks.update': ({ id, patch }) => s.tasks.update(id, patch),
     'tasks.complete': ({ id, done }) => s.tasks.complete(id, done !== false),
     'tasks.remove': ({ id }) => s.tasks.remove(id),
+    'tasks.focus': ({ limit } = {}) => s.tasks.focus(limit || 6),
     'tasks.counts': () => s.tasks.counts(),
     'tasks.categories': () => s.tasks.categories(),
     'tasks.addAttachment': ({ id, kind, name, ref }) => s.tasks.addAttachment(id, { kind, name, ref }),
@@ -133,6 +134,14 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'feeds.refresh': async ({ id }) => (id ? s.feeds.refresh(id) : s.feeds.refreshAll()),
     'feeds.update': ({ id, patch }) => s.feeds.update(id, patch || {}),
     'feeds.remove': ({ id }) => s.feeds.remove(id),
+    'backup.driveStatus': () => s.driveBackup.status(),
+    'backup.driveConnect': async () => {
+      try { await s.google.connect({ drive: 'write' }); } finally { showWindow(); }
+      s.settings.update({ backupDrive: { enabled: true } });
+      s.driveBackup.run({ force: true }).catch((e) => log.warn('drive-backup', e));
+      return s.driveBackup.status();
+    },
+    'backup.driveRun': () => s.driveBackup.run({ force: true }),
     'drive.status': () => s.drive.publicStatus(),
     'drive.connect': async () => {
       try { await s.google.connect({ drive: true }); } finally { showWindow(); }
@@ -228,6 +237,17 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'lol.reviews': ({ limit } = {}) => s.gaming.lolflow.reviews(limit || 10),
     'lol.reviewNow': () => s.gaming.lolflow.review({ force: true }),
     'lol.champselect': () => s.gaming.lolflow.state(),
+    'steam.library': () => s.gaming.steam.library(),
+    'steam.import': ({ minMinutes } = {}) => s.gaming.steam.importProfiles({ minMinutes: minMinutes ?? s.settings.get('gaming').steamMinMinutes ?? 1 }),
+    'steam.updates': () => s.gaming.steam.updates(),
+    'steam.accounts': () => s.gaming.steam.accounts(),
+    // Nur feste steam://-Befehle (Downloads öffnen, Dateien prüfen/aktualisieren, Spiel starten) – keine beliebigen URLs
+    'steam.open': ({ action, appid }) => {
+      const id = Number(appid);
+      const url = action === 'downloads' ? 'steam://open/downloads' : action === 'validate' && id > 0 ? `steam://validate/${id}` : action === 'run' && id > 0 ? `steam://rungameid/${id}` : action === 'store' && id > 0 ? `steam://store/${id}` : null;
+      if (!url) throw new Error('Unbekannte Steam-Aktion');
+      shell.openExternal(url); return true;
+    },
     'game.lastMap': ({ game }) => (game ? s.gaming.lastMap(game) : { map: null, hasImage: false, markers: [] }),
     'game.setLastMap': ({ game, map }) => s.gaming.setLastMap(game, map),
     'game.addMarker': ({ game, map, marker }) => s.gaming.addMarker(game, map, marker),
@@ -313,7 +333,16 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       const { file } = s.updater.downloaded;
       s.updater.set({ state: 'installing' });
       // Stiller Installer: ersetzt die Programmdateien (Daten bleiben) und startet JARVIS danach neu.
-      require('node:child_process').spawn(file, ['/S', '/RELAUNCH'], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      // Ein kleiner, losgelöster cmd-Prozess wartet, bis der Installer fertig ist, und startet JARVIS dann neu.
+      // (Zusätzlich startet auch der Installer JARVIS – die zweite Instanz beendet sich dank Single-Instance-Sperre sofort.)
+      const exe = app.getPath('exe');
+      if (process.platform === 'win32' && app.isPackaged) {
+        const q = (x) => '"' + String(x).replace(/"/g, '') + '"';
+        const line = `/d /s /c "start "" /wait ${q(file)} /S /RELAUNCH & timeout /t 2 /nobreak >nul & start "" ${q(exe)} --updated"`;
+        require('node:child_process').spawn(process.env.ComSpec || 'cmd.exe', [line], { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true }).unref();
+      } else {
+        require('node:child_process').spawn(file, ['/S', '/RELAUNCH'], { detached: true, stdio: 'ignore' }).unref();
+      }
       setTimeout(() => quit(), 700);
       return { started: true };
     },

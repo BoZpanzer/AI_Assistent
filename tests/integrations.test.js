@@ -413,3 +413,99 @@ test('Kalender-Abo (ICS): Termine erscheinen, Aktualisierung entfernt Altes, sch
   assert.equal(core.calendar.list(...range).filter((e) => e.calendarId.startsWith('feed:')).length, 0);
   cleanup();
 });
+
+test('Steam-Bibliothek: Spielzeit aus localconfig, Updates aus Manifest, Game-Seiten ab 1 Minute', async () => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
+  const steamDir = fs.mkdtempSync(path.join(os.tmpdir(), 'steam-'));
+  const lib2 = fs.mkdtempSync(path.join(os.tmpdir(), 'steamlib-'));
+  const w = (p, t) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, t); };
+  const id64 = '76561198845901603'; const id3 = String(BigInt(id64) - 76561197960265728n);
+  w(path.join(steamDir, 'config', 'loginusers.vdf'), `"users"\n{\n\t"${id64}"\n\t{\n\t\t"AccountName"\t\t"boz"\n\t\t"PersonaName"\t\t"BoZ"\n\t\t"MostRecent"\t\t"1"\n\t\t"Timestamp"\t\t"1760000000"\n\t}\n}\n`);
+  w(path.join(steamDir, 'steamapps', 'libraryfolders.vdf'), `"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"${steamDir.replace(/\\/g, '\\\\')}"\n\t}\n\t"1"\n\t{\n\t\t"path"\t\t"${lib2.replace(/\\/g, '\\\\')}"\n\t}\n}\n`);
+  const acf = (appid, name, flags, extra = '') => `"AppState"\n{\n\t"appid"\t\t"${appid}"\n\t"name"\t\t"${name}"\n\t"StateFlags"\t\t"${flags}"\n\t"installdir"\t\t"${name}"\n\t"SizeOnDisk"\t\t"1000"\n\t"LastUpdated"\t\t"1760000000"${extra}\n}\n`;
+  w(path.join(steamDir, 'steamapps', 'appmanifest_264710.acf'), acf(264710, 'Subnautica', 4));
+  w(path.join(lib2, 'steamapps', 'appmanifest_892970.acf'), acf(892970, 'Valheim', 6)); // 2|4 = Update nötig
+  w(path.join(lib2, 'steamapps', 'appmanifest_228980.acf'), acf(228980, 'Steamworks Common Redistributables', 4));
+  w(path.join(lib2, 'steamapps', 'appmanifest_1000.acf'), acf(1000, 'Nie gespielt', 4));
+  // Spielzeit (Minuten) – 440 ist nicht installiert, Name kommt aus dem Store; 999 ist ein Soundtrack (Store-Typ „music“)
+  const apps = { 264710: 125, 892970: 3000, 440: 61, 999: 5, 2000: 0 };
+  w(path.join(steamDir, 'userdata', id3, 'config', 'localconfig.vdf'), `"UserLocalConfigStore"\n{\n\t"Software"\n\t{\n\t\t"Valve"\n\t\t{\n\t\t\t"Steam"\n\t\t\t{\n\t\t\t\t"apps"\n\t\t\t\t{\n${Object.entries(apps).map(([id, m]) => `\t\t\t\t\t"${id}"\n\t\t\t\t\t{\n\t\t\t\t\t\t"LastPlayed"\t\t"${m ? 1760000000 + m : 0}"\n\t\t\t\t\t\t"Playtime"\t\t"${m}"\n\t\t\t\t\t}`).join('\n')}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n`);
+  const store = { 440: { name: 'Team Fortress 2', type: 'game', header_image: 'https://shared.akamai.steamstatic.com/440.jpg' }, 999: { name: 'Irgendwas Original Soundtrack', type: 'music' }, 1000: { name: 'Nie gespielt', type: 'game' } };
+  let storeCalls = 0;
+  const { core, cleanup } = tempCore({ fetch: async (url) => {
+    const appid = String(url).match(/appids=(\d+)/)[1]; storeCalls++;
+    return json({ [appid]: store[appid] ? { success: true, data: store[appid] } : { success: false } });
+  } });
+  core.settings.update({ gaming: { steamDir } });
+  const steam = core.gaming.steam;
+  const lib = await steam.library();
+  assert.equal(lib.available, true); assert.equal(lib.account, id64);
+  assert.deepEqual(lib.games.map((g) => g.name), ['Valheim', 'Subnautica', 'Team Fortress 2', 'Nie gespielt'], 'nach Spielzeit sortiert, ohne Redistributable/Soundtrack');
+  const val = lib.games.find((g) => g.appid === 892970);
+  assert.equal(val.hours, 50); assert.equal(val.updateRequired, true); assert.equal(val.installed, true);
+  assert.equal(lib.games.find((g) => g.appid === 440).installed, false);
+  assert.deepEqual((await steam.updates()).map((u) => u.name), ['Valheim']);
+  // Game-Seiten: Subnautica ist ein eingebautes Profil (Steam-ID), „Nie gespielt“ hat 0 Minuten
+  const before = storeCalls;
+  const r = await steam.importProfiles({ minMinutes: 1 });
+  assert.equal(storeCalls, before, 'Store-Daten kommen aus dem Cache');
+  assert.equal(r.created, 2); assert.equal(r.matched, 1);
+  const ids = core.gaming.context.profiles().filter((p) => p.source === 'steam').map((p) => p.id).sort();
+  assert.deepEqual(ids, ['steam_440', 'steam_892970']);
+  assert.equal(core.gaming.context.profile('steam_440').header, 'https://shared.akamai.steamstatic.com/440.jpg');
+  const r2 = await steam.importProfiles({ minMinutes: 1 });
+  assert.equal(r2.created, 0); assert.equal(r2.updated, 2, 'zweiter Import legt nichts doppelt an');
+  assert.ok(core.gaming.context.profile('hytale'), 'Hytale-Profil vorhanden');
+  cleanup();
+  fs.rmSync(steamDir, { recursive: true, force: true }); fs.rmSync(lib2, { recursive: true, force: true });
+});
+
+test('Dashboard-Todos: heute fällige + wichtige nach Priorität sortiert', () => {
+  const { core, cleanup } = tempCore();
+  const t = core.tasks;
+  const today = new Date(); today.setHours(23, 0, 0, 0);
+  const tomorrow = new Date(Date.now() + 2 * 86400000);
+  t.create({ title: 'Niedrig heute', priority: 'low', dueAt: today.toISOString() });
+  t.create({ title: 'Mittel täglich', priority: 'medium', recurrence: { freq: 'daily' } });
+  t.create({ title: 'Hoch ohne Datum', priority: 'high' });
+  t.create({ title: 'Hoch heute', priority: 'high', dueAt: today.toISOString() });
+  t.create({ title: 'Hoch übermorgen', priority: 'high', dueAt: tomorrow.toISOString() });
+  t.create({ title: 'Mittel ohne Datum', priority: 'medium' });
+  const f = t.focus(10).map((x) => x.title);
+  assert.deepEqual(f, ['Hoch heute', 'Hoch ohne Datum', 'Mittel täglich', 'Niedrig heute']);
+  const b = t.board();
+  assert.equal(b.today[0].title, 'Hoch heute');
+  cleanup();
+});
+
+test('Drive-Backup: Ordner „coding“ finden/anlegen, hochladen, nur eigene alte Sicherungen löschen', async () => {
+  const calls = []; let uploaded = null;
+  const { core, cleanup } = tempCore({ fetch: async (url, init) => {
+    if (String(url).startsWith('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable')) {
+      assert.equal(JSON.parse(init.body).appProperties.jarvis, 'backup');
+      return new Response('', { status: 200, headers: { Location: 'https://www.googleapis.com/upload/drive/v3/files?upload_id=abc' } });
+    }
+    if (String(url).includes('upload_id=abc')) { uploaded = init.body.length; return json({ id: 'new', name: 'x.zip' }); }
+    throw new Error('unexpected ' + url);
+  } });
+  core.google.isConnected = () => true;
+  core.google.token = async () => 't';
+  core.settings.update({ google: { scopes: ['https://www.googleapis.com/auth/drive'] }, backupDrive: { enabled: true, folder: 'coding', keep: 2 } });
+  core.google.api = async (method, p, opts = {}) => {
+    calls.push([method, p, opts.query?.q || opts.body?.name || '']);
+    if (method === 'GET' && opts.query.q.startsWith("name = 'coding'")) return { files: [] };
+    if (method === 'POST') return { id: 'fold' };
+    if (method === 'GET') { assert.match(opts.query.q, /'fold' in parents and appProperties has/); return { files: [{ id: 'new' }, { id: 'b1' }, { id: 'b2' }, { id: 'b3' }] }; }
+    if (method === 'DELETE') return {};
+    throw new Error('unexpected');
+  };
+  const r = await core.driveBackup.run({ force: false });
+  assert.equal(r.ok, true); assert.ok(uploaded > 100, 'Zip hochgeladen');
+  assert.deepEqual(calls.filter((c) => c[0] === 'POST').map((c) => c[2]), ['coding'], 'Ordner angelegt');
+  assert.deepEqual(calls.filter((c) => c[0] === 'DELETE').map((c) => c[1]), ['/files/b2', '/files/b3']);
+  assert.equal(core.driveBackup.status().lastFile, r.file);
+  assert.equal((await core.driveBackup.run()).skipped, 'not-due', 'höchstens einmal pro Intervall');
+  core.settings.update({ google: { scopes: ['https://www.googleapis.com/auth/drive.readonly'] } });
+  await assert.rejects(core.driveBackup.run({ force: true }), /Schreibzugriff/);
+  cleanup();
+});

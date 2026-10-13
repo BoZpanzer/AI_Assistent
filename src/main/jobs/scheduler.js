@@ -40,6 +40,24 @@ class Scheduler {
     }, { initialDelayMs: 8_000 });
     // Kalender-Abos (z. B. Campus-Dual-Stundenplan): alle 15 Minuten, ersetzt Einträge komplett → entfernte Termine verschwinden
     this.add('calendar-feeds', 15 * 60_000, async () => { if (s.db.get('SELECT COUNT(*) c FROM calendar_feeds').c) await s.feeds.refreshAll(); }, { initialDelayMs: 20_000 });
+    // Steam: neue Spiele (≥ Mindest-Spielzeit) als Game-Seite anlegen, Updates melden – 1× pro Stunde, nicht beim Zocken
+    // Google-Drive-Backup (Standard 1× täglich, Ordner „coding“) – prüft stündlich, ob fällig
+    this.add('drive-backup', 3600_000, async () => {
+      if (!s.settings.get('backupDrive')?.enabled || !s.driveBackup.granted()) return;
+      try { await s.driveBackup.run(); } catch (e) {
+        s.notifications.push({ category: 'system', origin: 'system', dedupeKey: 'drive-backup-fail:' + new Date().toISOString().slice(0, 10), title: 'Drive-Backup fehlgeschlagen', body: e.message });
+        throw e;
+      }
+    }, { heavy: true, initialDelayMs: 3 * 60_000 });
+    this.add('steam', 3600_000, async () => {
+      if (process.platform !== 'win32' || !(await s.gaming.steam.root())) return;
+      const g = s.settings.get('gaming');
+      if (g.steamAutoImport !== false) await s.gaming.steam.importProfiles({ minMinutes: g.steamMinMinutes ?? 1 });
+      const ups = await s.gaming.steam.updates();
+      const pending = ups.filter((u) => !u.updating);
+      if (pending.length) s.notifications.push({ category: 'gaming', origin: 'client', dedupeKey: 'steam-updates:' + new Date().toISOString().slice(0, 10) + ':' + pending.map((u) => u.appid).join(','),
+        title: `${pending.length} Steam-Spiel${pending.length > 1 ? 'e brauchen' : ' braucht'} ein Update`, body: pending.slice(0, 5).map((u) => u.name).join(', ') + ' – unter Gaming → Steam starten.' });
+    }, { heavy: true, initialDelayMs: 50_000 });
     this.add('drive-sync', 20 * 60_000, async () => { if (s.drive.active() && s.drive.granted() && s.settings.get('study').enabled) await s.drive.sync(); }, { heavy: true, initialDelayMs: 40_000 });
     this.add('study-scan', 6 * 3600_000, () => s.study.scan(), { heavy: true, initialDelayMs: 25_000 });
     this.add('embeddings', 5 * 60_000, () => s.vectors.backfill({ maxItems: 150 }), { heavy: true, initialDelayMs: 60_000 });

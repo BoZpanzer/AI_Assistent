@@ -465,3 +465,11 @@ a:hover { text-decoration: underline; }
 /* Kalender-Einträge in Kategorie-/Terminfarbe */
 .ev.colored { border-left-width: 3px; }
 .ev.allday { color: white; }
+
+/* Steam-Bibliothek */
+.steam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; max-height: 46vh; overflow: auto; padding-right: 4px; }
+.steam-card { border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: rgba(3, 12, 22, 0.55); cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.steam-card:hover { border-color: var(--line-strong); box-shadow: var(--glow-sm); }
+.steam-card img { width: 100%; aspect-ratio: 460 / 215; object-fit: cover; border-radius: 5px; background: rgba(56, 189, 248, 0.08); }
+.chip.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
+.game-hero .gheader { height: 64px; aspect-ratio: 460 / 215; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }

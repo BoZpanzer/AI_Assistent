@@ -195,13 +195,14 @@ export function RightColumn({ extra }) {
   const from = new Date(now); from.setHours(0, 0, 0, 0);
   const to = new Date(from.getTime() + 7 * 86400000);
   const [events] = useRpc('calendar.list', { from: from.toISOString(), to: to.toISOString() }, { events: ['calendar:changed'], initial: [] });
-  const [tasks] = useRpc('tasks.list', { filter: 'all', limit: 30 }, { events: ['tasks:changed'], initial: [] });
+  const [tasks] = useRpc('tasks.focus', { limit: 5 }, { events: ['tasks:changed'], initial: [] });
   const [notes] = useRpc('notify.list', { limit: 4 }, { events: ['notification', 'notifications:changed'], initial: [] });
   const counts = useStore((s) => s.counts);
   const game = useStore((s) => s.game);
   const todays = (events || []).filter((e) => new Date(e.start).toDateString() === now.toDateString() || (new Date(e.start) < now && new Date(e.end) > now));
   const upcoming = (events || []).filter((e) => new Date(e.start) > now).slice(0, 3);
-  const open = (tasks || []).slice(0, 3);
+  const open = (tasks || []).slice(0, 5);
+  const PRIO = { high: '🔴', medium: '🟡', low: '⚪' };
   const heute = [
     { text: todays.length ? `${todays.length} Termin${todays.length > 1 ? 'e' : ''} heute${todays[0] && !todays[0].allDay ? ' · ab ' + fmtTime(todays[0].start) : ''}` : 'Keine Termine heute' },
     { text: `${counts.today} Aufgabe${counts.today === 1 ? '' : 'n'} fällig`, warn: counts.overdue > 0, v: counts.overdue ? `${counts.overdue} überfällig` : '' },
@@ -214,7 +215,7 @@ export function RightColumn({ extra }) {
       <RCard icon={CalendarDays} title="KALENDER" sub="Termine und Ereignisse" empty="Keine anstehenden Termine"
         items={upcoming.map((e) => ({ text: e.title, v: `${relDay(e.start)}${e.allDay ? '' : ' ' + fmtTime(e.start)}` }))} onClick={() => navigate('calendar')} />
       <RCard icon={SquareCheckBig} title="AUFGABEN" sub="Deine To-dos" empty="Alles erledigt 🎉"
-        items={open.map((t) => ({ text: t.title, warn: t.overdue, v: t.dueAt ? relDay(t.dueAt) : '' }))} onClick={() => navigate('tasks')} />
+        items={open.map((t) => ({ text: `${PRIO[t.priority] || ''} ${t.title}`.trim(), warn: t.overdue, v: t.recurrence ? '↻ ' + (t.allDay || !t.dueAt ? 'heute' : fmtTime(t.dueAt)) : t.dueAt ? relDay(t.dueAt) : '' }))} onClick={() => navigate('tasks')} />
       <RCard icon={Bell} title="BENACHRICHTIGUNGEN" sub="Wichtige Updates" empty="Keine neuen Meldungen"
         items={(notes || []).map((n) => ({ text: n.title, v: ago(n.createdAt), warn: !n.read }))} onClick={() => setState({ showNotifications: true })} />
     </aside>

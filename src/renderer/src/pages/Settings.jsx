@@ -228,6 +228,10 @@ function GamingCard({ s, secrets }) {
       <Field label="LoL Nachbesprechung nach jedem Spiel"><Toggle checked={g.lolReview !== false} onChange={(v) => upd({ gaming: { lolReview: v } })} /></Field>
       {g.lolReview !== false && <Field label="… mit KI-Zusammenfassung (Gemini)"><Toggle checked={g.lolReviewAi !== false} onChange={(v) => upd({ gaming: { lolReviewAi: v } })} /></Field>}
       <div class="hr" />
+      <Field label="Steam: Game-Seiten automatisch anlegen" hint="Für jedes Steam-Spiel mit Spielzeit – stündlich geprüft, lokal aus Steam gelesen"><Toggle checked={g.steamAutoImport !== false} onChange={(v) => upd({ gaming: { steamAutoImport: v } })} /></Field>
+      <Field label="… ab Spielzeit (Minuten)"><input class="inp" type="number" min="0" style={{ width: 90 }} value={g.steamMinMinutes ?? 1} onChange={(e) => upd({ gaming: { steamMinMinutes: Math.max(0, Number(e.currentTarget.value) || 0) } })} /></Field>
+      <Field label="Steam-Ordner (nur falls nicht gefunden)"><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.steamDir || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) upd({ gaming: { steamDir: f } }); }}><FolderOpen size={14} /></button></div></Field>
+      <div class="hr" />
       <TarkovTrackerField />
     </Panel>
   );
@@ -333,10 +337,31 @@ function Data() {
         <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.backup')); if (r) { toast('Sicherung erstellt'); reload(); } }}><Download size={12} />Sicherung erstellen</button>
         <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.restore', {})); if (r?.staged && await ask('Sicherung geprüft. JARVIS jetzt neu starten und wiederherstellen?', '', { confirmOnly: true, okLabel: 'Neu starten' })) rpc('app.relaunch'); }}><Upload size={12} />Wiederherstellen…</button>
       </div>
+      <DriveBackupField s={s} />
       <div class="tiny muted mt">Automatische Tagessicherungen (7 Tage): {backups.filter((b) => b.auto).length} · zuletzt {backups[0] ? ago(backups[0].at) : '—'} · vor jeder Schema-Migration wird zusätzlich gesichert.</div>
       <div class="hr" />
       <UpdateSection s={s} />
     </Panel>
+  );
+}
+
+function DriveBackupField({ s }) {
+  const [st, reload] = useRpc('backup.driveStatus', {}, { events: ['backup:drive', 'settings:changed'] });
+  const [busy, setBusy] = useState(false);
+  const b = s.backupDrive || {};
+  const connect = async () => { setBusy(true); const r = await guard(() => rpc('backup.driveConnect')); setBusy(false); if (r) { toast('Drive-Backup aktiv – erste Sicherung läuft'); setState({ google: await rpc('calendar.status') }); reload(); } };
+  const now = async () => { setBusy(true); const r = await guard(() => rpc('backup.driveRun')); setBusy(false); if (r?.ok) toast(`Gesichert: ${r.file}`); reload(); };
+  return (
+    <div class="mt" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+      <Field label="Automatisches Backup in Google Drive" hint="Täglich, nicht beim Zocken. JARVIS legt nur eigene Sicherungsdateien an und behält die neuesten."><Toggle checked={!!b.enabled && !!st?.granted} onChange={(v) => (v && !st?.granted ? connect() : upd({ backupDrive: { enabled: v } }))} /></Field>
+      <Field label="Drive-Ordner"><input class="inp" style={{ width: 180 }} value={b.folder || 'coding'} onChange={(e) => upd({ backupDrive: { folder: e.currentTarget.value.trim().replace(/^\/+|\/+$/g, '') || 'coding' } })} /></Field>
+      <Field label="Anzahl behalten"><input class="inp" type="number" min="1" max="100" style={{ width: 90 }} value={b.keep || 14} onChange={(e) => upd({ backupDrive: { keep: Math.max(1, Math.min(100, Number(e.currentTarget.value) || 14)) } })} /></Field>
+      <div class="row gap-s">
+        {!st?.granted ? <button class="btn xs primary" disabled={busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={12} />}Drive-Backup aktivieren</button>
+          : <button class="btn xs" disabled={busy || st?.running} onClick={now}>{busy || st?.running ? <Spinner /> : <Upload size={12} />}Jetzt in Drive sichern</button>}
+        <span class="tiny muted grow" style={{ color: st?.lastError ? 'var(--red)' : undefined }}>{st?.running ? 'Sichere …' : st?.lastError ? 'Fehler: ' + st.lastError : st?.lastSuccess ? `Zuletzt: ${ago(st.lastSuccess)} · ${st.lastFile} (${Math.round((st.lastSize || 0) / 1024)} KB) in „${st.folder}“` : st?.granted ? 'Noch keine Sicherung in Drive' : 'Braucht einmalig Schreibzugriff auf dein Google Drive (Google-Anmeldung)'}</span>
+      </div>
+    </div>
   );
 }
 
