@@ -50,7 +50,7 @@ console.log('▶ Installer (NSIS)');
 const makensis = process.platform === 'win32' ? findWinMakensis() : 'makensis';
 const setup = path.join(out, 'JARVIS_Setup.exe');
 fs.rmSync(setup, { force: true });
-run(makensis, ['-V2', `-DVERSION=${pkg.version}`, `-DSRCDIR=${unpacked}`, `-DOUTFILE=${setup}`, path.join(root, 'build', 'installer.nsi')], { cwd: path.join(root, 'build') });
+run(makensis, ['-V2', '-INPUTCHARSET', 'UTF8', `-DVERSION=${pkg.version}`, `-DSRCDIR=${unpacked}`, `-DOUTFILE=${setup}`, path.join(root, 'build', 'installer.nsi')], { cwd: path.join(root, 'build') });
 
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const sums = { 'JARVIS.exe': sha(exe), 'JARVIS_Setup.exe': sha(setup) };

@@ -1,4 +1,4 @@
-; JARVIS – Windows installer (NSIS 3, Modern UI 2)
+﻿; JARVIS – Windows installer (NSIS 3, Modern UI 2)
 ; Per-user installation: no administrator rights needed, data in %APPDATA%\JARVIS stays untouched.
 Unicode true
 ManifestDPIAware true
