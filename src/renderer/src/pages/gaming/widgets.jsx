@@ -382,16 +382,17 @@ function Wiki({ game, params }) {
 
 // ---------------------------------------------------------------- League
 function useLol() {
-  const [hasKey] = useRpc('lol.hasKey', {}, { events: ['settings:changed'] });
+  const [src] = useRpc('lol.source', {}, { events: ['settings:changed', 'game:data', 'game:running'] });
+  const hasKey = !!(src?.client || src?.key);
   const [stats, reload, st] = useRpc('lol.stats', {}, { events: ['game:data'] });
   const [v] = useRpc('lol.version', {}, {});
-  return { hasKey, stats, reload, st, v };
+  return { hasKey, stats, reload, st, v, src };
 }
 const icon = (v, c) => (v ? `https://ddragon.leagueoflegends.com/cdn/${v}/img/champion/${String(c).replace(/[^A-Za-z]/g, '')}.png` : '');
 function Delta({ d }) { if (d == null) return <span class="d muted">–</span>; return <span class={`d ${d >= 0 ? 'up' : 'down'}`}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {d >= 0 ? '+' : ''}{d}% vs. vorher</span>; }
 
 function LolOverview() {
-  const { hasKey, stats, st } = useLol();
+  const { hasKey, stats, st, src } = useLol();
   const [busy, setBusy] = useState(false);
   const sync = async () => { setBusy(true); const r = await guard(() => rpc('lol.sync')); setBusy(false); if (r) toast(`${r.added} neue Matches geladen`); };
   const c = stats?.current;
@@ -400,19 +401,21 @@ function LolOverview() {
       <div class="row">
         <Trophy size={34} style={{ color: '#c8aa6e' }} />
         <div class="grow"><div style={{ fontSize: 20, fontWeight: 700 }}>League of Legends</div><div class="small muted">Performance analysieren. Besser werden. Mit JARVIS.</div></div>
-        {hasKey ? <button class="btn sm" onClick={sync}>{busy ? <Spinner /> : <RefreshCw size={14} />}Matches laden</button> : <button class="btn sm" onClick={() => setState({ page: 'settings' })}>Riot-ID & API-Schlüssel einrichten</button>}
+        {src?.me && <span class="small muted">{src.me.name}</span>}
+        <span class="pill"><span class={`status-dot ${src?.client ? 'dot-ok' : 'dot-off'}`} />{src?.client ? 'Client verbunden' : 'Client nicht offen'}</span>
+        <button class="btn sm" disabled={!hasKey} title={hasKey ? '' : 'League-Client starten'} onClick={sync}>{busy ? <Spinner /> : <RefreshCw size={14} />}Matches laden</button>
       </div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
-      {!c ? <div class="notice mt">Noch keine Ranglisten-Matches gespeichert. {hasKey ? 'Klicke „Matches laden“.' : 'Für Match-Historie brauchst du einen (kostenlosen) Riot-API-Schlüssel. Die Live-Match-Daten funktionieren auch ohne.'}</div> : (
+      {!c ? <div class="notice mt">Noch keine Ranglisten-Matches gespeichert. {src?.client ? 'Klicke „Matches laden“.' : 'Starte einfach den League-Client – JARVIS liest deine letzten Ranglistenspiele und deinen Rang direkt daraus (kein API-Schlüssel nötig) und aktualisiert alle 10 Minuten, solange der Client offen ist.'}</div> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginTop: 12 }}>
           <div class="panel stat row"><div class="ring" style={{ '--p': c.winrate }}><span>{c.winrate}%</span></div><div><div class="hud-label">Winrate</div><div class="small muted">{c.wins}S – {c.games - c.wins}N</div></div></div>
           <div class="panel stat"><div class="hud-label">KDA (Ø)</div><div class="v">{c.kda}</div><div class="small muted">{c.avgK} / {c.avgD} / {c.avgA}</div><Delta d={stats.deltas.kda} /></div>
           <div class="panel stat"><div class="hud-label">CS / Min (Ø)</div><div class="v">{c.csPerMin}</div><Delta d={stats.deltas.csPerMin} /></div>
-          <div class="panel stat"><div class="hud-label">Vision Score (Ø)</div><div class="v">{c.vision}</div><Delta d={stats.deltas.vision} /></div>
+          <div class="panel stat"><div class="hud-label">Vision Score (Ø)</div><div class="v">{c.vision ?? '–'}</div><Delta d={stats.deltas.vision} /></div>
           <div class="panel stat"><div class="hud-label">Rang (Solo/Duo)</div>{stats.rank ? <><div class="v" style={{ fontSize: 24 }}>{cap(stats.rank.tier)} {stats.rank.rank}</div><div class="small">{stats.rank.lp} LP{stats.rank.prev && stats.rank.prev.tier === stats.rank.tier && stats.rank.prev.rank === stats.rank.rank ? <span class={stats.rank.lp - stats.rank.prev.lp >= 0 ? 'ok' : 'err'}> {stats.rank.lp - stats.rank.prev.lp >= 0 ? '▲ +' : '▼ '}{stats.rank.lp - stats.rank.prev.lp} LP</span> : ''}</div></> : <div class="small muted">nicht verfügbar</div>}</div>
         </div>
       )}
-      <div class="tiny muted mt">Letzte {c?.games || 0} Ranglistenspiele · Quelle: Riot Games API (eigener Schlüssel) · keine Spielautomatisierung</div>
+      <div class="tiny muted mt">Letzte {c?.games || 0} Ranglistenspiele (Solo/Duo) · Quelle: {src?.lastSync?.source === 'api' ? 'Riot-API (eigener Schlüssel)' : 'lokaler League-Client'}{src?.lastSync ? ' · Stand ' + fmtDateTime(src.lastSync.at) : ''} · nur lesend, keine Spielautomatisierung</div>
     </section>
   );
 }

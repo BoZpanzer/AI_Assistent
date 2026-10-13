@@ -61,7 +61,7 @@ const SCHEMA = {
     // Gaming
     gaming: { type: 'object', properties: {
       detection: { type: 'boolean' }, reduceWhileGaming: { type: 'boolean' },
-      riotId: { type: 'string', maxLength: 60 }, riotRegion: { type: 'string', enum: ['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1'] },
+      riotId: { type: 'string', maxLength: 60 }, leagueDir: { type: 'string', maxLength: 500 }, riotRegion: { type: 'string', enum: ['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1'] },
       lolLiveCoach: { type: 'boolean' }, favorites: { type: 'array', items: { type: 'string' } } } },
     // Proactive
     proactive: { type: 'object', properties: {
@@ -88,7 +88,7 @@ const DEFAULTS = {
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40 },
-  gaming: { detection: true, reduceWhileGaming: true, riotId: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [] },
+  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [] },
   proactive: { dailyBriefing: false, briefingTime: '08:00', overdueReminders: true },
   security: { localOnlyProcessing: false, restrictFileAccess: true, lockAfterMinutes: 0 },
 };

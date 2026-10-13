@@ -66,6 +66,11 @@ class Scheduler {
     });
     this.add('housekeeping', 24 * 3600_000, async () => { s.notifications.prune(); s.system.autoBackup(); }, { initialDelayMs: 5 * 60_000 });
     this.add('update-check', 24 * 3600_000, () => s.system.checkUpdates({ silent: true }), { initialDelayMs: 3 * 60_000 });
+    this.add('lol-sync', 10 * 60_000, async () => {
+      const L = s.gaming.league;
+      if (!(await L.lcuCreds())) return; // Client nicht offen → nichts tun
+      await L.syncFromClient();
+    }, { heavy: true, initialDelayMs: 90_000 });
     this.add('lol-live', 5_000, async () => {
       if (!s.settings.get('gaming').lolLiveCoach) return;
       const st = s.gaming.context.state();

@@ -186,7 +186,7 @@ function Gaming({ done }) {
       <div class="small muted">★ Spezialintegration: Escape from Tarkov (Karte, Quests, Keys), League of Legends (Statistik, Live, Coaching), Rise of Kingdoms (Timer, Planung). Alle anderen Spiele bekommen die universelle Oberfläche.</div>
       <Field label="Spielerkennung über laufende Prozesse" wide><Toggle checked={s.gaming.detection} onChange={(v) => upd({ gaming: { detection: v } })} /></Field>
       <Field label="Ressourcen beim Spielen reduzieren" wide><Toggle checked={s.gaming.reduceWhileGaming} onChange={(v) => upd({ gaming: { reduceWhileGaming: v } })} /></Field>
-      <Field label="Riot-ID für LoL-Statistik (optional)" wide><input class="inp" value={s.gaming.riotId} onChange={(e) => upd({ gaming: { riotId: e.currentTarget.value.trim() } })} placeholder="Name#EUW" /></Field>
+      <div class="notice small">League of Legends braucht keinen API-Schlüssel: Statistik und Rang liest JARVIS direkt aus dem laufenden League-Client.</div>
     </>
   );
 }

@@ -246,6 +246,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch }) {
     'lol.addGoal': (p) => s.gaming.league.addGoal(p),
     'lol.removeGoal': ({ id }) => s.gaming.league.removeGoal(id),
     'lol.hasKey': () => s.gaming.league.hasKey(),
+    'lol.source': () => s.gaming.league.source(),
 
     // --- notifications ---
     'notify.list': (p = {}) => s.notifications.list(p),

@@ -179,9 +179,11 @@ function GamingCard({ s, secrets }) {
       <Field label="Spielerkennung aktivieren (Prozesse)"><Toggle checked={g.detection} onChange={(v) => upd({ gaming: { detection: v } })} /></Field>
       <Field label="Ressourcen beim Spielen reduzieren"><Toggle checked={g.reduceWhileGaming} onChange={(v) => upd({ gaming: { reduceWhileGaming: v } })} /></Field>
       <Field label="Erkannte Spiele"><span class="small muted" style={{ textAlign: 'right' }}>{st.loading ? '…' : installed.map((p) => p.short || p.name).join(', ') || 'keine'}</span></Field>
-      <Field label="Riot-ID (Name#TAG)"><input class="inp" value={g.riotId} onChange={(e) => upd({ gaming: { riotId: e.currentTarget.value.trim() } })} placeholder="Name#EUW" /></Field>
+      <div class="notice small">League of Legends: Matchhistorie und Rang werden aus dem laufenden League-Client gelesen – <b>kein API-Schlüssel nötig</b>. Riot-ID/Schlüssel unten nur, wenn du Daten auch ohne geöffneten Client willst.</div>
+      <Field label="League-Ordner (nur falls nicht Standard)"><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.leagueDir} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) upd({ gaming: { leagueDir: f } }); }}><FolderOpen size={14} /></button></div></Field>
+      <Field label="Riot-ID (Name#TAG, optional)"><input class="inp" value={g.riotId} onChange={(e) => upd({ gaming: { riotId: e.currentTarget.value.trim() } })} placeholder="Name#EUW" /></Field>
       <Field label="Region"><Select value={g.riotRegion} onChange={(v) => upd({ gaming: { riotRegion: v } })} options={['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1']} /></Field>
-      <Field label="Riot-API-Schlüssel" hint={secrets['riot.api_key'] ? 'gespeichert' : 'developer.riotgames.com'}>
+      <Field label="Riot-API-Schlüssel (optional)" hint={secrets['riot.api_key'] ? 'gespeichert' : 'nicht nötig, wenn der Client läuft'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['riot.api_key'] ? '••••••••' : 'RGAPI-…'} value={riotKey} onInput={(e) => setRiotKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'riot.api_key', value: riotKey }), 'Gespeichert'); setRiotKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
       </Field>
       <Field label="LoL Live-Coach (Hinweise im Match)"><Toggle checked={g.lolLiveCoach} onChange={(v) => upd({ gaming: { lolLiveCoach: v } })} /></Field>

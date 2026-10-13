@@ -239,9 +239,9 @@ function buildTools(s) {
       return { source: m.source, map: m.value.name, bosses: m.value.bosses.map((b) => ({ name: b.boss?.name, chance: Math.round(b.spawnChance * 100) + '%', locations: b.spawnLocations.map((l) => l.name) })) };
     } });
 
-  def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights).',
+  def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights). refresh=true liest neue Matches aus dem laufenden League-Client (kein Schlüssel nötig) bzw. der Riot-API.',
     schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches von der Riot-API holen' } } },
-    run: async ({ refresh }) => { if (refresh) await s.gaming.league.syncMatches(); const st = s.gaming.league.stats(); return { ...st, recent: st.recent.slice(0, 5), note: st.current ? undefined : 'Noch keine Matches gespeichert (Riot-ID und API-Schlüssel nötig).' }; } });
+    run: async ({ refresh }) => { if (refresh) await s.gaming.league.syncMatches(); const st = s.gaming.league.stats(); return { ...st, recent: st.recent.slice(0, 5), note: st.current ? undefined : 'Noch keine Matches gespeichert – der Nutzer soll den League-Client starten, dann liest JARVIS sie automatisch aus.' }; } });
   def({ name: 'league_live', mode: 'read', description: 'Aktuelles LoL-Match (Live Client Data API): Champion, KDA, CS, Gold, Lane-Gegner, Hinweise.', schema: { type: 'object', properties: {} },
     run: () => s.gaming.league.live() });
   def({ name: 'league_champion', mode: 'read', description: 'Championinfos (Data Dragon, aktueller Patch): Fähigkeiten, Tipps.', schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },

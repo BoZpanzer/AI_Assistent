@@ -110,3 +110,17 @@ Neu: persönlicher Spielstand pro Spiel (Werkzeuge `update_game_progress`, `get_
 | Unit/Integration inkl. 5 neuer Spielstand-Tests (Aktualisieren statt Duplikat, Rückgängig, Wipe, Kontext nur für relevante Spiele, Größenbegrenzung bei 300 Quests, Orchestrator-Flow, Migration einer 3.0.0-Datenbank mit Sicherung) | **34 / 34 bestanden** |
 | E2E: „Sun Tzu ist jetzt Level 40 und das Rathaus Stufe 22“ → gespeichert, im Widget sichtbar, im Systemprompt enthalten | **14 / 14 Schritte bestanden** |
 | Mit echtem Gemini (ob das Modell zuverlässig von selbst speichert) | **W** – hängt vom Modellverhalten ab; fehlt mal etwas, hilft „Jarvis, merk dir …“ oder das Widget |
+
+---
+
+## Nachtrag 3.2.0 – League of Legends ohne API-Schlüssel (13. Oktober 2026)
+
+Matchhistorie (Ranked Solo/Duo) und Rang werden über die lokale Schnittstelle des League-Clients gelesen (Zugangsdaten aus dem `lockfile` im League-Ordner bzw. aus der Prozess-Kommandozeile von `LeagueClientUx.exe`). op.gg wurde bewusst nicht verwendet: keine offizielle API, Scraping widerspricht den Nutzungsbedingungen.
+
+| Test | Ergebnis |
+|---|---|
+| Nachgebauter Client (HTTPS selbstsigniert, Basic-Auth, lockfile): Sync, Filter auf Queue 420, keine Duplikate, Champion-ID → Name, Rang, falsches Passwort, Client geschlossen | **bestanden** |
+| Gesamt | **35 / 35 Tests**, E2E **14 / 14** |
+| Mit deinem echten Client | **W** – das Antwortformat der Client-Schnittstelle ist nicht offiziell dokumentiert und kann sich mit Patches ändern; falls etwas fehlt, Protokoll unter Einstellungen → Sicherheit → Protokolle |
+
+Hinweis: Kill-Beteiligung wird nur angezeigt, wenn der Client Teamdaten liefert (sonst „–“ statt eines geschätzten Werts).

@@ -68,7 +68,7 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
 - **Webrecherche:** Google-Suche über Gemini mit Quellen; Webseiten dauerhaft speichern (versioniert, wöchentliche Aktualisierung möglich). Webinhalte sind Daten, nie Anweisungen; nur öffentliche https-Adressen (SSRF-Schutz).
 - **Gaming:** Game Context Engine (aktives vs. besprochenes Spiel; Aussage/manuelle Wahl > Prozess > zuletzt bestätigt), Widget-Renderer mit festem Widget-Katalog (das Modell wählt nur Typ + validierte Parameter, erzeugt nie HTML/JS).
   - *Escape from Tarkov:* interaktive Karte (Zoom, Verschieben, Vollbild, Marker in 6 Kategorien, bearbeiten/löschen/rückgängig, Filter, Routen, eigenes Kartenbild, Kalibrierung → Exits/Schlösser aus tarkov.dev einblenden), Raid-Hilfe (Exits, Schlüssel, Bosse), Quests, Items/Keys mit Preisen, Raid-Checkliste. Keine Live-Raid-Daten – wird so angezeigt.
-  - *League of Legends:* Live-Match (Live Client Data API), Rangliste-Statistik aus Riot-API (Winrate, KDA, CS/min, Vision, Champions, Rollen, Trends), Insights, Trainingsziele, Championinfos (Data Dragon). Keine Automatisierung.
+  - *League of Legends:* Live-Match (Live Client Data API), Ranglisten-Statistik (Winrate, KDA, CS/min, Vision, Champions, Rollen, Trends) und Rang **direkt aus dem laufenden League-Client – ohne API-Schlüssel** (lokale Client-Schnittstelle, alle 10 Min. solange der Client offen ist; pausiert während eines Matches). Riot-Web-API nur optional. Insights, Trainingsziele, Championinfos (Data Dragon). Nur lesend, keine Automatisierung.
   - *Rise of Kingdoms:* Bau-/Forschungs-/Trainings-Timer („mein Rathaus braucht noch fünf Stunden“), Entwicklungsplanung, Recherche mit Quellen, Notizen.
   - *Alle anderen Spiele (ARK, Elden Ring, …):* universelle Oberfläche – Recherche mit Quellen, Wiki (wo eine öffentliche MediaWiki-API existiert), Notizen, Timer, gespeicherte Quellen.
   - „Andere Spiele – Benachrichtigungen“ mit Herkunft (eigener Timer = Zeitabschätzung).
@@ -81,7 +81,7 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
 1. **Gemini:** Schlüssel unter <https://aistudio.google.com/app/apikey> erstellen und im Assistenten einfügen. Hinweis: Ein Google-AI-Abo ist kein API-Kontingent.
 2. **Google Kalender (optional):** einmalig einen OAuth-Client vom Typ *Desktop-App* anlegen – Schritt für Schritt in [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md).
 3. **Studium (optional):** den OneDrive-Ordner wählen, in den Goodnotes exportiert.
-4. **League of Legends (optional):** Riot-ID (`Name#TAG`), Region und einen Riot-API-Schlüssel (developer.riotgames.com) eintragen. Die Live-Match-Anzeige funktioniert ohne Schlüssel.
+4. **League of Legends:** nichts einzurichten – einfach den League-Client starten. Ein Riot-API-Schlüssel ist nur nötig, wenn du Statistiken auch ohne geöffneten Client aktualisieren willst.
 
 ## Daten, Sicherheit, Datenschutz
 

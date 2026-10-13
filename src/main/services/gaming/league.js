@@ -101,8 +101,120 @@ class League {
     return (await this.cache.wrap(`lol:acct:${g.riotId}`, 'Riot account-v1', 30 * 86400000, () => this.riot(region, `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`))).value;
   }
 
-  /** Pull the latest ranked matches (incremental — only unknown match ids are fetched). */
-  async syncMatches({ count = 20, queue = 420 } = {}) {
+  // ---------- Lokaler League-Client (LCU) – ohne API-Schlüssel ----------
+  /** Port + Passwort des laufenden Clients (lockfile oder Prozess-Kommandozeile). */
+  async lcuCreds() {
+    if (this._lcu && Date.now() - this._lcu.at < 60000) return this._lcu.creds;
+    const fs = require('node:fs'); const path = require('node:path');
+    const dirs = [this.settings.get('gaming').leagueDir, ...['C', 'D', 'E', 'F'].flatMap((d) => [`${d}:\\Riot Games\\League of Legends`, `${d}:\\Program Files\\Riot Games\\League of Legends`, `${d}:\\Games\\Riot Games\\League of Legends`])].filter(Boolean);
+    let creds = null;
+    for (const d of dirs) {
+      try {
+        const [, , port, password, protocol] = fs.readFileSync(path.join(d, 'lockfile'), 'utf8').trim().split(':');
+        if (port && password) { creds = { port: Number(port), password, protocol: protocol || 'https' }; break; }
+      } catch { /* not here */ }
+    }
+    if (!creds && process.platform === 'win32') creds = await this.lcuFromProcess();
+    this._lcu = { at: Date.now(), creds };
+    return creds;
+  }
+  lcuFromProcess() {
+    return new Promise((resolve) => {
+      require('node:child_process').execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "(Get-CimInstance Win32_Process -Filter \"name='LeagueClientUx.exe'\").CommandLine"],
+        { windowsHide: true, timeout: 8000 }, (err, out) => {
+          const s = String(out || '');
+          const port = s.match(/--app-port=(\d+)/)?.[1]; const password = s.match(/--remoting-auth-token=([\w-]+)/)?.[1];
+          resolve(!err && port && password ? { port: Number(port), password, protocol: 'https' } : null);
+        });
+    });
+  }
+  async lcuGet(apiPath) {
+    const c = await this.lcuCreds();
+    if (!c) throw new Error('League-Client läuft nicht');
+    return new Promise((resolve, reject) => {
+      // Selbstsigniertes Riot-Zertifikat: Prüfung NUR für diesen lokalen Endpunkt aus.
+      const req = https.get({ host: '127.0.0.1', port: c.port, path: apiPath, rejectUnauthorized: false, timeout: 5000,
+        headers: { Authorization: 'Basic ' + Buffer.from('riot:' + c.password).toString('base64'), Accept: 'application/json' } }, (res) => {
+        let data = ''; res.setEncoding('utf8');
+        res.on('data', (x) => { data += x; if (data.length > 2e7) req.destroy(); });
+        res.on('end', () => {
+          if (res.statusCode === 401 || res.statusCode === 403) { this._lcu = null; return reject(new Error('League-Client: Zugriff verweigert')); }
+          if (res.statusCode >= 400) return reject(new Error('League-Client ' + res.statusCode));
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      });
+      req.on('timeout', () => req.destroy(new Error('timeout')));
+      req.on('error', (e) => { this._lcu = null; reject(e); });
+    });
+  }
+  async clientAvailable() { try { await this.lcuGet('/lol-summoner/v1/current-summoner'); return true; } catch { return false; } }
+
+  /** Matchhistorie + Rang direkt aus dem laufenden Client (kein Schlüssel nötig). */
+  async syncFromClient({ queues = [420] } = {}) {
+    const me = await this.lcuGet('/lol-summoner/v1/current-summoner');
+    const hist = await this.lcuGet('/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex=49');
+    const games = hist?.games?.games || [];
+    const champs = await this.champions().then((r) => r.value).catch(() => []);
+    const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;
+    let added = 0;
+    for (const g of games) {
+      if (queues.length && !queues.includes(g.queueId)) continue;
+      const mid = `${g.platformId || 'LCU'}_${g.gameId}`;
+      if (this.db.get('SELECT 1 x FROM lol_matches WHERE match_id=?', mid)) continue;
+      const ident = (g.participantIdentities || []).find((x) => x.player?.puuid === me.puuid);
+      const p = (g.participants || []).find((x) => x.participantId === ident?.participantId) || (g.participants || [])[0];
+      if (!p?.stats || !g.gameDuration) continue;
+      const st = p.stats; const mins = g.gameDuration / 60;
+      const team = (g.participants || []).filter((x) => x.teamId === p.teamId);
+      const teamKills = team.length >= 5 ? team.reduce((a, x) => a + (x.stats?.kills || 0), 0) : null;
+      const lane = String(p.timeline?.lane || '').toUpperCase(); const role = String(p.timeline?.role || '').toUpperCase();
+      const pos = lane === 'BOTTOM' || lane === 'BOT' ? (role.includes('SUPPORT') ? 'UTILITY' : 'BOTTOM') : lane === 'MID' ? 'MIDDLE' : lane || 'UNKNOWN';
+      const cs = (st.totalMinionsKilled || 0) + (st.neutralMinionsKilled || 0);
+      const summary = {
+        matchId: mid, champion: champName(p.championId), win: !!st.win, kills: st.kills, deaths: st.deaths, assists: st.assists,
+        cs, csPerMin: +(cs / mins).toFixed(1), vision: st.visionScore ?? null, goldPerMin: Math.round((st.goldEarned || 0) / mins),
+        damagePerMin: Math.round((st.totalDamageDealtToChampions || 0) / mins),
+        killParticipation: teamKills ? Math.round(((st.kills + st.assists) / Math.max(1, teamKills)) * 100) : null,
+        role: pos, duration: g.gameDuration, queue: g.queueId, patch: String(g.gameVersion || '').split('.').slice(0, 2).join('.'),
+        items: [st.item0, st.item1, st.item2, st.item3, st.item4, st.item5].filter(Boolean), source: 'client',
+      };
+      this.db.run('INSERT OR REPLACE INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', mid, me.puuid, new Date(g.gameCreation).toISOString(), JSON.stringify(summary));
+      added++;
+    }
+    try {
+      const r = await this.lcuGet('/lol-ranked/v1/current-ranked-stats');
+      const solo = r?.queueMap?.RANKED_SOLO_5x5 || (r?.queues || []).find((q) => q.queueType === 'RANKED_SOLO_5x5');
+      if (solo && solo.tier && solo.tier !== 'NONE') this.saveRank({ tier: solo.tier, rank: solo.division, lp: solo.leaguePoints, wins: solo.wins, losses: solo.losses }, 'League-Client');
+    } catch (e) { log.debug('Rang aus Client nicht verfügbar', e); }
+    this.cache.set('lol:me', { name: me.gameName ? `${me.gameName}#${me.tagLine}` : me.displayName, level: me.summonerLevel }, 'League-Client', 365 * 86400000);
+    this.cache.set('lol:lastsync', { at: new Date().toISOString(), source: 'client' }, 'League-Client', 365 * 86400000);
+    this.bus.emit('game:data', { game: 'league' });
+    return { added, total: games.length, source: 'client' };
+  }
+
+  saveRank(rank, source) {
+    const prev = this.cache.get('lol:rank:last', { allowStale: true });
+    const same = prev?.value && prev.value.tier === rank.tier && prev.value.rank === rank.rank && prev.value.lp === rank.lp;
+    this.cache.set('lol:rank:last', { ...rank, prev: same ? prev.value.prev : prev?.value ? { tier: prev.value.tier, rank: prev.value.rank, lp: prev.value.lp } : null }, source, 365 * 86400000);
+  }
+
+  /**
+   * Matches synchronisieren: bevorzugt aus dem laufenden League-Client (kein
+   * Schlüssel), sonst – falls hinterlegt – über die Riot-Web-API.
+   */
+  async syncMatches(opts = {}) {
+    if (await this.clientAvailable()) return this.syncFromClient();
+    if (this.hasKey()) return this.syncMatchesApi(opts);
+    throw new Error('Starte den League-Client – JARVIS liest deine Matches dann direkt aus (kein API-Schlüssel nötig).');
+  }
+
+  async source() {
+    const last = this.cache.get('lol:lastsync', { allowStale: true })?.value || null;
+    return { client: await this.clientAvailable(), key: this.hasKey(), lastSync: last, me: this.cache.get('lol:me', { allowStale: true })?.value || null };
+  }
+
+  /** Riot-Web-API (optional, mit eigenem Schlüssel). */
+  async syncMatchesApi({ count = 20, queue = 420 } = {}) {
     const g = this.settings.get('gaming');
     const region = REGIONAL[g.riotRegion] || 'europe';
     const acct = await this.account();
@@ -131,13 +243,11 @@ class League {
       const host = g.riotRegion || 'euw1';
       const entries = await this.riot(host, `/lol/league/v4/entries/by-puuid/${acct.puuid}`);
       const solo = entries.find((e) => e.queueType === 'RANKED_SOLO_5x5');
-      if (solo) {
-        const prev = this.cache.get('lol:rank:last', { allowStale: true });
-        this.cache.set('lol:rank:last', { tier: solo.tier, rank: solo.rank, lp: solo.leaguePoints, wins: solo.wins, losses: solo.losses, prev: prev?.value ? { tier: prev.value.tier, rank: prev.value.rank, lp: prev.value.lp } : null }, 'Riot league-v4', 365 * 86400000);
-      }
+      if (solo) this.saveRank({ tier: solo.tier, rank: solo.rank, lp: solo.leaguePoints, wins: solo.wins, losses: solo.losses }, 'Riot league-v4');
     } catch (e) { log.debug('Rang nicht verfügbar', e); }
+    this.cache.set('lol:lastsync', { at: new Date().toISOString(), source: 'api' }, 'Riot API', 365 * 86400000);
     this.bus.emit('game:data', { game: 'league' });
-    return { added, total: ids.length };
+    return { added, total: ids.length, source: 'api' };
   }
 
   matches(limit = 20) { return this.db.all('SELECT summary FROM lol_matches ORDER BY played_at DESC LIMIT ?', limit).map((r) => JSON.parse(r.summary)); }
@@ -151,8 +261,8 @@ class League {
       const n = list.length; const s = (f) => list.reduce((a, x) => a + f(x), 0);
       const k = s((x) => x.kills) / n, d = s((x) => x.deaths) / n, a = s((x) => x.assists) / n;
       return { games: n, wins: s((x) => (x.win ? 1 : 0)), winrate: Math.round((s((x) => (x.win ? 1 : 0)) / n) * 100), kda: +((k + a) / Math.max(1, d)).toFixed(2),
-        avgK: +k.toFixed(1), avgD: +d.toFixed(1), avgA: +a.toFixed(1), csPerMin: +(s((x) => x.csPerMin) / n).toFixed(1), vision: Math.round(s((x) => x.vision) / n),
-        goldPerMin: Math.round(s((x) => x.goldPerMin) / n), damagePerMin: Math.round(s((x) => x.damagePerMin) / n), kp: Math.round(s((x) => x.killParticipation) / n) };
+        avgK: +k.toFixed(1), avgD: +d.toFixed(1), avgA: +a.toFixed(1), csPerMin: +(s((x) => x.csPerMin) / n).toFixed(1),
+        goldPerMin: Math.round(s((x) => x.goldPerMin) / n), damagePerMin: Math.round(s((x) => x.damagePerMin) / n), kp: (() => { const k = list.filter((x) => x.killParticipation != null); return k.length ? Math.round(k.reduce((a, x) => a + x.killParticipation, 0) / k.length) : null; })(), vision: (() => { const v = list.filter((x) => x.vision != null); return v.length ? Math.round(v.reduce((a, x) => a + x.vision, 0) / v.length) : null; })() };
     };
     const c = agg(cur); const p = agg(prev);
     const delta = (key) => (c && p && p[key] ? Math.round(((c[key] - p[key]) / p[key]) * 100) : null);
@@ -176,8 +286,8 @@ class League {
     const out = [];
     if (c.csPerMin < 6.5) out.push({ kind: 'farm', title: 'Farm-Fokus', text: `Ø ${c.csPerMin} CS/min – Ziel 7+: Wellen zwischen Objectives sauber einsammeln.` });
     if (c.avgD > 6) out.push({ kind: 'positioning', title: 'Positionierung', text: `Ø ${c.avgD} Tode pro Spiel – in Teamfights weiter hinten bleiben, Flash für Escapes halten.` });
-    if (c.vision < 20) out.push({ kind: 'vision', title: 'Vision', text: `Ø Vision Score ${c.vision} – pro Recall eine Control Ward einplanen.` });
-    if (c.kp < 45) out.push({ kind: 'macro', title: 'Makro-Fokus', text: `Kill-Beteiligung ${c.kp}% – öfter zu Drachen/Herald rotieren.` });
+    if (c.vision != null && c.vision < 20) out.push({ kind: 'vision', title: 'Vision', text: `Ø Vision Score ${c.vision} – pro Recall eine Control Ward einplanen.` });
+    if (c.kp != null && c.kp < 45) out.push({ kind: 'macro', title: 'Makro-Fokus', text: `Kill-Beteiligung ${c.kp}% – öfter zu Drachen/Herald rotieren.` });
     const best = champs.filter((x) => x.games >= 3).sort((a, b) => b.wins / b.games - a.wins / a.games)[0];
     if (best) out.push({ kind: 'strength', title: 'Stärken ausbauen', text: `${best.champion}: ${Math.round((best.wins / best.games) * 100)}% WR in ${best.games} Spielen – Hauptpick ausbauen.` });
     if (p && c.csPerMin > p.csPerMin) out.push({ kind: 'trend', title: 'Entwicklung', text: `CS/min von ${p.csPerMin} auf ${c.csPerMin} verbessert.` });
@@ -190,9 +300,9 @@ class League {
   }
   async champions() {
     const v = await this.ddVersion();
-    return this.cache.wrap('lol:dd:champs:' + v, 'Data Dragon ' + v, 7 * 86400000, async () => {
+    return this.cache.wrap('lol:dd:champs2:' + v, 'Data Dragon ' + v, 7 * 86400000, async () => {
       const j = await (await this.fetch(`${DD}/cdn/${v}/data/de_DE/champion.json`)).json();
-      return Object.values(j.data).map((c) => ({ id: c.id, name: c.name, title: c.title, tags: c.tags, blurb: c.blurb }));
+      return Object.values(j.data).map((c) => ({ id: c.id, key: c.key, name: c.name, title: c.title, tags: c.tags, blurb: c.blurb }));
     });
   }
   async champion(name) {
