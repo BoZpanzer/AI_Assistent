@@ -167,15 +167,43 @@ function StudyCard({ s }) {
   const st = s.study;
   return (
     <Panel icon={BookOpen} title="Studium / Import" sub="Dateien, Notizen und Lernmaterialien">
-      <Field label="Standard-Importordner (OneDrive)" wide>
-        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" value={st.folder} readOnly placeholder="nicht gewählt" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { const c = await rpc('study.check', { folder: f }); if (!c.ok) return toast(c.error, 'error'); upd({ study: { folder: f, enabled: true } }); } }}><FolderOpen size={14} /></button></div>
-      </Field>
+      <Field label="Quelle"><Select value={st.source || 'folder'} onChange={(v) => upd({ study: { source: v } })} options={[{ value: 'drive', label: 'Google Drive' }, { value: 'folder', label: 'Ordner auf diesem PC (z. B. OneDrive)' }]} /></Field>
+      {st.source === 'drive' ? <DriveSource st={st} /> : (
+        <Field label="Importordner" wide>
+          <div class="row gap-s" style={{ width: '100%' }}><input class="inp" value={st.folder} readOnly placeholder="nicht gewählt" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { const c = await rpc('study.check', { folder: f }); if (!c.ok) return toast(c.error, 'error'); upd({ study: { folder: f, enabled: true } }); } }}><FolderOpen size={14} /></button></div>
+        </Field>
+      )}
       <Field label="Ordner überwachen & automatisch indexieren"><Toggle checked={st.enabled} onChange={(v) => upd({ study: { enabled: v } })} /></Field>
       <Field label="Duplikate erkennen"><span class="small ok">immer aktiv (Inhalts-Prüfsumme)</span></Field>
       <Field label="Unterstützte Formate"><span class="small muted">PDF, DOCX, PPTX, TXT, MD, IPYNB</span></Field>
       <Field label="Handschrift/Formeln transkribieren" hint="multimodal über Gemini, pro Seite zwischengespeichert"><Select value={st.visionForHandwriting} onChange={(v) => upd({ study: { visionForHandwriting: v } })} options={[{ value: 'off', label: 'Aus' }, { value: 'on-demand', label: 'Auf Abruf' }, { value: 'auto', label: 'Automatisch (Tageslimit)' }]} /></Field>
       <Field label="Tageslimit Seitenanalysen"><input class="inp" type="number" min="0" max="500" value={st.visionDailyLimit} onChange={(e) => upd({ study: { visionDailyLimit: Number(e.currentTarget.value) } })} /></Field>
     </Panel>
+  );
+}
+
+function DriveSource({ st }) {
+  const [ds, reload] = useRpc('drive.status', {}, { events: ['drive:status', 'settings:changed'] });
+  const [name, setName] = useState(st.driveFolder || 'Goodnotes');
+  const [busy, setBusy] = useState(false);
+  const [folders, setFolders] = useState(null);
+  const connect = async () => { setBusy(true); const r = await guard(() => rpc('drive.connect')); setBusy(false); if (r) { toast('Google Drive verbunden – Ordner wird synchronisiert'); setState({ google: await rpc('calendar.status') }); reload(); } };
+  const sync = async () => { setBusy(true); const r = await guard(() => rpc('drive.sync', {})); setBusy(false); if (r) toast(`Drive abgeglichen: ${r.files} Dateien, ${r.changed} geändert`); reload(); };
+  const saveName = async () => { const n = name.trim() || 'Goodnotes'; if (n === st.driveFolder) return; await upd({ study: { driveFolder: n, driveFolderId: '' } }); const f = await guard(() => rpc('drive.folders', { name: n })); setFolders(f); };
+  return (
+    <>
+      <Field label="Drive-Ordner" hint="Unterordner werden zu Fächern" wide>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" value={name} onInput={(e) => setName(e.currentTarget.value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && saveName()} placeholder="Goodnotes" /></div>
+      </Field>
+      {folders && folders.length > 1 && <div class="notice small">Es gibt {folders.length} Ordner „{name}“. Welcher? {folders.map((f) => <button class="btn xs mt" style={{ marginRight: 6 }} onClick={async () => { await guard(() => rpc('drive.useFolder', { id: f.id, name })); setFolders(null); reload(); }}>geändert {new Date(f.modifiedTime).toLocaleDateString('de-DE')}</button>)}</div>}
+      {folders && folders.length === 0 && <div class="notice warn small">Kein Ordner „{name}“ in deinem Google Drive gefunden.</div>}
+      {!ds?.granted ? (
+        <div class="row gap-s"><span class="small muted grow">JARVIS braucht einmalig Lesezugriff auf dein Google Drive.</span><button class="btn sm primary" disabled={busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={14} />}Google Drive verbinden</button></div>
+      ) : (
+        <div class="row gap-s"><span class="small grow" style={{ color: ds.error ? 'var(--red)' : 'var(--text-2)' }}>{ds.syncing ? 'Synchronisiere …' : ds.error ? ds.error : ds.lastSync ? `${ds.files} Dateien · abgeglichen ${ago(ds.lastSync)}` : 'Noch nicht abgeglichen'}</span><button class="btn xs" disabled={busy || ds.syncing} onClick={sync}>{busy || ds.syncing ? <Spinner /> : <RefreshCw size={12} />}Jetzt abgleichen</button></div>
+      )}
+      <div class="tiny muted">Nur lesend: JARVIS ändert und löscht nichts in deinem Drive. Neue Goodnotes-Exporte werden alle 20 Minuten übernommen.</div>
+    </>
   );
 }
 

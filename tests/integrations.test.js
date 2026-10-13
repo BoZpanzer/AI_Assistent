@@ -341,3 +341,43 @@ test('Google-Anmeldung: Browser zeigt „verbunden“ erst nach erfolgreichem To
   assert.match(good.page, /ist mit Google verbunden/);
   assert.equal(good.connected, true);
 });
+
+test('Google Drive „Goodnotes“: Unterordner = Fächer, nur Geändertes laden, Gelöschtes entfernen, Index', async () => {
+  const fs = require('node:fs'); const path = require('node:path');
+  let tree = {
+    root: [{ id: 'f1', name: 'Mathe II', mimeType: 'application/vnd.google-apps.folder' }, { id: 'a', name: 'Allgemein.md', mimeType: 'text/markdown', md5Checksum: 'm1', modifiedTime: '2026-10-01T10:00:00Z' }, { id: 'x', name: 'Skizze.goodnotes', mimeType: 'application/octet-stream' }],
+    f1: [{ id: 'b', name: 'Vorlesung 1.md', mimeType: 'text/markdown', md5Checksum: 'm2', modifiedTime: '2026-10-02T10:00:00Z' }, { id: 'g', name: 'Zusammenfassung', mimeType: 'application/vnd.google-apps.document', modifiedTime: '2026-10-03T10:00:00Z' }],
+  };
+  const content = { a: '# Allgemein\nHinweise zum Studium', b: '# Matrizen\nEine Matrix ist eine rechteckige Anordnung von Zahlen.', g: '# Doc' };
+  const downloads = [];
+  const { core, cleanup } = tempCore({ fetch: async (url) => {
+    const id = String(url).match(/files\/([^/?]+)/)[1]; downloads.push(id);
+    return new Response(content[id] || 'x');
+  } });
+  core.settings.update({ study: { source: 'drive', enabled: true, driveFolder: 'Goodnotes', formats: ['pdf', 'md', 'txt'] }, google: { scopes: ['https://www.googleapis.com/auth/drive.readonly'] } });
+  core.google.isConnected = () => true;
+  core.google.token = async () => 't';
+  core.google.api = async (m, p, { query }) => {
+    if (query.q.startsWith('name =')) return { files: [{ id: 'root', name: 'Goodnotes', modifiedTime: '2026-10-01T00:00:00Z' }] };
+    const parent = query.q.match(/'([^']+)' in parents/)[1];
+    return { files: tree[parent] || [] };
+  };
+  const r1 = await core.drive.sync();
+  assert.equal(r1.files, 3); assert.equal(r1.changed, 3);
+  assert.deepEqual(downloads.sort(), ['a', 'b', 'g'], '.goodnotes-Datei wird übersprungen');
+  assert.ok(fs.existsSync(path.join(core.drive.root(), 'Mathe II', 'Zusammenfassung.pdf')), 'Google-Doc als PDF exportiert');
+  await core.study.processQueue?.();
+  const docs = core.study.documents({});
+  assert.ok(docs.some((d) => d.title.includes('Vorlesung 1') && d.subject === 'Mathe II'), 'Unterordner wird zum Fach');
+  // zweiter Lauf: nichts geändert → kein Download
+  downloads.length = 0;
+  const r2 = await core.drive.sync();
+  assert.equal(r2.changed, 0); assert.equal(downloads.length, 0);
+  // Datei geändert + Datei gelöscht
+  tree.f1[0].md5Checksum = 'm2b'; content.b = '# Matrizen\nNeu: Determinanten'; tree.root = tree.root.filter((f) => f.id !== 'a');
+  const r3 = await core.drive.sync();
+  assert.equal(r3.changed, 2); assert.deepEqual(downloads, ['b']);
+  assert.ok(!fs.existsSync(path.join(core.drive.root(), 'Allgemein.md')));
+  assert.equal(core.study.root(), core.drive.root());
+  cleanup();
+});

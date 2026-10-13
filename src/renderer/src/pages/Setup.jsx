@@ -169,7 +169,9 @@ function Study({ done }) {
   };
   return (
     <>
-      <H icon={FolderOpen} t="Studium" s="Goodnotes → OneDrive → JARVIS: wähle den synchronisierten Ordner." />
+      <H icon={FolderOpen} t="Studium" s="Goodnotes → Google Drive → JARVIS: dein Drive-Ordner „Goodnotes“ wird nur lesend abgeglichen." />
+      <div class="row"><button class="btn sm primary" onClick={async () => { const r = await guard(() => rpc('drive.connect')); if (r) { done(true); toast('Google Drive verbunden – „' + (r.folder || 'Goodnotes') + '“ wird abgeglichen'); } }}>Google Drive „Goodnotes“ verbinden</button><span class="small muted">(braucht den Google-Client aus dem Kalender-Schritt)</span></div>
+      <div class="small muted mt">Oder einen Ordner auf diesem PC wählen:</div>
       <div class="row"><input class="inp grow" readOnly value={check?.folder || s.study.folder} placeholder="z. B. C:\Users\…\OneDrive\Goodnotes" /><button class="btn sm" onClick={pick}><FolderOpen size={14} />Ordner wählen</button></div>
       {check && (check.ok ? <Line ok>Zugriff OK – {check.files} unterstützte Dateien gefunden</Line> : <Line ok={false}>{check.error}</Line>)}
       {t === 'loading' && <Spinner />}

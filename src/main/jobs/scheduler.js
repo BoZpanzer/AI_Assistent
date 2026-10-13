@@ -38,6 +38,7 @@ class Scheduler {
       this.lastRun['calendar-sync:real'] = Date.now();
       await s.calendar.sync();
     }, { initialDelayMs: 8_000 });
+    this.add('drive-sync', 20 * 60_000, async () => { if (s.drive.active() && s.drive.granted() && s.settings.get('study').enabled) await s.drive.sync(); }, { heavy: true, initialDelayMs: 40_000 });
     this.add('study-scan', 6 * 3600_000, () => s.study.scan(), { heavy: true, initialDelayMs: 25_000 });
     this.add('embeddings', 5 * 60_000, () => s.vectors.backfill({ maxItems: 150 }), { heavy: true, initialDelayMs: 60_000 });
     this.add('auto-vision', 10 * 60_000, () => s.study.autoVision(4), { heavy: true, initialDelayMs: 120_000 });

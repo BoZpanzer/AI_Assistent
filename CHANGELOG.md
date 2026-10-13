@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.4.0 – Studium aus Google Drive
+
+- **Google Drive als Quelle fürs Studium:** JARVIS gleicht deinen Drive-Ordner **„Goodnotes“** ab, nur lesend. Unterordner werden zu Fächern, Google-Docs und -Folien kommen als PDF. Neue und geänderte Dateien werden alle 20 Minuten übernommen, gelöschte verschwinden aus dem Index.
+- Einrichtung: Einstellungen → Studium → Quelle „Google Drive“ → **Google Drive verbinden**. In der Google Console muss dafür einmal die **Google Drive API** aktiviert sein.
+- Gibt es mehrere Ordner mit dem Namen, kannst du den richtigen auswählen.
+
 ## 3.3.5 – Aufgeräumtes Startmenü
 
 - Im Startmenü gibt es nur noch **einen** JARVIS-Eintrag. Deinstallieren geht über Windows → Einstellungen → Apps.

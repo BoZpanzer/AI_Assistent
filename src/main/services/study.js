@@ -15,13 +15,14 @@ const log = require('../core/logger').scope('study');
  */
 class Study {
   constructor(ctx) {
-    this.db = ctx.db; this.bus = ctx.bus; this.settings = ctx.settings; this.gemini = ctx.gemini; this.vectors = ctx.vectors;
+    this.ctx = ctx; this.db = ctx.db; this.bus = ctx.bus; this.settings = ctx.settings; this.gemini = ctx.gemini; this.vectors = ctx.vectors;
     this.watcher = null; this.queue = new Set(); this.running = false; this.debounce = null;
     this.progress = { state: 'idle', done: 0, total: 0, current: '' };
   }
 
-  root() { return this.settings.get('study').folder; }
-  enabled() { const s = this.settings.get('study'); return !!(s.enabled && s.folder); }
+  /** Lokaler Ordner – oder der lokale Spiegel des Google-Drive-Ordners. */
+  root() { const s = this.settings.get('study'); return s.source === 'drive' && this.ctx.drive ? this.ctx.drive.root() : s.folder; }
+  enabled() { const s = this.settings.get('study'); return s.source === 'drive' ? !!(s.enabled && this.ctx.drive?.granted()) : !!(s.enabled && s.folder); }
 
   checkFolder(folder) {
     if (!folder) return { ok: false, error: 'Kein Ordner gewählt' };
@@ -60,6 +61,7 @@ class Study {
     this.stop();
     if (!this.enabled()) return;
     const root = this.root();
+    try { fs.mkdirSync(root, { recursive: true }); } catch { /* ignore */ }
     try {
       this.watcher = fs.watch(root, { recursive: true }, (_ev, file) => {
         if (!file) return;
@@ -312,7 +314,7 @@ class Study {
   status() {
     const s = this.settings.get('study');
     return {
-      enabled: this.enabled(), folder: s.folder, watching: !!this.watcher, progress: this.progress,
+      enabled: this.enabled(), folder: s.source === 'drive' ? null : s.folder, source: s.source || 'folder', driveFolder: s.driveFolder || 'Goodnotes', driveGranted: !!this.ctx.drive?.granted(), watching: !!this.watcher, progress: this.progress,
       documents: this.db.get("SELECT COUNT(*) c FROM documents WHERE source<>'web'").c,
       indexed: this.db.get("SELECT COUNT(*) c FROM documents WHERE status='indexed' AND source<>'web'").c,
       errors: this.db.get("SELECT COUNT(*) c FROM documents WHERE status='error'").c,

@@ -10,6 +10,10 @@ Daten fließen dann nur zwischen deinem PC und Google.
 ## 2. Calendar API aktivieren
 Suche oben „Google Calendar API“ (oder **APIs & Dienste → Bibliothek**) → **Aktivieren**.
 
+## 2b. Für Studium aus Google Drive: Drive API aktivieren
+Suche „Google Drive API“ (<https://console.cloud.google.com/apis/library/drive.googleapis.com>) → **Aktivieren**.
+JARVIS fragt den Drive-Zugriff (nur lesend) erst an, wenn du in den Einstellungen unter Studium „Google Drive verbinden“ klickst.
+
 ## 3. Google Auth Platform einrichten
 Menü → **Google Auth Platform** (früher „OAuth-Zustimmungsbildschirm“) → **Jetzt starten**:
 - **App-Informationen:** Name `JARVIS`, Support-E-Mail = deine Adresse
@@ -34,7 +38,8 @@ Google Auth Platform → **Zielgruppe → App veröffentlichen → Bestätigen**
 Für den Eigengebrauch ist **keine Verifizierung** nötig. Google zeigt beim Anmelden nur weiter den Hinweis aus Schritt 6, und es gilt ein Limit von 100 Nutzern.
 
 ## Rechte und Datenschutz
-- `calendar` (Termine lesen/schreiben) und `openid email` (Anzeige, welches Konto verbunden ist). Nichts weiter.
+- `calendar` (Termine lesen/schreiben) und `openid email` (Anzeige, welches Konto verbunden ist).
+- Optional `drive.readonly`, nur für den Studienordner (z. B. „Goodnotes“). JARVIS liest nur, ändert und löscht nichts.
 - Das Refresh-Token und das Client-Secret werden mit **Windows-DPAPI** verschlüsselt gespeichert.
 - **Trennen** in den Einstellungen widerruft das Token bei Google.
 - Synchronisiert wird alle 15 Minuten (einstellbar). Neue Termine aus Chat/Sprache landen nach deiner Bestätigung sofort in Google.

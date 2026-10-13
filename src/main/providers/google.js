@@ -65,7 +65,7 @@ class GoogleClient {
         const u = new URL(AUTH_URL);
         u.search = new URLSearchParams({
           client_id: clientId, redirect_uri: `http://127.0.0.1:${port}/oauth2callback`, response_type: 'code', scope,
-          code_challenge: challenge, code_challenge_method: 'S256', state, access_type: 'offline', prompt: 'consent',
+          code_challenge: challenge, code_challenge_method: 'S256', state, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true',
         }).toString();
         if (!this.openExternal) { reject(new Error('Kein Browser verfügbar')); return; }
         this.openExternal(u.toString());
@@ -79,9 +79,10 @@ class GoogleClient {
       const payload = JSON.parse(Buffer.from(String(tok.id_token).split('.')[1], 'base64url').toString());
       email = payload.email || '';
     } catch { /* ignore */ }
-    this.settings.update({ google: { account: email } });
-    log.info('Google verbunden');
-    return { scopes: String(tok.scope || '').split(' '), account: email };
+    const scopes = String(tok.scope || '').split(' ').filter(Boolean);
+    this.settings.update({ google: { account: email, scopes } });
+    log.info('Google verbunden: ' + scopes.join(', '));
+    return { scopes, account: email };
   }
 
   /** Authorization code → tokens (with clear German errors). */
@@ -105,7 +106,7 @@ class GoogleClient {
     const rt = this.secrets.get('google.refresh_token');
     this.secrets.delete('google.refresh_token');
     this.access = null;
-    this.settings.update({ google: { account: '' } });
+    this.settings.update({ google: { account: '', scopes: [] } });
     if (rt) this.fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(rt), { method: 'POST' }).catch(() => {});
   }
 

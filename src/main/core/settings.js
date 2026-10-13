@@ -52,13 +52,15 @@ const SCHEMA = {
     google: { type: 'object', properties: {
       clientId: { type: 'string', maxLength: 200 }, calendarSync: { type: 'boolean' },
       syncIntervalMinutes: { type: 'number', minimum: 5, maximum: 240 },
-      defaultCalendarId: { type: 'string', maxLength: 300 }, account: { type: 'string', maxLength: 200 } } },
+      defaultCalendarId: { type: 'string', maxLength: 300 }, account: { type: 'string', maxLength: 200 },
+      scopes: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 200 } } } },
     // Study
     study: { type: 'object', properties: {
       folder: { type: 'string', maxLength: 600 }, enabled: { type: 'boolean' },
       formats: { type: 'array', items: { type: 'string' } },
       visionForHandwriting: { type: 'string', enum: ['off', 'on-demand', 'auto'] },
       visionDailyLimit: { type: 'number', minimum: 0, maximum: 500 },
+      source: { type: 'string', enum: ['folder', 'drive'] }, driveFolder: { type: 'string', maxLength: 120 }, driveFolderId: { type: 'string', maxLength: 200 },
       preferredTime: { type: 'string', maxLength: 5 }, maxSessionsPerDay: { type: 'number', minimum: 1, maximum: 4 }, linkLectures: { type: 'boolean' } } },
     // Gaming
     gaming: { type: 'object', properties: {
@@ -112,7 +114,7 @@ const DEFAULTS = {
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
-  study: { folder: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
+  study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
   gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [], lolChampSelect: true, lolReview: true, lolReviewAi: true, tarkovTrackerSync: true },
   screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.' },
   overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false },

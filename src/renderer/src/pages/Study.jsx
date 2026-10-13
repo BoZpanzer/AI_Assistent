@@ -51,9 +51,12 @@ export function Study() {
               <div class="center" style={{ width: 56, height: 56, border: '1px solid var(--line-strong)', borderRadius: 10, color: 'var(--cyan)' }}><BookOpen size={30} /></div>
               <div class="grow">
                 <div class="hud-title" style={{ color: 'white', fontSize: 24 }}>Studium</div>
-                <div class="muted small">Goodnotes → OneDrive → {status?.folder ? <span class="selectable" style={{ color: 'var(--text-2)' }}>{status.folder}</span> : 'Ordner wählen'} → JARVIS-Index → Brain</div>
+                <div class="muted small">{status?.source === 'drive' ? <>Goodnotes → Google Drive „{status.driveFolder}“ → JARVIS-Index → Brain</> : <>Goodnotes → {status?.folder ? <span class="selectable" style={{ color: 'var(--text-2)' }}>{status.folder}</span> : 'Ordner wählen'} → JARVIS-Index → Brain</>}</div>
               </div>
-              <button class="btn sm" onClick={pickFolder}><FolderOpen size={16} />{status?.folder ? 'Ordner ändern' : 'OneDrive-Ordner wählen'}</button>
+              {status?.source === 'drive'
+                ? (status.driveGranted ? <button class="btn sm" onClick={async () => { const r = await guard(() => rpc('drive.sync', {})); if (r) toast(`Drive abgeglichen: ${r.files} Dateien, ${r.changed} geändert`); reloadStatus(); }}><RefreshCw size={16} />Drive abgleichen</button>
+                  : <button class="btn sm primary" onClick={async () => { const r = await guard(() => rpc('drive.connect')); if (r) { toast('Google Drive verbunden'); reloadStatus(); } }}>Google Drive verbinden</button>)
+                : <button class="btn sm" onClick={pickFolder}><FolderOpen size={16} />{status?.folder ? 'Ordner ändern' : 'Ordner wählen'}</button>}
               <button class="btn sm" disabled={!status?.enabled} onClick={() => guard(() => rpc('study.scan'), 'Scan gestartet')}><RefreshCw size={16} />Scannen</button>
             </div>
             <div class="row wrap mt" style={{ gap: 18 }}>
@@ -94,7 +97,7 @@ export function Study() {
                 {(subjects || []).map((s) => <span class={`chip ${subject === s.subject ? 'active' : ''}`} onClick={() => setSubject(s.subject)}>{s.subject} · {s.count}</span>)}
               </div>
               <div class="col scroll" style={{ padding: '0 12px 12px', gap: 6, flex: 1 }}>
-                {!docs?.length && <Empty>{status?.folder ? 'Noch keine Dokumente indexiert.' : 'Verbinde deinen OneDrive-Ordner, in den Goodnotes exportiert – JARVIS indexiert PDFs, DOCX, PPTX, Markdown, TXT und Notebooks automatisch.'}</Empty>}
+                {!docs?.length && <Empty>{status?.enabled ? 'Noch keine Dokumente indexiert – der erste Abgleich kann ein paar Minuten dauern.' : 'Verbinde deinen Google-Drive-Ordner „Goodnotes“ (oder einen Ordner auf diesem PC) – JARVIS indexiert PDFs, DOCX, PPTX, Markdown, TXT und Notebooks automatisch.'}</Empty>}
                 {(docs || []).map((d) => (
                   <div class={`result-row ${sel === d.id ? 'sel' : ''}`} onClick={() => setSel(d.id)}>
                     <FileText size={18} />

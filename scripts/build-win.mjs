@@ -15,7 +15,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const out = path.join(root, 'release');
 const unpacked = path.join(out, 'win-unpacked');
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', cwd: root, ...opts });
+const run = (cmd, args, opts = {}) => {
+  try { return execFileSync(cmd, args, { stdio: process.env.GITHUB_ACTIONS ? 'pipe' : 'inherit', cwd: root, maxBuffer: 64 * 1024 * 1024, ...opts }); } catch (e) {
+    const out = `${e.stdout || ''}\n${e.stderr || ''}`.trim();
+    if (out) process.stdout.write(out + '\n');
+    // In GitHub Actions als Annotation sichtbar machen (die Logs selbst sind nicht immer zugänglich)
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=${path.basename(cmd)} fehlgeschlagen::${out.split(/\r?\n/).slice(-15).join('%0A').replace(/::/g, ': :').slice(0, 3000)}`);
+    throw e;
+  }
+};
 
 fs.rmSync(unpacked, { recursive: true, force: true });
 console.log('▶ electron-builder (win x64, dir)');

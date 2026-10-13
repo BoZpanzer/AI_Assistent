@@ -24,6 +24,7 @@ const { LiveVoice } = require('./voice/live');
 const { Scheduler } = require('./jobs/scheduler');
 const { ScreenVision } = require('./services/screen');
 const { Updater } = require('./services/updater');
+const { Drive } = require('./services/drive');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 
@@ -55,6 +56,7 @@ function createCore(opts) {
   s.vectors = new VectorIndex(s);
   s.brain = new Brain(s);
   s.study = new Study(s);
+  s.drive = new Drive(s);
   s.web = new Web(s);
   s.conversations = new Conversations(s);
   s.gaming = new Gaming(s);
@@ -75,7 +77,7 @@ function createCore(opts) {
     s.study.start();
     s.scheduler.start();
     bus.on('settings:changed', ({ keys }) => {
-      if (keys.includes('study')) { s.study.start(); s.scheduler.runNow('study-scan'); }
+      if (keys.includes('study')) { s.study.start(); s.scheduler.runNow('study-scan'); if (s.drive.active()) s.scheduler.runNow('drive-sync'); }
       if (keys.includes('gaming')) s.gaming.context.start();
     });
   };

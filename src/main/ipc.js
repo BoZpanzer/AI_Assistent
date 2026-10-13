@@ -127,6 +127,16 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
         return { ...r, calendars: s.calendar.calendars() };
       } finally { showWindow(); } // JARVIS nach der Browser-Anmeldung wieder nach vorne holen – auch bei Fehlern
     },
+    'drive.status': () => s.drive.publicStatus(),
+    'drive.connect': async () => {
+      try { await s.google.connect({ drive: true }); } finally { showWindow(); }
+      s.settings.update({ study: { source: 'drive', enabled: true } });
+      s.drive.sync().catch((e) => log.warn('drive', e));
+      return s.drive.publicStatus();
+    },
+    'drive.sync': ({ force } = {}) => s.drive.sync({ force: !!force }),
+    'drive.folders': ({ name } = {}) => s.drive.findFolders(name),
+    'drive.useFolder': ({ id, name }) => { s.settings.update({ study: { driveFolderId: String(id || ''), driveFolder: String(name || 'Goodnotes').slice(0, 120), source: 'drive', enabled: true } }); s.drive.sync({ force: true }).catch(() => {}); return s.drive.publicStatus(); },
     'google.disconnect': () => { s.google.disconnect(); return s.calendar.status(); },
     'google.importClientJson': async () => {
       const f = (await pick({ properties: ['openFile'], filters: [{ name: 'OAuth-Client (JSON)', extensions: ['json'] }] }))?.[0];
