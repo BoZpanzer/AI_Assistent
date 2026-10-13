@@ -162,6 +162,7 @@ export function UpdateModal({ onClose }) {
       {game?.gaming && <div class="notice mt">Du bist gerade im Spiel – JARVIS startet beim Aktualisieren kurz neu. Lieber nach der Runde.</div>}
       {u.error && <div class="notice warn mt">{u.error}</div>}
       {u.state === 'downloading' && <div class="meter mt" style={{ width: '100%' }}><i style={{ width: `${Math.round((u.progress || 0) * 100)}%` }} /></div>}
+      {u.state === 'downloading' && u.received > 0 && <div class="tiny muted mt">{(u.received / 1048576).toFixed(0)}{u.total ? ` von ${(u.total / 1048576).toFixed(0)}` : ''} MB · {u.speed ? (u.speed / 1048576).toFixed(1) + ' MB/s' : '…'}{u.eta != null ? ` · noch ca. ${u.eta >= 60 ? Math.round(u.eta / 60) + ' Min.' : u.eta + ' s'}` : ''}{u.releaseUrl && u.speed && u.speed < 512 * 1024 ? <> · langsam? <a href="#" onClick={(e) => { e.preventDefault(); rpc('shell.openExternal', { url: u.releaseUrl }); }}>im Browser herunterladen</a></> : null}</div>}
       <div class="tiny muted mt">Ablauf: Download → Prüfsumme & Signatur prüfen → automatische Datensicherung → stille Installation → JARVIS startet neu. Deine Daten in %APPDATA%\JARVIS bleiben erhalten.</div>
       <div class="row gap-s mt" style={{ justifyContent: 'flex-end' }}>
         {!busy && <button class="btn sm ghost" onClick={onClose}>Später</button>}

@@ -162,8 +162,14 @@ class Updater {
       const total = Number(r.headers.get('content-length')) || st.size || m.size || 0;
       const hash = crypto.createHash('sha256');
       const file = path.join(os.tmpdir(), `JARVIS_Setup_${m.version}.exe`);
-      const out = fs.createWriteStream(file);
-      let got = 0; let lastEmit = 0;
+      // Erst unter neutralem Namen und in großen Blöcken schreiben: Virenscanner prüfen eine
+      // wachsende .exe sonst bei jedem kleinen Schreibvorgang neu – das bremst den Download massiv.
+      const part = file + '.download';
+      fs.rmSync(part, { force: true });
+      const fd = fs.openSync(part, 'w');
+      let got = 0; let lastEmit = 0; const t0 = Date.now();
+      let pending = []; let pendingBytes = 0;
+      const flush = () => { if (pendingBytes) { fs.writeSync(fd, Buffer.concat(pending, pendingBytes)); pending = []; pendingBytes = 0; } };
       const reader = r.body.getReader();
       try {
         for (;;) {
@@ -172,10 +178,19 @@ class Updater {
           got += value.length;
           if (got > MAX_SETUP) throw new Error('Download zu groß');
           hash.update(value);
-          if (!out.write(value)) await new Promise((res) => out.once('drain', res));
-          if (Date.now() - lastEmit > 250) { lastEmit = Date.now(); this.set({ progress: total ? Math.min(0.99, got / total) : null, received: got }); }
+          pending.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength)); pendingBytes += value.length;
+          if (pendingBytes >= 8 * 1024 * 1024) flush();
+          if (Date.now() - lastEmit > 400) {
+            lastEmit = Date.now();
+            const secs = Math.max(0.5, (Date.now() - t0) / 1000);
+            const speed = got / secs; // Bytes/s
+            this.set({ progress: total ? Math.min(0.99, got / total) : null, received: got, total: total || null, speed: Math.round(speed), eta: total ? Math.round((total - got) / Math.max(1, speed)) : null });
+          }
         }
-      } finally { await new Promise((res) => out.end(res)); }
+        flush();
+      } finally { fs.closeSync(fd); }
+      fs.rmSync(file, { force: true });
+      fs.renameSync(part, file);
       if (hash.digest('hex') !== String(m.sha256).toLowerCase()) { fs.rmSync(file, { force: true }); throw new Error('Prüfsumme stimmt nicht – Update verworfen.'); }
       try { this.s.system.createBackup(path.join(this.s.system.backupDir(), `vor-update-${m.version}.zip`)); } catch (e) { log.warn('Sicherung vor Update fehlgeschlagen', e); }
       this.downloaded = { file, version: m.version };
