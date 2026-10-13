@@ -7,6 +7,7 @@
     "build:renderer": "node scripts/build-renderer.mjs",
     "dev": "node scripts/build-renderer.mjs && electron .",
     "start": "electron .",
+    "pretest": "node scripts/build-renderer.mjs",
     "test": "node --test tests/*.test.js tests/*.test.mjs",
     "test:e2e": "node scripts/build-renderer.mjs && electron tests/e2e/run.js",
     "icons": "electron scripts/make-icons.js",

@@ -12,8 +12,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -50,7 +50,7 @@ jobs:
           Start-Sleep -Seconds 5
           if (Test-Path "$dir\JARVIS.exe") { throw "Deinstallation unvollständig" }
           Write-Host "Installation, Start und Deinstallation erfolgreich"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: JARVIS-Windows
           path: |
