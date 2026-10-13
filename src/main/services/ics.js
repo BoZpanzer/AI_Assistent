@@ -191,6 +191,64 @@ const isFepIcs = (u) => /^https:\/\/fep\.campus-dual\.de\/ics\/ICSSet\(/i.test(S
 const LOGIN_FIX = ' ⟨fix:Bei Campus Dual anmelden|rpc:feeds.campusDualLogin⟩';
 const NOTFOUND_MSG = 'JARVIS hat die Anmeldeseite von Campus Dual nicht gefunden (404). Melde dich im Browser bei Campus Dual an, kopiere die Adresse aus der Adresszeile und füge sie unter Kalender → Abos → „Campus-Dual-Adresse“ ein.';
 
+/**
+ * Einträge aus dem SAP-Stundenplandienst (OData v2, EventListSet) in Termine umwandeln.
+ * Feldnamen werden heuristisch erkannt (Beginn/Ende als Datum+Uhrzeit oder Zeitstempel,
+ * Titel, Raum, Dozent, Hinweis). SAP-„DateTime“ ohne Zeitzone = Wandzeit in Deutschland.
+ */
+const SAP_DATE = /^\/Date\((-?\d+)([+-]\d{4})?\)\/$/;
+function sapValue(v) {
+  if (typeof v !== 'string') return null;
+  let m = v.match(SAP_DATE);
+  if (m) { const ms = Number(m[1]); const d = new Date(ms); return { kind: 'datetime', utc: !!m[2], y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds(), ms }; }
+  m = v.match(/^PT(\d+)H(\d+)M(\d+)S$/i); if (m) return { kind: 'time', h: +m[1], mi: +m[2], s: +m[3] };
+  m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?(Z|[+-]\d{2}:?\d{2})?$/);
+  if (m) return m[4] ? { kind: 'datetime', utc: !!m[7], y: +m[1], mo: +m[2], d: +m[3], h: +m[4], mi: +m[5], s: +(m[6] || 0), ms: m[7] ? Date.parse(v) : null } : { kind: 'date', y: +m[1], mo: +m[2], d: +m[3] };
+  m = v.match(/^(\d{4})(\d{2})(\d{2})$/); if (m && +m[2] >= 1 && +m[2] <= 12) return { kind: 'date', y: +m[1], mo: +m[2], d: +m[3] };
+  m = v.match(/^(\d{2})(\d{2})(\d{2})$/); if (m && +m[1] < 24 && +m[2] < 60) return { kind: 'time', h: +m[1], mi: +m[2], s: +m[3] };
+  return null;
+}
+function campusDualOData(records, zone = 'Europe/Berlin') {
+  const list = Array.isArray(records) ? records : [];
+  if (!list.length) return [];
+  const keys = Object.keys(list[0]).filter((k) => k !== '__metadata');
+  const parsedOf = (k) => list.map((r) => sapValue(r[k])).find(Boolean);
+  const isStart = (k) => /beg|start|von|from|dtstart/i.test(k) && !/end|bis|ende/i.test(k);
+  const isEnd = (k) => /end|bis|ende|dtend/i.test(k) && !/beg|start/i.test(k);
+  const typed = keys.map((k) => ({ k, p: parsedOf(k) })).filter((x) => x.p);
+  const pick = (pred, kinds) => typed.find((x) => pred(x.k) && kinds.includes(x.p.kind))?.k;
+  const anyDate = typed.find((x) => ['date', 'datetime'].includes(x.p.kind) && !isEnd(x.k))?.k;
+  const startD = pick(isStart, ['datetime', 'date']) || anyDate;
+  const endD = pick(isEnd, ['datetime', 'date']);
+  const startT = pick((k) => isStart(k) || /zeit|time|uhr/i.test(k) && !isEnd(k), ['time']);
+  const endT = pick(isEnd, ['time']);
+  const strKey = (re) => keys.find((k) => re.test(k) && list.some((r) => typeof r[k] === 'string' && r[k].trim() && !sapValue(r[k]) && !/^\d+$/.test(r[k].trim())));
+  const titleK = strKey(/^(title|titel|stext|short|kurz|text|name|bezeichnung|description|event|veranstaltung|modul|subject|lv)/i) || strKey(/title|text|name|bez|desc|veranst|modul/i);
+  const roomK = strKey(/room|raum|location|ort|gebaeude|building/i);
+  const instrK = strKey(/instr|dozent|lecturer|lehr|teacher|prof|person/i);
+  const remK = strKey(/remark|hinweis|note|comment|bemerk|info/i);
+  if (!startD) return [];
+  const toIso = (dp, tp) => {
+    if (!dp) return null;
+    if (dp.kind === 'datetime' && dp.utc && dp.ms != null) return new Date(dp.ms).toISOString();
+    const h = tp ? tp.h : dp.kind === 'datetime' ? dp.h : 0; const mi = tp ? tp.mi : dp.kind === 'datetime' ? dp.mi : 0; const s = tp ? tp.s : dp.kind === 'datetime' ? dp.s : 0;
+    return new Date(zonedToUtc(dp.y, dp.mo, dp.d, h, mi, s, zone)).toISOString();
+  };
+  const out = [];
+  for (const r of list) {
+    const sd = sapValue(r[startD]); if (!sd) continue;
+    const st = startT ? sapValue(r[startT]) : null;
+    const ed = endD ? sapValue(r[endD]) : sd; const et = endT ? sapValue(r[endT]) : null;
+    const start = toIso(sd, st); let end = toIso(ed || sd, et);
+    const hasTime = !!st || sd.kind === 'datetime';
+    if (!end || Date.parse(end) <= Date.parse(start)) end = new Date(Date.parse(start) + (hasTime ? 90 : 1440) * 60000).toISOString();
+    const title = String((titleK && r[titleK]) || 'Vorlesung').trim();
+    const desc = [instrK && r[instrK] ? 'Dozent: ' + r[instrK] : null, remK && r[remK] && r[remK] !== title ? 'Hinweis: ' + r[remK] : null].filter(Boolean).join('\n');
+    out.push({ uid: 'cdo-' + sha256(title + '|' + start).slice(0, 16), title, location: String((roomK && r[roomK]) || ''), description: desc, start, end, allDay: !hasTime });
+  }
+  return out.sort((a, b) => a.start.localeCompare(b.start));
+}
+
 // ---------- Feeds ----------
 class Feeds {
   constructor(s) { this.s = s; this.db = s.db; }
@@ -241,7 +299,8 @@ class Feeds {
     if (!cd) throw new Error('Campus-Dual-Anmeldung ist nur in der Desktop-App verfügbar.');
     if (!(await cd.loggedIn())) { const ok = await cd.login(); if (!ok) throw new Error(cd.lastReason === 'notfound' ? NOTFOUND_MSG : 'Anmeldung bei Campus Dual abgebrochen.'); }
     if (!icsUrl) icsUrl = await this.discoverCampusDualIcs().catch(() => null);
-    if (!icsUrl) throw new Error('Angemeldet – aber den Kalender-Link konnte JARVIS nicht selbst finden. Bitte in Campus Dual im Stundenplan den ICS-Link erzeugen und hier einfügen.');
+    // Ohne ICS-Link geht es trotzdem: der Stundenplan kommt direkt aus dem Stundenplan-Dienst (EventListSet)
+    if (!icsUrl) icsUrl = `${FEP}/sap/opu/odata/sap/ZCM_EM_STUDENT_TIMETABLE_SRV/EventListSet`;
     const ex = this.db.get("SELECT id FROM calendar_feeds WHERE kind='campusdual-session'");
     const fid = ex?.id || id('feed');
     const nm = String(name || 'Stundenplan (Campus Dual)').slice(0, 80);
@@ -316,27 +375,70 @@ class Feeds {
     return campusDualEvents(list);
   }
 
-  async fetchText(f) {
-    if (f.kind === 'file') return fs.readFileSync(f.url, 'utf8');
-    if (f.kind === 'campusdual-session') {
-      const cd = this.s.platform?.campusDual;
-      if (!cd) throw new Error('Campus-Dual-Anmeldung ist nur in der Desktop-App verfügbar.');
-      if (!(await cd.loggedIn())) throw new Error('Nicht bei Campus Dual angemeldet.' + LOGIN_FIX);
+  /** Angemeldet? Sonst mit gespeicherten Zugangsdaten unsichtbar neu anmelden. */
+  async ensureCampusDualSession({ force = false } = {}) {
+    const cd = this.s.platform?.campusDual;
+    if (!cd) throw new Error('Campus-Dual-Anmeldung ist nur in der Desktop-App verfügbar.');
+    if (!force && await cd.loggedIn()) return cd;
+    if (cd.hasCreds?.() && await cd.login({ interactive: false })) return cd;
+    this.s.notifications?.push?.({ category: 'calendar', origin: 'system', dedupeKey: 'cd-login:' + new Date().toISOString().slice(0, 10), title: 'Campus Dual: bitte neu anmelden', body: cd.lastReason === 'badcredentials' ? 'Die gespeicherten Campus-Dual-Zugangsdaten wurden abgelehnt – bitte in den Einstellungen prüfen.' : 'Die Anmeldung bei Campus Dual ist abgelaufen. Kalender → Abos → „Bei Campus Dual anmelden“. Bis dahin bleibt der letzte Stand sichtbar.' });
+    const e = new Error((cd.lastReason === 'badcredentials' ? 'Campus Dual hat die gespeicherten Zugangsdaten abgelehnt – bitte in den Einstellungen prüfen.' : 'Campus-Dual-Anmeldung abgelaufen – der letzte Stand bleibt sichtbar.') + LOGIN_FIX);
+    e.expired = true;
+    throw e;
+  }
+
+  /** Angemeldete Abfrage; erkennt abgelaufene Sitzung (HTML-Anmeldeseite/401/403) und meldet sich ggf. einmal neu an. */
+  async campusDualGet(path, { json = true } = {}) {
+    let cd = await this.ensureCampusDualSession();
+    const url = `${FEP}${path}${json ? (path.includes('?') ? '&' : '?') + '$format=json' : ''}`;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await cd.fetch(url, { headers: { Accept: json ? 'application/json' : 'application/xml,*/*;q=0.5' } });
+      const t = await r.text();
+      const isLoginPage = /^\s*<!doctype html|^\s*<html/i.test(t);
+      if (r.ok && !isLoginPage) {
+        if (!json) return t;
+        try { return JSON.parse(t); } catch { throw new Error('Unerwartete Antwort von Campus Dual'); }
+      }
+      if (r.status === 404 || r.status === 400 || r.status === 405 || r.status === 500) { const e = new Error(`Campus-Dual-Dienst antwortet mit ${r.status}`); e.status = r.status; throw e; }
+      if (attempt === 0) cd = await this.ensureCampusDualSession({ force: true });
+    }
+    throw Object.assign(new Error('Campus-Dual-Anmeldung abgelaufen – der letzte Stand bleibt sichtbar.' + LOGIN_FIX), { expired: true });
+  }
+  campusDualJson(path) { return this.campusDualGet(path, { json: true }); }
+
+  /** Stundenplan aus dem Campus-Dual-Dienst (EventListSet); ICS-Link nur als Rückfall. */
+  async fetchCampusDualSession(f) {
+    let fromList = [];
+    this.cdFormatUnknown = 0;
+    try {
+      const j = await this.campusDualJson('/sap/opu/odata/sap/ZCM_EM_STUDENT_TIMETABLE_SRV/EventListSet?sap-client=100&$skip=0&$top=5000');
+      const recs = j?.d?.results || (Array.isArray(j?.d) ? j.d : null) || j?.value || [];
+      // Feldnamen (ohne Inhalte) merken – hilft beim Anpassen an Campus Dual
+      if (recs[0]) this.s.system?.setMeta?.('campusdual:eventfields', JSON.stringify(Object.keys(recs[0]).filter((k) => k !== '__metadata').map((k) => `${k}:${typeof recs[0][k] === 'string' ? (sapValue(recs[0][k])?.kind || 'text') : typeof recs[0][k]}`)));
+      fromList = campusDualOData(recs);
+      this.s.system?.setMeta?.('campusdual:eventstats', JSON.stringify({ at: new Date().toISOString(), records: recs.length, events: fromList.length }));
+      log.info(`Campus Dual: ${recs.length} Einträge, ${fromList.length} Termine erkannt`);
+      if (recs.length && !fromList.length) this.cdFormatUnknown = recs.length;
+    } catch (e) { if (e.expired) throw e; log.warn('Campus Dual EventListSet', e); }
+    if (fromList.length) return fromList;
+    if (isFepIcs(f.url)) {
+      const cd = await this.ensureCampusDualSession();
       const r = await cd.fetch(f.url, { headers: { Accept: 'text/calendar,*/*;q=0.5' } });
       const t = await r.text();
-      let expired = !r.ok || /<html/i.test(t) || !/BEGIN:VCALENDAR/i.test(t);
-      if (!expired && !/BEGIN:VEVENT/i.test(t)) {
-        // Leerer Kalender: wirklich keine Termine oder Sitzung abgelaufen? → angemeldete Testabfrage
-        const probe = await cd.fetch(`${FEP}/sap/opu/odata/sap/ZCM_EM_STUDENT_TIMETABLE_SRV/?sap-client=100&$format=json`, { headers: { Accept: 'application/json' } }).catch(() => null);
-        const pt = probe ? await probe.text().catch(() => '') : '';
-        expired = !probe || !probe.ok || /<html/i.test(pt);
+      if (r.ok && /BEGIN:VCALENDAR/i.test(t)) {
+        const evs = expand(parseIcs(t).events, new Date(Date.now() - 30 * 86400000), new Date(Date.now() + 365 * 86400000));
+        if (evs.length) return evs;
       }
-      if (expired) {
-        this.s.notifications?.push?.({ category: 'calendar', origin: 'system', dedupeKey: 'cd-login:' + new Date().toISOString().slice(0, 10), title: 'Campus Dual: bitte neu anmelden', body: 'Die Anmeldung bei Campus Dual ist abgelaufen. Kalender → Abos → „Bei Campus Dual anmelden“. Bis dahin bleibt der letzte Stundenplan sichtbar.' });
-        throw new Error('Campus-Dual-Anmeldung abgelaufen – der letzte Stand bleibt sichtbar.' + LOGIN_FIX);
-      }
-      return t;
     }
+    if (this.cdFormatUnknown) {
+      const fields = this.s.system?.meta?.('campusdual:eventfields') || '';
+      throw new Error(`Campus Dual liefert ${this.cdFormatUnknown} Einträge, deren Format JARVIS noch nicht erkennt. Felder: ${fields.replace(/[[\]"]/g, '').slice(0, 300)}`);
+    }
+    return [];
+  }
+
+  async fetchText(f) {
+    if (f.kind === 'file') return fs.readFileSync(f.url, 'utf8');
     let u = await assertPublicUrl(f.url); let res;
     for (let hop = 0; hop < 4; hop++) {
       res = await this.s.fetch(u.toString(), { redirect: 'manual', headers: { 'User-Agent': 'JARVIS-Desktop/3', Accept: 'text/calendar,text/plain;q=0.8,*/*;q=0.5', ...(f.etag ? { 'If-None-Match': f.etag } : {}) }, signal: AbortSignal.timeout(20000) });
@@ -358,6 +460,9 @@ class Feeds {
       let inst; let hash; let parsed = { name: null };
       if (f.kind === 'campusdual') {
         inst = (await this.fetchCampusDual(f)).slice(0, 5000);
+        hash = sha256(JSON.stringify(inst));
+      } else if (f.kind === 'campusdual-session') {
+        inst = (await this.fetchCampusDualSession(f)).slice(0, 5000);
         hash = sha256(JSON.stringify(inst));
       } else {
         const text = await this.fetchText(f);
@@ -420,4 +525,4 @@ function courseName(title) {
     .replace(/\s+/g, ' ').replace(/[\s,;\-–]+$/, '').trim() || String(title || '');
 }
 
-module.exports = { Feeds, parseIcs, expand, parseDate, courseName, zonedToUtc, parseCampusDual, campusDualEvents };
+module.exports = { Feeds, parseIcs, expand, parseDate, courseName, zonedToUtc, parseCampusDual, campusDualEvents, campusDualOData, sapValue };

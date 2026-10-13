@@ -40,6 +40,14 @@ class Scheduler {
     }, { initialDelayMs: 8_000 });
     // Kalender-Abos (z. B. Campus-Dual-Stundenplan): alle 15 Minuten, ersetzt Einträge komplett → entfernte Termine verschwinden
     this.add('calendar-feeds', 15 * 60_000, async () => { if (s.db.get('SELECT COUNT(*) c FROM calendar_feeds').c) await s.feeds.refreshAll(); }, { initialDelayMs: 20_000 });
+    // Campus Dual: neue Prüfungsergebnisse? (nur wenn angemeldet oder Zugangsdaten gespeichert; Standard alle 3 h)
+    this.add('campusdual-results', 15 * 60_000, async () => {
+      const cfg = s.settings.get('campusDualResults') || {};
+      if (cfg.enabled === false || !(await s.campusResults.available())) return;
+      const last = Date.parse(s.campusResults.status().lastCheck || 0) || 0;
+      if (Date.now() - last < (cfg.intervalHours || 3) * 3600_000) return;
+      await s.campusResults.check({ notify: true });
+    }, { heavy: true, initialDelayMs: 4 * 60_000 });
     // Steam: neue Spiele (≥ Mindest-Spielzeit) als Game-Seite anlegen, Updates melden – 1× pro Stunde, nicht beim Zocken
     // Google-Drive-Backup (Standard 1× täglich, Ordner „coding“) – prüft stündlich, ob fällig
     this.add('drive-backup', 3600_000, async () => {

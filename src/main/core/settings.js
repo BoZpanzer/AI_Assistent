@@ -32,6 +32,7 @@ const SCHEMA = {
     updateChannelUrl: { type: 'string', maxLength: 500 },
     updateRepo: { type: 'string', maxLength: 140 },
     campusDualUrl: { type: 'string', maxLength: 500 },
+    campusDualResults: { type: 'object', properties: { enabled: { type: 'boolean' }, intervalHours: { type: 'number', minimum: 1, maximum: 48 } } },
     backupDrive: { type: 'object', properties: { enabled: { type: 'boolean' }, folder: { type: 'string', maxLength: 200 }, keep: { type: 'number', minimum: 1, maximum: 100 }, intervalHours: { type: 'number', minimum: 1, maximum: 168 } } },
     updateCheck: { type: 'boolean' },
     // AI
@@ -112,6 +113,7 @@ const DEFAULTS = {
   animations: 'full', hudTransparency: 0.85, alwaysOnTop: false, globalHotkey: 'Control+Alt+J',
   startSound: { mode: 'off', delaySeconds: 0, file: '', volume: 0.6 },
   updateChannelUrl: '', updateRepo: '', updateCheck: true, campusDualUrl: '',
+  campusDualResults: { enabled: true, intervalHours: 3 },
   backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true,

@@ -7,6 +7,7 @@ const { validate } = require('../../core/validate');
 const { GameContext } = require('./context');
 const { GameCache } = require('./cache');
 const { Tarkov } = require('./tarkov');
+const { TarkovMaps } = require('./tarkovmaps');
 const { League } = require('./league');
 const { Wiki } = require('./wiki');
 const { GameProgress } = require('./progress');
@@ -64,6 +65,7 @@ class Gaming {
     const sub = { ...ctx, gameCache: this.cache };
     this.context = new GameContext(sub);
     this.tarkov = new Tarkov(sub);
+    this.tarkovMaps = new TarkovMaps(this, sub);
     this.league = new League(sub);
     this.wiki = new Wiki(sub);
     this.progress = new GameProgress(sub);
@@ -143,7 +145,7 @@ class Gaming {
   // ----- maps & markers -----
   maps(gid) {
     return this.db.all('SELECT * FROM game_maps WHERE game=? ORDER BY name', gid).map((m) => ({ id: m.id, game: m.game, name: m.name, hasImage: !!m.image_file, width: m.width, height: m.height,
-      calibration: safeJson(this.context.getState(`calib:${gid}:${m.name}`), null) }));
+      calibration: safeJson(this.context.getState(`calib:${gid}:${m.name}`), null), source: safeJson(this.context.getState(`mapsrc:${gid}:${m.name}`), null) }));
   }
   /** Import a user-provided map image (copied into the data dir). */
   importMapImage(gid, name, srcFile, { width, height } = {}) {
@@ -151,10 +153,23 @@ class Gaming {
     if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) throw new Error('Nur PNG/JPG/WebP');
     const st = fs.statSync(srcFile);
     if (st.size > 40 * 1024 * 1024) throw new Error('Bild zu groß (max. 40 MB)');
+    const r = this.saveMapFile(gid, name, fs.readFileSync(srcFile), ext, { width, height });
+    // eigenes Bild statt tarkov.dev-Karte → deren automatische Kalibrierung passt nicht mehr
+    if (this.context.getState(`mapsrc:${gid}:${name}`)) {
+      this.db.run('DELETE FROM game_state WHERE key IN (?, ?)', `mapsrc:${gid}:${name}`, `calib:${gid}:${name}`);
+      return this.maps(gid).find((m) => m.name === name);
+    }
+    return r;
+  }
+  /** Kartendatei ablegen (ältere Datei derselben Karte mit anderer Endung wird entfernt). */
+  saveMapFile(gid, name, buf, ext, { width, height } = {}) {
     const dir = path.join(this.dataDir, 'maps', gid);
     fs.mkdirSync(dir, { recursive: true });
-    const file = `${name.replace(/[^\w\-]+/g, '_').slice(0, 40)}${ext}`;
-    fs.copyFileSync(srcFile, path.join(dir, file));
+    const base = String(name).replace(/[^\w\-]+/g, '_').slice(0, 40);
+    const file = `${base}${ext}`;
+    const old = this.db.get('SELECT image_file FROM game_maps WHERE game=? AND name=?', gid, name)?.image_file;
+    fs.writeFileSync(path.join(dir, file), buf);
+    if (old && old !== file && !/[\\/]/.test(old)) fs.rmSync(path.join(dir, old), { force: true });
     this.db.run(`INSERT INTO game_maps(id,game,name,image_file,width,height,created_at) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(game,name) DO UPDATE SET image_file=excluded.image_file, width=excluded.width, height=excluded.height`, id('map'), gid, name, file, width || null, height || null, nowIso());
     this.bus.emit('game:markers', { game: gid, map: name });

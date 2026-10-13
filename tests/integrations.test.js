@@ -743,20 +743,22 @@ test('Systemcheck: jede Prüfung mit Status und Lösung, keine Ausnahme bei fehl
   cleanup();
 });
 
-test('Campus Dual (neues Portal): Anmeldung im Fenster, Abruf mit Sitzung, Ablauf erkennen, letzter Stand bleibt', async () => {
-  const day = (n, h) => { const x = new Date(); x.setDate(x.getDate() + n); x.setUTCHours(h, 0, 0, 0); return x.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''); };
-  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:Timetable', 'BEGIN:VEVENT', 'UID:1', 'SUMMARY:Algorithmen', `DTSTART:${day(1, 8)}`, `DTEND:${day(1, 10)}`, 'LOCATION:3.01', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+test('Campus Dual (neues Portal): Stundenplan aus EventListSet, Ablauf erkennen, letzter Stand bleibt', async () => {
+  // SAP-OData-Format: Datum als /Date(ms)/ (UTC-Mitternacht), Uhrzeit als PT..H..M..S = Wandzeit Deutschland
+  const midnight = (n) => { const x = new Date(); x.setUTCDate(x.getUTCDate() + n); x.setUTCHours(0, 0, 0, 0); return x.getTime(); };
+  const rec = (n, title, from, to) => ({ __metadata: { type: 'ZCM.Event' }, Objid: '5000' + n, Title: title, Room: 'Raum 3.01', Instructor: 'Prof. Muster', EventDate: `/Date(${midnight(n)})/`, BeginTime: `PT${from}H00M00S`, EndTime: `PT${to}H30M00S`, Remarks: '' });
   let logged = false; let expired = false; let logins = 0; const urls = [];
   const cd = {
-    loggedIn: async () => logged,
+    loggedIn: async () => logged && !expired,
+    hasCreds: () => false,
     login: async () => { logins++; logged = true; expired = false; return true; },
     logout: async () => { logged = false; },
     fetch: async (url) => {
       urls.push(url);
+      if (expired) return new Response('<!DOCTYPE html><html>Anmeldung</html>', { headers: { 'content-type': 'text/html' } });
       if (/URLSet/.test(url)) return new Response(JSON.stringify({ d: { Url: "https://fep.campus-dual.de/ics/ICSSet(guid'00505683-ff48-1fd1-b1dc-7a8549a1a000')/$value" } }));
-      if (/ZCM_EM_STUDENT_TIMETABLE_SRV\/\?/.test(url)) return expired ? new Response('<html>Anmeldung</html>') : new Response('{"d":{}}');
-      if (expired) return new Response('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n');
-      return new Response(ics);
+      if (/EventListSet/.test(url)) return new Response(JSON.stringify({ d: { results: [rec(1, 'Algorithmen', '08', '09'), rec(2, 'Datenbanken', '10', '11')] } }));
+      return new Response('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n'); // ICS-Export ist leer (wie im echten Portal)
     },
   };
   const { core, cleanup } = tempCore({ platform: { campusDual: cd } });
@@ -764,19 +766,146 @@ test('Campus Dual (neues Portal): Anmeldung im Fenster, Abruf mit Sitzung, Ablau
     core.platform.campusDual = cd;
     const r = await core.feeds.addCampusDualSession({});
     assert.equal(logins, 1, 'nicht angemeldet → Fenster öffnet sich');
-    assert.equal(r.events, 1, JSON.stringify(r));
-    assert.ok(urls.some((u) => /URLSet\(Objid='00000000'\)/.test(u)), 'ICS-Link selbst gefunden');
+    assert.equal(r.events, 2, JSON.stringify(r));
+    assert.ok(urls.some((u) => /EventListSet\?sap-client=100&\$skip=0&\$top=5000&\$format=json/.test(u)), 'Stundenplan-Dienst abgefragt');
     assert.equal(core.feeds.list()[0].kind, 'campusdual-session');
-    // Sitzung abgelaufen → klare Meldung mit Knopf, Termine bleiben
+    const ev = () => core.calendar.list(new Date().toISOString(), new Date(Date.now() + 4 * 86400000).toISOString()).filter((e) => e.title === 'Algorithmen');
+    const a = ev()[0];
+    assert.ok(a, 'Termin angelegt');
+    // 08:00 Wandzeit Deutschland → 06:00 oder 07:00 UTC (Sommer/Winter)
+    const h = new Date(a.start).getUTCHours();
+    assert.ok(h === 6 || h === 7, 'Uhrzeit als deutsche Ortszeit: ' + a.start);
+    assert.equal((Date.parse(a.end) - Date.parse(a.start)) / 60000, 90);
+    assert.equal(a.location, 'Raum 3.01');
+    assert.match(a.description || '', /Prof\. Muster/);
+    assert.ok(JSON.parse(core.system.meta('campusdual:eventfields')).some((x) => /^EventDate:datetime/.test(x)), 'Feldnamen gemerkt');
+    // Sitzung abgelaufen, keine Zugangsdaten → klare Meldung mit Knopf, Termine bleiben
     expired = true;
     await assert.rejects(core.feeds.refresh(r.id), /abgelaufen.*⟨fix:Bei Campus Dual anmelden\|rpc:feeds\.campusDualLogin⟩/);
-    const ev = core.calendar.list(new Date().toISOString(), new Date(Date.now() + 3 * 86400000).toISOString()).filter((e) => e.title === 'Algorithmen');
-    assert.equal(ev.length, 1, 'letzter Stand bleibt sichtbar');
+    assert.equal(ev().length, 1, 'letzter Stand bleibt sichtbar');
     const again = await core.feeds.campusDualLogin();
     assert.equal(again.ok, true); assert.equal(logins, 2);
     // eingefügter fep-Link wird automatisch zum Anmelde-Abo
     const r2 = await core.feeds.add({ url: "https://fep.campus-dual.de/ics/ICSSet(guid'00505683-ff48-1fd1-b1dc-7a8549a1a000')/$value" });
     assert.equal(r2.existed, true);
     assert.equal(core.feeds.list().filter((f) => f.kind === 'campusdual-session').length, 1);
+  } finally { cleanup(); }
+});
+
+test('Campus Dual: gespeicherte Zugangsdaten → unsichtbare Neuanmeldung; unbekanntes Format → Feldnamen in der Meldung', async () => {
+  let logged = true; let silentLogins = 0; let format = 'unknown';
+  const cd = {
+    loggedIn: async () => logged,
+    hasCreds: () => true,
+    login: async ({ interactive = true } = {}) => { if (!interactive) silentLogins++; logged = true; return true; },
+    logout: async () => { logged = false; },
+    fetch: async (url) => {
+      if (!logged) return new Response('<html>login</html>', { status: 401 });
+      if (/EventListSet/.test(url)) return new Response(JSON.stringify({ d: { results: format === 'unknown' ? [{ Foo: 'x', Bar: 3 }] : [] } }));
+      return new Response('', { status: 404 });
+    },
+  };
+  const { core, cleanup } = tempCore({ platform: { campusDual: cd } });
+  try {
+    core.platform.campusDual = cd;
+    const r = await core.feeds.addCampusDualSession({});
+    assert.match(r.error || '', /Format JARVIS noch nicht erkennt.*Foo:text.*Bar:number/);
+    // Sitzung abgelaufen → JARVIS meldet sich mit den gespeicherten Daten unsichtbar neu an
+    logged = false; format = 'empty';
+    const x = await core.feeds.refresh(r.id);
+    assert.equal(silentLogins, 1);
+    assert.equal(x.events, 0);
+  } finally { cleanup(); }
+});
+
+test('Campus Dual Prüfungsergebnisse: erster Lauf = Basis, neue Einträge → Benachrichtigung, Kachel-Änderung erkannt', async () => {
+  const xml = '<?xml version="1.0"?><edmx:Edmx><Schema Namespace="PIQ"><EntityType Name="Result"><Key><PropertyRef Name="Id"/></Key></EntityType><EntityContainer><EntitySet Name="ResultsParametersSet" EntityType="PIQ.Params"/><EntitySet Name="StudentResultsSet" EntityType="PIQ.Result"/><EntitySet Name="CourseSet" EntityType="PIQ.Course"/></EntityContainer></Schema></edmx:Edmx>';
+  let results = [{ __metadata: {}, Id: '1', Stext: 'Mathematik I', Grade: '2,0', Ects: '5', Perfdate: '/Date(1760000000000)/' }];
+  let tile = '1';
+  const urls = [];
+  const cd = {
+    loggedIn: async () => true, hasCreds: () => false, login: async () => true,
+    fetch: async (url) => {
+      urls.push(url);
+      if (/ResultsParametersSet/.test(url)) return new Response(JSON.stringify({ d: { __metadata: {}, number: tile, numberUnit: 'Ergebnisse', subtitle: '' } }));
+      if (/\$metadata/.test(url)) return new Response(xml, { headers: { 'content-type': 'application/xml' } });
+      if (/StudentResultsSet/.test(url)) return new Response(JSON.stringify({ d: { results } }));
+      return new Response('', { status: 404 });
+    },
+  };
+  const { core, cleanup } = tempCore({ platform: { campusDual: cd } });
+  try {
+    core.platform.campusDual = cd;
+    const notes = () => core.notifications.list({ limit: 50 });
+    const n0 = [].concat(notes()).length;
+    const first = await core.campusResults.check();
+    assert.equal(first.firstRun, true); assert.equal(first.count, 1);
+    assert.ok(!urls.some((u) => /CourseSet/.test(u)), 'nur Listen, die nach Ergebnissen klingen');
+    assert.equal([].concat(notes()).length, n0, 'erster Lauf meldet nichts');
+    assert.equal(core.campusResults.status().results[0].title, 'Mathematik I');
+    assert.equal(core.campusResults.status().results[0].grade, '2,0');
+    results = [...results, { __metadata: {}, Id: '2', Stext: 'Programmierung', Grade: '1,3', Ects: '5', Perfdate: '/Date(1761000000000)/' }];
+    tile = '2';
+    const second = await core.campusResults.check();
+    assert.equal(second.newResults.length, 1);
+    const all = [].concat(notes());
+    assert.ok(all.some((x) => /Neues Prüfungsergebnis/.test(x.title) && /Programmierung: 1,3/.test(x.body)), JSON.stringify(all.slice(0, 3)));
+    // Ohne Ergebnisliste: Änderung der Kachel wird gemeldet
+    results = []; tile = '3';
+    const third = await core.campusResults.check();
+    assert.equal(third.tileChanged, true);
+    assert.ok([].concat(notes()).some((x) => /Ergebnisse haben sich geändert/.test(x.title)));
+    // Chat-Werkzeug liefert die gelesenen Ergebnisse
+    const t = require('../src/main/agent/tools.js').buildTools(core).find((x) => x.name === 'campus_dual_results');
+    const out = await t.run({});
+    assert.ok(out.results.some((x) => x.title === 'Programmierung' && x.grade === '1,3'));
+  } finally { cleanup(); }
+});
+
+test('Tarkov-Karten: tarkov.dev-SVG wird geladen, bereinigt und automatisch kalibriert; eigene Bilder bleiben', async () => {
+  const { affineFor, SNAPSHOT, prepareSvg } = require('../src/main/services/gaming/tarkovmaps');
+  // Ecken des Kartenrechtecks landen auf 0/1, Seitenverhältnis wie die echte Customs.svg (viewBox 1062×535 ≈ 1,985)
+  const customs = SNAPSHOT.find((d) => d.id === 'customs');
+  const { affine, aspect } = affineFor(customs);
+  const n = (x, z) => [affine[0] * x + affine[1] * z + affine[2], affine[3] * x + affine[4] * z + affine[5]];
+  for (const [i, c] of customs.bounds.entries()) n(...c).forEach((v) => assert.ok(Math.abs(v - (i === 0 ? 0 : 1)) < 1e-9 || Math.abs(v - (i === 0 ? 1 : 0)) < 1e-9, String(v)));
+  assert.ok(Math.abs(aspect - 1062.48 / 535.17) / aspect < 0.02, 'Seitenverhältnis passt zur SVG: ' + aspect);
+  const svgIn = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="10"><script>alert(1)</script><g id="Ground_Level" onclick="x()"><a href="https://evil.example/x"><rect/></a></g><g id="Second_Floor"/></svg>';
+  const out = prepareSvg(svgIn, customs, aspect).svg;
+  assert.ok(!/script|onclick|evil\.example/.test(out), out);
+  assert.match(out, /width="4096" height="20\d\d"/);
+  assert.match(out, /:not\(#Ground_Level\)/);
+  assert.throws(() => prepareSvg('<html>nope</html>', customs, aspect), /Keine SVG/);
+
+  const fetched = [];
+  const { core, cleanup } = tempCore({ fetch: async (url) => {
+    fetched.push(url);
+    if (/maps\.json$/.test(url)) return new Response('nicht da', { status: 503 }); // → gespeicherter Stand
+    if (/Factory\.svg$/.test(url)) return new Response('', { status: 404 });
+    if (/\.svg$/.test(url)) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g id="Ground_Level"/></svg>');
+    return new Response('', { status: 404 });
+  } });
+  try {
+    // eigenes Bild für Woods vorher importiert → wird nicht überschrieben
+    const own = path.join(os.tmpdir(), 'jarvis-own-woods.png'); fs.writeFileSync(own, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    core.gaming.importMapImage('eft', 'woods', own);
+    const r = await core.gaming.tarkovMaps.importAll();
+    assert.ok(r.done.includes('customs') && r.done.includes('shoreline'), JSON.stringify(r));
+    assert.ok(r.skipped.includes('woods'));
+    assert.equal(r.failed[0].id, 'factory'); // beide Quellen 404
+    assert.ok(fetched.some((u) => u === 'https://assets.tarkov.dev/maps/svg/Customs.svg'));
+    const m = core.gaming.maps('eft').find((x) => x.name === 'customs');
+    assert.equal(m.hasImage, true); assert.equal(m.width, 4096);
+    assert.equal(m.calibration.affine.length, 6); assert.match(m.calibration.attribution, /tarkov\.dev/);
+    assert.match(core.gaming.mapImagePath('eft', 'customs'), /customs\.svg$/);
+    assert.equal(core.gaming.maps('eft').find((x) => x.name === 'woods').calibration, null);
+    // zweiter Lauf lädt nichts neu; eigenes Bild über eine tarkov.dev-Karte → Auto-Kalibrierung entfällt
+    const before = fetched.length;
+    const r2 = await core.gaming.tarkovMaps.importAll();
+    assert.equal(r2.done.length, 0); assert.equal(fetched.filter((u) => /\.svg$/.test(u)).length, fetched.slice(0, before).filter((u) => /\.svg$/.test(u)).length + 2, 'nur Factory erneut versucht (2 Quellen)');
+    core.gaming.importMapImage('eft', 'customs', own);
+    const c2 = core.gaming.maps('eft').find((x) => x.name === 'customs');
+    assert.equal(c2.calibration, null); assert.match(core.gaming.mapImagePath('eft', 'customs'), /customs\.png$/);
+    assert.ok(!fs.existsSync(core.gaming.mapImagePath('eft', 'customs').replace(/\.png$/, '.svg')), 'alte SVG entfernt');
   } finally { cleanup(); }
 });

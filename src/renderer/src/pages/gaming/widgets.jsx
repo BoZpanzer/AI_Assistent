@@ -40,6 +40,22 @@ function MapWidget({ game, params }) {
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [apiMap] = useRpc('tarkov.map', { map }, { enabled: isEft, deps: [map] });
   const meta = (userMaps || []).find((m) => m.name === map);
+  const [loadingMaps, setLoadingMaps] = useState(false);
+  const autoTried = useRef(false);
+  const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
+    setLoadingMaps(true);
+    const r = quiet ? await rpc('tarkov.importMaps', { force }).catch(() => null) : await guard(() => rpc('tarkov.importMaps', { force }));
+    setLoadingMaps(false); reloadMaps();
+    if (r && !quiet) toast(r.done.length ? `${r.done.length} Karten von tarkov.dev geladen` : r.failed.length ? 'Karten konnten nicht geladen werden: ' + r.failed[0].error : 'Alle Karten sind schon da', r.failed.length && !r.done.length ? 'error' : undefined, 6000);
+    return r;
+  };
+  // Tarkov: fehlende Karten beim ersten Öffnen automatisch von tarkov.dev holen
+  useEffect(() => {
+    if (!isEft || autoTried.current || !Array.isArray(userMaps) || !eftMaps) return;
+    if ((userMaps.find((m) => m.name === map) || {}).hasImage) return;
+    autoTried.current = true;
+    loadEftMaps({ quiet: true });
+  }, [isEft, userMaps, eftMaps, map]);
   const [tool, setTool] = useState('custom');
   const [visible, setVisible] = useState(Object.fromEntries(CATS.map((c) => [c.id, true])));
   const [showApi, setShowApi] = useState(true);
@@ -57,6 +73,9 @@ function MapWidget({ game, params }) {
   const toNorm = (e) => { const r = box.current.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / (imgSize.w * view.z), y: (e.clientY - r.top - view.y) / (imgSize.h * view.z) }; };
   // Game (x,z) → normalized image coordinates via 2-point similarity transform
   const transform = useMemo(() => {
+    // tarkov.dev-Karte: feste affine Umrechnung (x, z) → 0..1
+    const af = meta?.calibration?.affine;
+    if (Array.isArray(af) && af.length === 6) return (x, z) => ({ x: af[0] * x + af[1] * z + af[2], y: af[3] * x + af[4] * z + af[5] });
     const c = meta?.calibration?.points;
     if (!c || c.length !== 2) return null;
     const [a, b] = c;
@@ -116,8 +135,9 @@ function MapWidget({ game, params }) {
             <div class="tool" onClick={async () => { const last = history.at(-1); if (!last) return toast('Nichts zum Rückgängigmachen'); await rpc('game.removeMarker', { id: last }); setHistory(history.slice(0, -1)); }}><Undo2 size={15} />Rückgängig</div>
             <div class="tool" onClick={async () => { if (await ask(`Alle eigenen Marker auf ${map} löschen?`, '', { confirmOnly: true, danger: true, okLabel: 'Löschen' })) rpc('game.clearMarkers', { game: game.id, map }); }}><Trash2 size={15} />Marker löschen</div>
             <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
+            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}Karten laden</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
-            {isEft && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
+            {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
           </div>
           <div class={`map-box ${imgUrl ? '' : 'grid-fallback'}`} ref={box} onWheel={wheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onClick={click}>
@@ -137,8 +157,10 @@ function MapWidget({ game, params }) {
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); zoom(0.8); }}><Minus size={14} /></button>
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); fit(); }}><Crosshair size={14} /></button>
             </div>
-            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Nach dem Kalibrieren blendet JARVIS Exits und verschlossene Türen aus tarkov.dev ein.' : ''}</div>}
+            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Die meisten Tarkov-Karten lädt JARVIS automatisch von tarkov.dev (Knopf „Karten laden“). Für Labs, Labyrinth und Icebreaker gibt es dort keine Vektorkarte – eigenes Bild importieren und kalibrieren, dann blendet JARVIS Exits und verschlossene Türen ein.' : ''}</div>}
             {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/2 anklicken</div>}
+            {imgUrl && meta?.calibration?.attribution && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration.attribution} · nur Erdgeschoss</div>}
+            {!imgUrl && isEft && loadingMaps && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active"><Spinner /> Lade Karte von tarkov.dev …</div>}
           </div>
         </div>
       </Panel>

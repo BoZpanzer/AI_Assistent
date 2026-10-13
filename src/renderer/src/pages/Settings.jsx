@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Settings as Gear, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info } from 'lucide-preact';
+import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info } from 'lucide-preact';
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar, UpdateModal } from '../components/Shell.jsx';
@@ -25,6 +25,7 @@ export function Settings() {
           <Ai s={s} secrets={secrets} />
           <Google s={s} />
           <StudyCard s={s} />
+          <CampusDualCard s={s} />
           <GamingCard s={s} secrets={secrets} />
           <OverlayCard s={s} />
           <Desktop s={s} />
@@ -179,6 +180,63 @@ function StudyCard({ s }) {
       <Field label="Unterstützte Formate"><span class="small muted">PDF, DOCX, PPTX, TXT, MD, IPYNB</span></Field>
       <Field label="Handschrift/Formeln transkribieren" hint="multimodal über Gemini, pro Seite zwischengespeichert"><Select value={st.visionForHandwriting} onChange={(v) => upd({ study: { visionForHandwriting: v } })} options={[{ value: 'off', label: 'Aus' }, { value: 'on-demand', label: 'Auf Abruf' }, { value: 'auto', label: 'Automatisch (Tageslimit)' }]} /></Field>
       <Field label="Tageslimit Seitenanalysen"><input class="inp" type="number" min="0" max="500" value={st.visionDailyLimit} onChange={(e) => upd({ study: { visionDailyLimit: Number(e.currentTarget.value) } })} /></Field>
+    </Panel>
+  );
+}
+
+function CampusDualCard({ s }) {
+  const [st, setSt] = useState(null);
+  const [user, setUser] = useState('');
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState('');
+  const load = async () => setSt(await rpc('campusdual.status').catch(() => null));
+  useEffect(() => { load(); }, []);
+  const r = st?.results;
+  const cfg = s.campusDualResults || {};
+  const save = async () => {
+    setBusy('save');
+    const ok = await guard(() => rpc('campusdual.setCredentials', { user, password: pw }), 'Zugangsdaten verschlüsselt gespeichert');
+    setPw(''); setUser('');
+    if (ok?.hasCreds) {
+      setBusy('test');
+      const t = await guard(() => rpc('campusdual.testLogin'));
+      if (t) toast(t.ok ? 'Anmeldung bei Campus Dual klappt' : t.reason === 'badcredentials' ? 'Campus Dual hat die Zugangsdaten abgelehnt' : t.reason === 'notfound' ? 'Anmeldeseite nicht gefunden – Campus-Dual-Adresse im Kalender eintragen' : 'Anmeldung hat nicht geklappt (' + (t.reason || 'unbekannt') + ')', t.ok ? undefined : 'error', 7000);
+    }
+    setBusy(''); load();
+  };
+  const check = async () => {
+    setBusy('results');
+    const x = await guard(() => rpc('campusdual.checkResults'));
+    if (x) toast(x.firstRun ? `Stand gespeichert: ${x.count} Ergebnisse` : x.newResults?.length ? `${x.newResults.length} neue Ergebnisse` : x.tileChanged ? 'Ergebnisse-Kachel hat sich geändert' : 'Keine neuen Ergebnisse');
+    setBusy(''); load();
+  };
+  if (st && !st.available) return null;
+  return (
+    <Panel icon={GraduationCap} title="Campus Dual" sub="Stundenplan und Prüfungsergebnisse">
+      <Field label="Status"><span class="small" style={{ color: st?.loggedIn ? 'var(--ok, #4ade80)' : 'var(--text-2)' }}>{!st ? '…' : st.loggedIn ? 'angemeldet' : 'nicht angemeldet'}{st?.hasCreds ? ' · Zugangsdaten gespeichert' : ''}</span></Field>
+      {st?.events && <Field label="Stundenplan"><span class="small muted">{st.events.records} Einträge von Campus Dual · {st.events.events} Termine erkannt</span></Field>}
+      <div class="tiny muted">Optional: Mit gespeicherten Zugangsdaten meldet sich JARVIS bei abgelaufener Sitzung unsichtbar selbst neu an. Sie liegen nur verschlüsselt (Windows-DPAPI) auf diesem PC, werden nie angezeigt und nur auf campus-dual.de eingetragen – höchstens ein Versuch, damit dein Konto nicht gesperrt wird.</div>
+      <Field label="Benutzername (Matrikelnummer)"><input class="inp" autocomplete="off" value={user} placeholder={st?.hasCreds ? 'gespeichert – zum Ändern neu eingeben' : 'z. B. 5001234'} onInput={(e) => setUser(e.currentTarget.value)} /></Field>
+      <Field label="Passwort"><input class="inp" type="password" autocomplete="new-password" value={pw} placeholder={st?.hasCreds ? '••••••••' : ''} onInput={(e) => setPw(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter' && user.trim() && pw) save(); }} /></Field>
+      <div class="row gap-s" style={{ justifyContent: 'flex-end' }}>
+        {st?.hasCreds && <button class="btn xs ghost" disabled={!!busy} onClick={async () => { if (await ask('Gespeicherte Campus-Dual-Zugangsdaten löschen?', '', { confirmOnly: true, okLabel: 'Löschen' })) { await guard(() => rpc('campusdual.setCredentials', {}), 'Gelöscht'); load(); } }}>Löschen</button>}
+        {st?.hasCreds && <button class="btn xs" disabled={!!busy} onClick={async () => { setBusy('test'); const t = await guard(() => rpc('campusdual.testLogin')); if (t) toast(t.ok ? 'Anmeldung klappt' : 'Anmeldung fehlgeschlagen (' + (t.reason || 'unbekannt') + ')', t.ok ? undefined : 'error'); setBusy(''); load(); }}>{busy === 'test' ? <Spinner /> : null}Anmeldung prüfen</button>}
+        <button class="btn xs primary" disabled={!user.trim() || !pw || !!busy} onClick={save}>{busy === 'save' ? <Spinner /> : <KeyRound size={12} />}Speichern</button>
+      </div>
+      <div class="hr" />
+      <Field label="Neue Prüfungsergebnisse melden" hint={`prüft alle ${cfg.intervalHours || 3} h, nur wenn angemeldet oder Zugangsdaten gespeichert`}><Toggle checked={cfg.enabled !== false} onChange={(v) => upd({ campusDualResults: { enabled: v } })} /></Field>
+      <Field label="Letzte Prüfung"><span class="small muted">{r?.lastCheck ? ago(r.lastCheck) : 'noch nie'}{r?.tile ? ' · Kachel: ' + r.tile : ''}</span></Field>
+      {r?.lastError && <div class="notice warn small"><FixText text={r.lastError} /></div>}
+      {r?.results?.length > 0 && (
+        <details>
+          <summary class="small">{r.results.length} Ergebnisse gelesen</summary>
+          <div class="col gap-xs" style={{ marginTop: 6, maxHeight: 220, overflow: 'auto' }}>
+            {r.results.slice(0, 80).map((x) => <div class="row small" key={x.key}><span class="grow">{x.title}</span><span class="muted">{[x.grade || x.gradeText, x.credits ? x.credits + ' CP' : null, x.date].filter(Boolean).join(' · ')}</span></div>)}
+          </div>
+        </details>
+      )}
+      {r?.lastCheck && !r?.results?.length && r?.sources?.length > 0 && <div class="tiny muted">Gefundene Quellen: {r.sources.map((x) => `${x.set} (${x.error ? 'Fehler' : x.count})`).join(', ')} – noch keine Ergebnisliste erkannt, JARVIS meldet dann Änderungen der Ergebnisse-Kachel.</div>}
+      <div class="row" style={{ justifyContent: 'flex-end' }}><button class="btn xs" disabled={!!busy || (!st?.loggedIn && !st?.hasCreds)} onClick={check}>{busy === 'results' ? <Spinner /> : <RefreshCw size={12} />}Jetzt prüfen</button></div>
     </Panel>
   );
 }

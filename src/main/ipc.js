@@ -139,6 +139,29 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'feeds.campusDualConnect': ({ icsUrl, name } = {}) => s.feeds.addCampusDualSession({ icsUrl: icsUrl ? String(icsUrl).trim() : undefined, name }),
     'feeds.campusDualStatus': async () => ({ available: !!s.platform?.campusDual, loggedIn: s.platform?.campusDual ? await s.platform.campusDual.loggedIn() : false }),
     'feeds.campusDualLogout': async () => { await s.platform?.campusDual?.logout(); return true; },
+    // Campus-Dual-Zugangsdaten: nur verschlüsselt (DPAPI) im Hauptprozess, nie zurück an die Oberfläche
+    'campusdual.setCredentials': ({ user, password } = {}) => {
+      const u = String(user || '').trim(); const pw = String(password || '');
+      if (!u && !pw) { s.secrets.delete('campusdual.user'); s.secrets.delete('campusdual.password'); return { hasCreds: false }; }
+      if (!u || !pw) throw new Error('Benutzername und Passwort angeben');
+      if (u.length > 120 || pw.length > 200) throw new Error('Eingabe zu lang');
+      s.secrets.set('campusdual.user', u); s.secrets.set('campusdual.password', pw);
+      return { hasCreds: true };
+    },
+    'campusdual.status': async () => {
+      const cd = s.platform?.campusDual;
+      const j = (k) => { try { return JSON.parse(s.system.meta(k) || 'null'); } catch { return null; } };
+      return { available: !!cd, loggedIn: cd ? await cd.loggedIn() : false, hasCreds: !!cd?.hasCreds?.(), events: j('campusdual:eventstats'), eventFields: j('campusdual:eventfields'), results: s.campusResults.status() };
+    },
+    'campusdual.testLogin': async () => {
+      const cd = s.platform?.campusDual;
+      if (!cd) throw new Error('Nur in der Desktop-App verfügbar');
+      if (!cd.hasCreds()) throw new Error('Erst Benutzername und Passwort speichern');
+      const ok = await cd.login({ interactive: false });
+      if (ok) s.feeds.refreshAll().catch(() => {});
+      return { ok, reason: cd.lastReason };
+    },
+    'campusdual.checkResults': async () => { const r = await s.campusResults.check({ notify: true }); return { ...s.campusResults.status(), newResults: r.newResults, firstRun: r.firstRun, tileChanged: r.tileChanged }; },
     'backup.driveStatus': () => s.driveBackup.status(),
     'backup.driveConnect': async () => {
       try { await s.google.connect({ drive: 'write' }); } finally { showWindow(); }
@@ -288,6 +311,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.wikiSearch': async ({ game, q }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) return { results: [], available: false }; return s.gaming.wiki.search(p.wiki, q); },
     'game.wikiPage': async ({ game, title, api }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) throw new Error('Kein Wiki'); return s.gaming.wiki.page(p.wiki, title, 12000, api); },
     'game.others': ({ active }) => s.gaming.otherGameNotifications(active),
+    'tarkov.importMaps': ({ map, force } = {}) => s.gaming.tarkovMaps.importAll({ only: map ? String(map) : undefined, force: !!force }),
     'tarkov.maps': async () => { const r = await s.gaming.tarkov.maps(); return { maps: r.value.map((m) => ({ name: m.name, id: m.normalizedName, players: m.players, raidDuration: m.raidDuration })), source: r.source, fetchedAt: r.fetchedAt, offline: r.offline }; },
     'tarkov.map': async ({ map }) => { const r = await s.gaming.tarkov.map(map); return r ? { map: r.value, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline } : null; },
     'tarkov.quests': ({ map, q }) => s.gaming.tarkov.searchTasks(q, { map, limit: 30 }),

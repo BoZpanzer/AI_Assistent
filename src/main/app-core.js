@@ -27,6 +27,7 @@ const { Updater } = require('./services/updater');
 const { Drive } = require('./services/drive');
 const { Feeds } = require('./services/ics');
 const { DriveBackup } = require('./services/drivebackup');
+const { CampusResults } = require('./services/campusresults');
 const { Birthdays } = require('./services/birthdays');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
@@ -75,6 +76,7 @@ function createCore(opts) {
   s.system = new System(s);
   s.updater = new Updater(s);
   s.driveBackup = new DriveBackup(s);
+  s.campusResults = new CampusResults(s);
   s.briefing = () => briefing(s);
   s.contextProviders = [];
   s.screen = new ScreenVision(s);

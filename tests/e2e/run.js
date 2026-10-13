@@ -139,6 +139,22 @@ app.whenReady().then(async () => {
     core.gaming.addMarker('eft', 'customs', { x: 0.2, y: 0.7, category: 'exit', label: 'ZB-1011' });
     await shot('61-gaming-tarkov');
   });
+  await step('Tarkov-Karte: von tarkov.dev geladen (Fake), Exit an berechneter Position', async () => {
+    const origMaps = core.gaming.tarkov.maps; const origFetch = core.gaming.tarkovMaps.fetch;
+    try {
+    core.gaming.tarkov.maps = async () => ({ value: [{ name: 'Zollgebiet', normalizedName: 'customs', extracts: [{ name: 'Testexit', faction: 'pmc', position: { x: 166.5, y: 0, z: -35 } }], locks: [], transits: [], bosses: [], players: '8-12', raidDuration: 40 }], source: 'test', fetchedAt: new Date().toISOString() });
+    core.gaming.tarkovMaps.fetch = async (url) => (/maps\.json$/.test(url) ? new Response('', { status: 503 }) : new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1062 535"><style>.l{fill:#1f5054}</style><g id="Ground_Level"><rect class="l" width="1062" height="535"/><circle cx="531" cy="267" r="40" fill="#c6c2c2"/></g><g id="Second_Floor"><rect width="1062" height="535" fill="red"/></g></svg>'));
+    await nav('dashboard'); await nav('gaming'); await sleep(500);
+    await js(`[...document.querySelectorAll('.map-tools .tool')].find(t=>t.textContent.includes('Karten laden'))?.click()`);
+    await waitFor(() => js(`!!document.querySelector('.map-inner img') && document.querySelector('.map-inner img').naturalWidth > 0`), 15000);
+    await waitFor(() => js(`[...document.querySelectorAll('.marker .lbl')].some(l=>l.textContent==='Testexit')`), 8000);
+    const pos = await js(`(()=>{const m=[...document.querySelectorAll('.marker')].find(x=>x.textContent.includes('Testexit')); const i=document.querySelector('.map-inner'); return { l: parseFloat(m.style.left)/parseFloat(i.style.width), t: parseFloat(m.style.top)/parseFloat(i.style.height) };})()`);
+    // Mittelpunkt des Rechtecks: x=(698-372)/2=163, z=(237-307)/2=-35 → (0.5, 0.5); 166.5 liegt minimal links davon
+    if (!(Math.abs(pos.l - 0.4967) < 0.01 && Math.abs(pos.t - 0.5) < 0.01)) throw new Error('Exit an falscher Stelle: ' + JSON.stringify(pos));
+    if (!(await js(`document.body.textContent.includes('tarkov.dev (CC BY-NC-SA 4.0)')`))) throw new Error('Quellenangabe fehlt');
+    await shot('61b-gaming-tarkov-map');
+    } finally { core.gaming.tarkov.maps = origMaps; core.gaming.tarkovMaps.fetch = origFetch; }
+  });
   await step('Gaming: League of Legends & Rise of Kingdoms Layouts', async () => {
     core.gaming.context.setActive('league', 'manual'); await sleep(600); await shot('62-gaming-league');
     core.gaming.context.setActive('rok', 'manual'); await sleep(600); await shot('63-gaming-rok');
@@ -204,7 +220,11 @@ app.whenReady().then(async () => {
     await waitFor(() => core.voice.state === 'off', 5000);
     if (!global.__fakeLive.closed) throw new Error('Live-Sitzung nicht geschlossen');
   });
-  await step('Einstellungen', async () => { await nav('settings'); await shot('80-settings'); });
+  await step('Einstellungen', async () => {
+    await nav('settings'); await shot('80-settings');
+    if (!(await js(`[...document.querySelectorAll('.panel')].some(p=>p.textContent.includes('Campus Dual') && p.textContent.includes('Prüfungsergebnisse'))`))) throw new Error('Campus-Dual-Karte fehlt');
+    await js(`[...document.querySelectorAll('.panel')].find(p=>p.textContent.includes('Prüfungsergebnisse melden')).scrollIntoView()`); await shot('80b-settings-campusdual');
+  });
   await step('Systemcheck: Probleme mit Lösungs-Knopf', async () => {
     core.updater.check = async () => ({});
     await js(`[...document.querySelectorAll('.chatbar .btn')].find(b=>b.textContent.includes('Systemcheck')).click()`);

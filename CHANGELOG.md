@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.16.0 – Campus-Dual-Stundenplan direkt, Zugangsdaten, Prüfungsergebnisse, Tarkov-Karten
+
+- **Campus Dual: Stundenplan kommt jetzt direkt aus dem Stundenplan-Dienst** (derselbe, den die Campus-Dual-Seite selbst nutzt) statt aus dem ICS-Export, der leer war. Erkennt JARVIS das Format nicht, zeigt das Abo die Feldnamen an, statt still 0 Termine zu melden. Das Format ist nicht offiziell beschrieben, deshalb erkennt JARVIS die Felder automatisch. Mit dem echten Campus Dual ist das noch nicht getestet.
+- **Campus-Dual-Zugangsdaten in den Einstellungen (optional):** Benutzername und Passwort werden nur verschlüsselt (Windows-DPAPI) gespeichert und nie angezeigt. Läuft die Sitzung ab, meldet sich JARVIS unsichtbar selbst neu an. Eingetragen wird nur auf campus-dual.de, und es gibt höchstens einen Versuch. Werden die Daten abgelehnt, kommt ein Hinweis, damit dein Konto nicht gesperrt wird.
+- **Neue Prüfungsergebnisse:** JARVIS schaut alle 3 Stunden in Campus Dual nach, ob es neue Ergebnisse gibt, und meldet sie mit Modul und Note. Findet JARVIS keine Ergebnisliste, meldet es Änderungen an der Kachel „Ergebnisse“. Im Chat geht das auch: „Hab ich neue Noten?“. Einstellungen → Campus Dual → „Jetzt prüfen“.
+- **Tarkov-Karten automatisch:** Die Gaming-Karte lädt die Vektorkarten von tarkov.dev (Zollgebiet, Woods, Shoreline, Interchange, Reserve, Lighthouse, Streets, Ground Zero, Factory, Terminal) und kalibriert sie selbst. Exits und verschlossene Türen erscheinen sofort an der richtigen Stelle. Labs, Labyrinth und Icebreaker gibt es dort nur als Kachelbilder, für sie bleibt der Weg über ein eigenes Bild. Quelle: Shebuka / tarkov.dev (CC BY-NC-SA 4.0). Eigene Kartenbilder werden nie überschrieben.
+
 ## 3.15.1 – Campus-Dual-Anmeldung & Kalender-Layout repariert
 
 - **Campus-Dual-Anmeldefenster zeigte „404 Not found“:** JARVIS probiert jetzt nacheinander die üblichen Adressen des Campus-Dual-Launchpads. Findet es keine, kommt eine klare Anleitung. Unter Kalender → Abos → „Campus-Dual-Adresse“ kannst du die Adresse aus deinem Browser eintragen, dann nimmt JARVIS genau die.

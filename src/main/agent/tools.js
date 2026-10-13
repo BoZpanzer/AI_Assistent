@@ -310,6 +310,15 @@ function buildTools(s) {
       return { changed: key, value };
     } });
 
+  def({ name: 'campus_dual_results', mode: 'read', description: 'Prüfungsergebnisse aus Campus Dual (Modul, Note, Credits, Datum – soweit erkannt). refresh=true fragt Campus Dual jetzt ab (braucht Anmeldung). Nur die gelieferten Werte nennen, keine Noten erfinden.',
+    schema: { type: 'object', properties: { refresh: { type: 'boolean' } } },
+    run: async ({ refresh }) => {
+      let fresh = null;
+      if (refresh) fresh = await s.campusResults.check({ notify: false }).catch((e) => ({ error: e.message.replace(/\s*⟨fix:[^⟩]*⟩/, '') }));
+      const st = s.campusResults.status();
+      return { lastCheck: st.lastCheck, error: fresh?.error || st.lastError || undefined, tile: st.tile, newSinceLastCheck: fresh?.newResults?.map((r) => r.title), results: st.results.slice(0, 120).map(({ key, source, ...r }) => r), note: st.results.length ? undefined : 'JARVIS hat in Campus Dual noch keine Ergebnisliste erkannt – nur die Ergebnisse-Kachel (tile) wird beobachtet.' };
+    } });
+
   def({ name: 'system_status', mode: 'read', description: 'Systemstatus von JARVIS (Verbindungen, Sync, Index, Speicher).', schema: { type: 'object', properties: {} },
     run: () => s.system.status() });
 
