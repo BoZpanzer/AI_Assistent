@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.3.5 – Aufgeräumtes Startmenü
+
+- Im Startmenü gibt es nur noch **einen** JARVIS-Eintrag. Deinstallieren geht über Windows → Einstellungen → Apps.
+- Reste von **JARVIS 2.0** werden beim Installieren entfernt: alter Startmenü-Eintrag, alter Eintrag in der Apps-Liste, alter Deinstaller und die alte Python-Laufzeit im Programmordner. Deine Daten bleiben unberührt.
+
 ## 3.3.4 – Schnellerer Update-Download
 
 - Der Download wird zuerst unter neutralem Namen in großen Blöcken geschrieben und erst am Ende zur .exe umbenannt. Virenscanner prüfen die wachsende Datei so nicht mehr bei jedem Schreibvorgang neu.

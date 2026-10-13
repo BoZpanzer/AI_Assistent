@@ -45,7 +45,7 @@ jobs:
           $i = Start-Process -FilePath "release\JARVIS_Setup.exe" -ArgumentList "/S","/D=$dir" -PassThru -Wait
           if ($i.ExitCode -ne 0) { throw "Installation fehlgeschlagen" }
           if (!(Test-Path "$dir\JARVIS.exe")) { throw "JARVIS.exe fehlt nach Installation" }
-          if (!(Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\JARVIS\JARVIS.lnk")) { throw "Startmenü-Eintrag fehlt" }
+          if (!(Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\JARVIS.lnk")) { throw "Startmenü-Eintrag fehlt" }
           $s = Start-Process -FilePath "$dir\JARVIS.exe" -ArgumentList "--smoke" -PassThru -Wait
           if ($s.ExitCode -ne 0) { throw "Installierte App: Smoke-Test fehlgeschlagen" }
           $u = Start-Process -FilePath "$dir\Uninstall JARVIS.exe" -ArgumentList "/S" -PassThru -Wait

@@ -69,9 +69,20 @@ Section "JARVIS (erforderlich)" SecMain
   File /r "${SRCDIR}\*.*"
   WriteUninstaller "$INSTDIR\Uninstall JARVIS.exe"
 
-  CreateDirectory "$SMPROGRAMS\JARVIS"
-  CreateShortcut "$SMPROGRAMS\JARVIS\JARVIS.lnk" "$INSTDIR\JARVIS.exe" "" "$INSTDIR\JARVIS.exe" 0
-  CreateShortcut "$SMPROGRAMS\JARVIS\JARVIS deinstallieren.lnk" "$INSTDIR\Uninstall JARVIS.exe"
+  ; Ein einziger Startmenü-Eintrag (Deinstallieren läuft über Windows → Apps)
+  RMDir /r "$SMPROGRAMS\JARVIS"
+  Delete "$SMPROGRAMS\JARVIS.lnk"
+  CreateShortcut "$SMPROGRAMS\JARVIS.lnk" "$INSTDIR\JARVIS.exe" "" "$INSTDIR\JARVIS.exe" 0
+
+  ; Reste von JARVIS 2.0 (Inno-Setup, gleicher Programmordner) entfernen:
+  ; alter Apps-Eintrag, alter Deinstaller und die alte Python-Laufzeit.
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\{36FC88F2-4904-49DC-89F6-7657B85DF3CC}_is1"
+  ${If} ${FileExists} "$INSTDIR\unins000.dat"
+    Delete "$INSTDIR\unins000.exe"
+    Delete "$INSTDIR\unins000.dat"
+    Delete "$INSTDIR\unins000.msg"
+    RMDir /r "$INSTDIR\_internal"
+  ${EndIf}
 
   WriteRegStr HKCU "Software\${APPID}" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "${APPNAME}"
@@ -131,6 +142,7 @@ FunctionEnd
 Section "Uninstall"
   Delete "$DESKTOP\JARVIS.lnk"
   RMDir /r "$SMPROGRAMS\JARVIS"
+  Delete "$SMPROGRAMS\JARVIS.lnk"
   ; Autostart entries written by the app (Electron login item)
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${APPID}"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${APPNAME}"
