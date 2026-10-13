@@ -28,12 +28,14 @@ class GoogleGenAI {
             const o = r.response;
             parts = [{ text: `Hier ist dein Überblick für **${o.date}**, Chef:\n\n| Bereich | Stand |\n|---|---|\n| Termine | ${o.events.length ? o.events.map((e) => e.title).join(', ') : 'keine'} |\n| Fällige Aufgaben | ${o.tasksDue.length} |\n| Überfällig | ${o.overdue} |\n| Spiel-Timer | ${o.gameTimers.length} |\n\n- Wichtigste Aufgabe: ${o.tasksDue[0]?.title || '—'}\n- Tipp: Plane einen Fokusblock am Vormittag.` }];
           } else if (r.name === 'create_event') parts = [{ text: 'Ich habe den Termin vorbereitet – bitte kurz bestätigen.' }];
+          else if (r.name === 'update_game_progress') parts = [{ text: 'Stark, Chef – Sun Tzu auf 40! Als Nächstes lohnt sich der Ausbau des Rathauses.' }];
           else if (r.name === 'set_game_context') parts = [{ text: `Alles klar, ${r.response.game} ist jetzt dein aktives Spiel. Die Gaming-Seite ist angepasst.` }];
           else parts = [{ text: 'Erledigt.' }];
         } else {
           const t = (lastUserText(contents).text || '').toLowerCase();
           if (/heute|steht.*an/.test(t)) parts = [{ functionCall: { id: 'f1', name: 'get_today_overview', args: {} } }];
           else if (/trag|termin/.test(t)) { const d = new Date(Date.now() + 86400000); d.setHours(16, 0, 0, 0); parts = [{ functionCall: { id: 'f2', name: 'create_event', args: { title: 'Mathe lernen', start: d.toISOString(), end: new Date(d.getTime() + 5400000).toISOString() } } }]; }
+          else if (/abgeschlossen|level \d+/.test(t)) parts = [{ functionCall: { id: 'f4', name: 'update_game_progress', args: { game: 'Rise of Kingdoms', items: [{ category: 'commander', name: 'Sun Tzu', value: 'Level 40' }, { category: 'building', name: 'Rathaus', value: 'Stufe 22' }] } } }];
           else if (/spiele|zocke/.test(t)) parts = [{ functionCall: { id: 'f3', name: 'set_game_context', args: { game: t.includes('tarkov') ? 'Escape from Tarkov' : t.includes('league') ? 'League of Legends' : 'ARK', mode: 'playing' } } }];
           else parts = [{ text: 'Verstanden. (Testmodus ohne echte Gemini-Verbindung)' }];
         }

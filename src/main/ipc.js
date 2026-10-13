@@ -215,6 +215,17 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch }) {
     'game.plan': ({ game }) => s.gaming.plan(game),
     'game.savePlan': ({ game, plan }) => s.gaming.savePlan(game, plan),
     'game.notes': ({ game }) => s.gaming.notes(game),
+    'game.progress': ({ game }) => ({ items: s.gaming.progress.list(game), categories: require('./services/gaming/progress').CATEGORIES, statuses: require('./services/gaming/progress').STATUS }),
+    'game.progressUpsert': ({ game, item }) => s.gaming.progress.upsert(game, { ...item, source: 'manual' }).item,
+    'game.progressRemove': ({ id }) => s.gaming.progress.remove(id),
+    'game.progressHistory': ({ id }) => s.gaming.progress.history(id),
+    'game.progressWipe': ({ game, label }) => s.gaming.progress.wipe(game, label),
+    'game.questDone': ({ name, done }) => {
+      const p = s.gaming.progress;
+      if (done) return p.upsert('eft', { category: 'quest', name, status: 'done', source: 'manual' }).item;
+      const r = p.find('eft', 'quest', name); if (r) p.remove(r.id); return null;
+    },
+    'game.doneQuests': () => [...s.gaming.progress.doneKeys('eft', 'quest')],
     'game.addNote': ({ game, text, title }) => s.gaming.addNote(game, text, title),
     'game.sources': ({ game }) => s.gaming.sources(game),
     'game.research': ({ game, query }) => s.gaming.research(game, query),

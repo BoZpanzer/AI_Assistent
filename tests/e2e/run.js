@@ -144,6 +144,16 @@ app.whenReady().then(async () => {
     core.gaming.context.setActive('rok', 'manual'); await sleep(600); await shot('63-gaming-rok');
     core.gaming.context.setActive('ark', 'manual'); await sleep(600); await shot('64-gaming-ark');
   });
+  await step('Spielstand: „Sun Tzu ist Level 40“ → gemerkt, im Widget sichtbar, im Kontext', async () => {
+    await nav('gaming');
+    core.gaming.context.setActive('rok', 'manual');
+    await say('Jarvis, mein Sun Tzu ist jetzt Level 40 und das Rathaus Stufe 22');
+    await waitFor(() => core.gaming.progress.list('rok').length === 2, 15000);
+    await waitFor(() => js(`[...document.querySelectorAll('.panel')].some(p=>p.textContent.includes('Mein Spielstand') && p.textContent.includes('Sun Tzu') && p.textContent.includes('Level 40'))`), 8000);
+    if (!/Sun Tzu – Level 40/.test(core.orchestrator.system('text', ''))) throw new Error('Spielstand fehlt im Kontext');
+    await js(`document.querySelector('[title="Sprachmodus beenden"]')?.click()`);
+    await shot('65-gaming-progress');
+  });
   await step('Brain: Graph mit echten Daten', async () => {
     await nav('brain');
     await waitFor(() => js(`document.querySelectorAll('.gnode.domain').length >= 8`));

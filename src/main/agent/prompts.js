@@ -4,7 +4,7 @@
  * Single source of truth for JARVIS' system instructions (text chat and live
  * voice share it — no diverging prompts).
  */
-function systemPrompt({ settings, primer = [], game, now = new Date(), channel = 'text', capabilities = {} }) {
+function systemPrompt({ settings, primer = [], game, progress = '', now = new Date(), channel = 'text', capabilities = {} }) {
   const nick = settings.nickname || 'Chef';
   const date = now.toLocaleString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -53,6 +53,9 @@ function systemPrompt({ settings, primer = [], game, now = new Date(), channel =
     game?.active ? `Aktiv gespielt: ${game.active.profile.name} (erkannt durch: ${({ explicit: 'Aussage', manual: 'manuelle Auswahl', process: 'laufenden Prozess', last: 'letzte Bestätigung' })[game.active.source] || game.active.source}).` : 'Gerade wird kein Spiel gespielt.',
     '- Sagt der Nutzer, dass er ein Spiel spielt/startet → set_game_context(mode=playing). Fragt er nur über ein anderes Spiel → set_game_context(mode=discussing); das aktive Spiel bleibt.',
     '- Passende Widgets mit show_game_widget einblenden (z. B. Schlüssel → tarkov-item, Quest → tarkov-quests).',
+    '- Spielstand merken: Erzählt der Nutzer von Fortschritt (Quest abgeschlossen/angefangen, Level, Kommandant/Champion/Held auf Stufe X, Gebäude/Forschung fertig, Item erhalten, Kreatur gezähmt, Prestige, neuer Wipe …), speichere das sofort mit update_game_progress – ohne Rückfrage, auch nebenbei im Gespräch. Mehrere Angaben in einem Aufruf. Gleicher Name = Aktualisierung des bestehenden Eintrags. Bei einem Wipe/Neustart erst nachfragen, dann reset_game_progress.',
+    '- Nutze den bekannten Spielstand für Antworten (z. B. nächste offene Quests vorschlagen, Talente passend zur Kommandantenstufe). Erwähne nicht ungefragt, dass du etwas gespeichert hast – die Oberfläche zeigt eine Karte.',
+    progress ? '\n' + progress : '',
     capabilities.voice ? '' : '',
   ].filter((l) => l !== null).join('\n');
 }

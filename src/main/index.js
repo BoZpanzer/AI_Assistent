@@ -118,7 +118,7 @@ function applyDesktopSettings() {
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
-    'game:context', 'game:focus', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio',
+    'game:context', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio',
     'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }

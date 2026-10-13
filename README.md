@@ -72,6 +72,7 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
   - *Rise of Kingdoms:* Bau-/Forschungs-/Trainings-Timer („mein Rathaus braucht noch fünf Stunden“), Entwicklungsplanung, Recherche mit Quellen, Notizen.
   - *Alle anderen Spiele (ARK, Elden Ring, …):* universelle Oberfläche – Recherche mit Quellen, Wiki (wo eine öffentliche MediaWiki-API existiert), Notizen, Timer, gespeicherte Quellen.
   - „Andere Spiele – Benachrichtigungen“ mit Herkunft (eigener Timer = Zeitabschätzung).
+  - **Mein Spielstand (ab 3.1):** JARVIS merkt sich deinen Fortschritt pro Spiel, sobald du davon erzählst („hab Operation Aquarius abgeschlossen“, „Sun Tzu ist jetzt Level 40“, „bin PMC-Level 34“). Gleiche Einträge werden aktualisiert (mit Verlauf und „Rückgängig“), Tarkov-Quests werden auf die offiziellen Namen abgebildet und in der Quest-Liste abgehakt. Der Stand des aktiven, des besprochenen und jedes im Satz erwähnten Spiels fließt automatisch in jede Antwort ein – andere Spiele nicht (spart Tokens). Bei einem Wipe wird der alte Stand archiviert.
 - **Proaktiv:** Tagesbriefing, Erinnerungen, Hinweis auf Überfälliges, Ruhezeiten, Kategorien abschaltbar.
 - **Desktop:** eigenes Fenster und Icon, Startmenü, optional Desktop-Verknüpfung, System-Tray (Schließen = weiterlaufen, „vollständig beenden“ im Tray-Menü), Autostart, Benachrichtigungen, Sicherung/Wiederherstellung, signierte Updates, Deinstallation (fragt, ob persönliche Daten gelöscht werden sollen; Standard: behalten).
 

@@ -28,9 +28,11 @@ class Orchestrator {
     })) }];
   }
 
-  system(channel) {
+  system(channel, userText = '') {
     const settings = this.s.settings.all();
-    return systemPrompt({ settings, primer: this.s.brain.personalPrimer(), game: this.s.gaming.context.state(), channel });
+    let progress = '';
+    try { progress = this.s.gaming.progressContext(userText); } catch { /* never block a reply */ }
+    return systemPrompt({ settings, primer: this.s.brain.personalPrimer(), game: this.s.gaming.context.state(), progress, channel });
   }
 
   /**
@@ -49,9 +51,11 @@ class Orchestrator {
         const c = this.s.confirmations.create({ tool: name, args, summary: sum.summary, details: sum.details, conversationId, run: (a) => tool.run(a) });
         return { response: { status: 'awaiting_user_confirmation', summary: sum.summary, note: 'Noch NICHT ausgeführt. Der Nutzer muss die Karte bestätigen.' }, card: { kind: 'confirm', ...c } };
       }
-      const result = await tool.run(args);
+      const result = await tool.run(args, { conversationId, channel });
       const card = tool.card ? tool.card(args, result) : null;
-      return { response: result ?? { ok: true }, card: card ? { kind: 'action', ...card } : null };
+      let response = result ?? { ok: true };
+      if (response && typeof response === 'object' && '_undo' in response) { const { _undo, ...rest } = response; response = rest; }
+      return { response, card: card ? { kind: 'action', ...card } : null };
     } catch (e) {
       log.warn(`Werkzeug ${name} fehlgeschlagen`, e);
       return { response: { error: friendlyError(e) } };
@@ -103,7 +107,7 @@ class Orchestrator {
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
         const r = await gemini.stepStream({
-          model, system: this.system(channel), contents, tools: this.declarations(), signal: ac.signal,
+          model, system: this.system(channel, text), contents, tools: this.declarations(), signal: ac.signal,
           onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); },
         });
         contents.push({ role: 'model', parts: r.parts.length ? r.parts : [{ text: r.text || '' }] });

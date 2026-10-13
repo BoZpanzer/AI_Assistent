@@ -8,6 +8,7 @@ const { GameCache } = require('./cache');
 const { Tarkov } = require('./tarkov');
 const { League } = require('./league');
 const { Wiki } = require('./wiki');
+const { GameProgress } = require('./progress');
 
 /**
  * Widget registry. The orchestrator may only pick from these types; params are
@@ -34,13 +35,14 @@ const WIDGETS = {
   'lol-champion': { title: 'Championinfo', params: { champion: { type: 'string', maxLength: 40 } } },
   'lol-goals': { title: 'Trainingsziele', params: {} },
   'rok-planner': { title: 'Entwicklungsplanung', params: {} },
+  progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
 };
 
 const LAYOUTS = {
-  tarkov: [{ type: 'map' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
-  league: [{ type: 'lol-overview' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
-  rok: [{ type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
-  generic: [{ type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
+  tarkov: [{ type: 'map' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
+  league: [{ type: 'lol-overview' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'progress' }, { type: 'other-games' }],
+  rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
+  generic: [{ type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
 };
 
 const TIMER_SCHEMA = { type: 'object', additionalProperties: false, properties: {
@@ -58,6 +60,7 @@ class Gaming {
     this.tarkov = new Tarkov(sub);
     this.league = new League(sub);
     this.wiki = new Wiki(sub);
+    this.progress = new GameProgress(sub);
     this.focus = null; // contextual widget pushed by the orchestrator
   }
 
@@ -247,6 +250,28 @@ class Gaming {
   otherGameNotifications(activeId) {
     return this.notifications.list({ category: 'gaming', limit: 12, excludeGame: activeId || undefined })
       .concat(this.timers().filter((t) => t.game !== activeId && !t.fired).slice(0, 6).map((t) => ({ id: t.id, title: `${t.gameName}: ${t.label}`, body: 'Läuft bis ' + new Date(t.endsAt).toLocaleString('de-DE'), origin: 'timer', originLabel: 'Eigener Timer (Zeitabschätzung)', game: t.game, createdAt: t.createdAt, pending: true, endsAt: t.endsAt })));
+  }
+
+  /** Erkennt Spiele, die in einem Text erwähnt werden (für den Kontext). */
+  mentionedGames(text, max = 3) {
+    const t = ' ' + require('../../core/util').normText(text) + ' ';
+    const out = [];
+    for (const p of this.context.profiles()) {
+      const names = [p.name, p.short, ...(p.aliases || [])].filter(Boolean).map((a) => require('../../core/util').normText(a)).filter((a) => a.length >= 3);
+      if (names.some((a) => t.includes(' ' + a + ' '))) out.push(p);
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  /** Spielstand-Kontext für den Systemprompt: aktives, besprochenes und erwähnte Spiele. */
+  progressContext(text = '', { maxGames = 3 } = {}) {
+    const st = this.context.state();
+    const games = [];
+    const add = (p) => { if (p && !games.some((g) => g.id === p.id)) games.push(p); };
+    add(st.active?.profile); add(st.discussed?.profile);
+    for (const p of this.mentionedGames(text)) add(p);
+    return games.slice(0, maxGames).map((p) => this.progress.summary(p.id, p.name)).filter(Boolean).join('\n\n');
   }
 
   // ----- RoK planner (user-maintained plan, no invented game data) -----

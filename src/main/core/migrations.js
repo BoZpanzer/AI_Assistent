@@ -152,4 +152,14 @@ module.exports = [
     CREATE INDEX ix_jobs ON jobs(status, run_at);
     CREATE TABLE imports(fingerprint TEXT PRIMARY KEY, kind TEXT NOT NULL, at TEXT NOT NULL);
   `),
+  // v2 — persönlicher Spielstand je Spiel
+  (db) => db.exec(`
+    CREATE TABLE game_progress(
+      id TEXT PRIMARY KEY, game TEXT NOT NULL, category TEXT NOT NULL, name TEXT NOT NULL, key TEXT NOT NULL,
+      value TEXT NOT NULL DEFAULT '', status TEXT, note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'chat',
+      archived INTEGER NOT NULL DEFAULT 0, season TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE INDEX ix_game_progress ON game_progress(game, archived, category, key);
+    CREATE TABLE game_progress_history(id INTEGER PRIMARY KEY AUTOINCREMENT, progress_id TEXT NOT NULL, value TEXT, status TEXT, at TEXT NOT NULL);
+    CREATE INDEX ix_game_progress_hist ON game_progress_history(progress_id);
+  `),
 ];

@@ -98,3 +98,15 @@ release\win-unpacked\JARVIS.exe --smoke   # unter Windows: Bericht in %TEMP%\jar
 6. OneDrive-Ordner wählen → Dokumente erscheinen unter Studium → Frage zu einer Mitschrift beantwortet mit Seitenzitat?
 7. Tarkov/LoL starten → Gaming-Seite wechselt automatisch? CPU-Last von JARVIS im Task-Manager beim Spielen?
 8. Fenster schließen → Tray-Symbol bleibt; Tray → „vollständig beenden“.
+
+---
+
+## Nachtrag 3.1.0 – Spielstand (13. Oktober 2026)
+
+Neu: persönlicher Spielstand pro Spiel (Werkzeuge `update_game_progress`, `get_game_progress`, `reset_game_progress`), Widget „Mein Spielstand“, Häkchen bei erledigten Tarkov-Quests, Schema-Migration v1 → v2.
+
+| Test | Ergebnis |
+|---|---|
+| Unit/Integration inkl. 5 neuer Spielstand-Tests (Aktualisieren statt Duplikat, Rückgängig, Wipe, Kontext nur für relevante Spiele, Größenbegrenzung bei 300 Quests, Orchestrator-Flow, Migration einer 3.0.0-Datenbank mit Sicherung) | **34 / 34 bestanden** |
+| E2E: „Sun Tzu ist jetzt Level 40 und das Rathaus Stufe 22“ → gespeichert, im Widget sichtbar, im Systemprompt enthalten | **14 / 14 Schritte bestanden** |
+| Mit echtem Gemini (ob das Modell zuverlässig von selbst speichert) | **W** – hängt vom Modellverhalten ab; fehlt mal etwas, hilft „Jarvis, merk dir …“ oder das Widget |

@@ -4,6 +4,7 @@ const { TASK_SCHEMA } = require('../services/tasks');
 const { EVENT_SCHEMA } = require('../services/calendar');
 const { WIDGETS } = require('../services/gaming');
 const { DOMAINS, KINDS } = require('../services/brain');
+const { CATEGORIES: PROGRESS_CATS, STATUS: PROGRESS_STATUS } = require('../services/gaming/progress');
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
 const REC = { type: 'object', nullable: true, description: 'Wiederholung', properties: { freq: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'yearly'] }, interval: { type: 'integer' }, byDay: { type: 'array', items: { type: 'string', description: 'MO,TU,WE,TH,FR,SA,SU' } } } };
@@ -176,11 +177,58 @@ function buildTools(s) {
     run: ({ game, text, title }) => { const p = s.gaming.context.resolve(game); const r = s.gaming.addNote(p.id, text, title); return { id: r.entry?.id, action: r.action }; },
     card: (a) => ({ icon: 'note', title: 'Spielnotiz gespeichert', lines: [truncate(a.text, 120)] }) });
 
+  // ---------- Spielstand ----------
+  const progItem = { type: 'object', required: ['category', 'name'], properties: {
+    category: { type: 'string', enum: Object.keys(PROGRESS_CATS), description: 'character=Spielerlevel/Prestige/Rang, quest, commander (RoK), building, research, hero (Champion/Held/Operator), item, skill, creature (gezähmte Dinos), base, achievement, resource, other' },
+    name: { type: 'string', description: 'z. B. "Operation Aquarius", "Sun Tzu", "Rathaus", "PMC-Level"' },
+    value: { type: 'string', description: 'Stand als kurzer Text, z. B. "Level 40", "Talente 5-5-5-5", "Stufe 22", "34"' },
+    status: { type: 'string', enum: Object.keys(PROGRESS_STATUS), nullable: true, description: 'v. a. für Quests: done, in_progress, todo, failed' },
+    note: { type: 'string' } } };
+  def({ name: 'update_game_progress', mode: 'write', description: 'Persönlichen Spielstand speichern/aktualisieren (Quests, Level, Kommandanten, Gebäude, Forschung, Items, gezähmte Kreaturen …). Bestehende Einträge mit gleichem Namen werden aktualisiert.',
+    schema: { type: 'object', required: ['game', 'items'], properties: { game: { type: 'string' }, items: { type: 'array', maxItems: 30, items: progItem } } },
+    run: async ({ game, items }, ctx = {}) => {
+      const p = s.gaming.context.resolve(game);
+      if (!p) throw new Error('Spiel nicht erkannt');
+      const out = [];
+      for (const it of items) {
+        let name = it.name;
+        if (p.id === 'eft' && it.category === 'quest') name = await canonicalTarkovQuest(s, name);
+        const r = s.gaming.progress.upsert(p.id, { ...it, name, source: ctx.channel === 'voice' ? 'voice' : 'chat' });
+        out.push({ id: r.item.id, name: r.item.name, value: r.item.value, status: r.item.status, action: r.action, previous: r.previous });
+      }
+      return { game: p.name, gameId: p.id, saved: out.map(({ previous, ...x }) => x), _undo: out.filter((x) => x.action !== 'unchanged').map((x) => ({ id: x.id, previous: x.previous })) };
+    },
+    card: (a, r) => {
+      const changed = (r?.saved || []).filter((x) => x.action !== 'unchanged');
+      if (!changed.length) return null;
+      return { icon: 'game', title: `Spielstand gemerkt · ${r.game}`, navigate: 'gaming',
+        lines: changed.slice(0, 6).map((x) => `${x.name}${x.value ? ': ' + x.value : ''}${x.status ? ' (' + PROGRESS_STATUS[x.status] + ')' : ''}${x.action === 'updated' ? ' – aktualisiert' : ''}`),
+        undo: { tool: 'progress_revert', args: { items: r._undo } } };
+    } });
+  def({ name: 'get_game_progress', mode: 'read', description: 'Gespeicherten Spielstand eines Spiels abrufen (vollständige Liste).',
+    schema: { type: 'object', required: ['game'], properties: { game: { type: 'string' }, category: { type: 'string', enum: Object.keys(PROGRESS_CATS) }, status: { type: 'string', enum: Object.keys(PROGRESS_STATUS) } } },
+    run: ({ game, category, status }) => {
+      const p = s.gaming.context.resolve(game, { create: false });
+      if (!p) return { known: false, note: 'Zu diesem Spiel ist nichts gespeichert.' };
+      const items = s.gaming.progress.list(p.id, { category, status });
+      return { game: p.name, count: items.length, items: items.slice(0, 200).map((x) => ({ category: x.categoryLabel, name: x.name, value: x.value || undefined, status: x.statusLabel || undefined, note: x.note || undefined, updated: x.updatedAt.slice(0, 10) })) };
+    } });
+  def({ name: 'reset_game_progress', mode: 'confirm', description: 'Spielstand eines Spiels zurücksetzen (z. B. Tarkov-Wipe, neuer Account). Alter Stand wird archiviert.',
+    schema: { type: 'object', required: ['game'], properties: { game: { type: 'string' }, label: { type: 'string', description: 'z. B. "Wipe Oktober 2026"' } } },
+    summarize: ({ game }) => { const p = s.gaming.context.resolve(game, { create: false }); if (!p) throw new Error('Spiel unbekannt'); const n = s.gaming.progress.list(p.id).length; return { summary: `Spielstand ${p.name} zurücksetzen`, details: [`${n} Einträge werden archiviert (nicht gelöscht)`] }; },
+    run: ({ game, label }) => { const p = s.gaming.context.resolve(game, { create: false }); return s.gaming.progress.wipe(p.id, label); } });
+
   def({ name: 'tarkov_lookup', mode: 'read', description: 'Escape-from-Tarkov-Daten (tarkov.dev): quests, item, keys, extracts, bosses. Keine Live-Raid-Daten verfügbar.',
     schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['quests', 'item', 'keys', 'extracts', 'bosses'] }, query: { type: 'string' }, map: { type: 'string', description: 'normalizedName z. B. customs, woods, shoreline, interchange, reserve, lighthouse, streets-of-tarkov, factory, the-lab, ground-zero' } } },
     run: async ({ kind, query, map }) => {
       const t = s.gaming.tarkov;
-      if (kind === 'quests') { const r = await t.searchTasks(query, { map, limit: 6 }); return { source: r.source, fetchedAt: r.fetchedAt, quests: r.items.map((q) => ({ name: q.name, trader: q.trader?.name, map: q.map?.name, minLevel: q.minPlayerLevel, kappa: q.kappaRequired, objectives: q.objectives.map((o) => o.description).slice(0, 8), wiki: q.wikiLink })) }; }
+      if (kind === 'quests') {
+        const done = s.gaming.progress.doneKeys('eft', 'quest');
+        const { normText } = require('../core/util');
+        const r = await t.searchTasks(query, { map, limit: 40 });
+        const items = r.items.map((q) => ({ name: q.name, trader: q.trader?.name, map: q.map?.name, minLevel: q.minPlayerLevel, kappa: q.kappaRequired, doneByUser: done.has(normText(q.name)) || undefined, objectives: q.objectives.map((o) => o.description).slice(0, 8), wiki: q.wikiLink }));
+        return { source: r.source, fetchedAt: r.fetchedAt, quests: [...items.filter((x) => !x.doneByUser), ...items.filter((x) => x.doneByUser)].slice(0, 8), note: done.size ? `${done.size} Quests sind laut Spielstand erledigt (doneByUser).` : undefined };
+      }
       if (kind === 'item' || kind === 'keys') {
         const r = kind === 'keys' && map && !query ? await t.keysForMap(map) : await t.items(query, { keysOnly: kind === 'keys' });
         return { source: r.source, fetchedAt: r.fetchedAt, items: r.items.slice(0, 8).map((i) => ({ name: i.name, short: i.shortName, avg24hPrice: i.avg24hPrice, basePrice: i.basePrice, lockType: i.lockType, wiki: i.wikiLink, description: truncate(i.description || '', 300) })) };
@@ -229,6 +277,19 @@ function buildTools(s) {
   return T;
 }
 
+/** Map a spoken quest name to the official tarkov.dev name (if unambiguous). */
+async function canonicalTarkovQuest(s, name) {
+  const { normText } = require('../core/util');
+  try {
+    const all = await Promise.race([s.gaming.tarkov.tasks(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))]);
+    const n = normText(name);
+    const exact = all.value.find((q) => normText(q.name) === n);
+    if (exact) return exact.name;
+    const part = all.value.filter((q) => normText(q.name).includes(n) || n.includes(normText(q.name)));
+    return part.length === 1 ? part[0].name : name;
+  } catch { return name; }
+}
+
 function summarizeGame(st) {
   return { active: st.active?.profile?.name || null, discussed: st.discussed?.profile?.name || null, running: st.running.map((p) => p.name) };
 }
@@ -240,6 +301,7 @@ function internalTools(s) {
     forget_silent: ({ id }) => s.brain.remove(id),
     remove_game_timer: ({ id }) => s.gaming.removeTimer(id),
     complete_task: ({ id, done }) => s.tasks.complete(id, done),
+    progress_revert: ({ items }) => { for (const it of items || []) s.gaming.progress.revert(it.id, it.previous); return true; },
   };
 }
 

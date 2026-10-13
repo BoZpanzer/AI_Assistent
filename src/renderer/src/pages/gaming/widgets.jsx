@@ -9,7 +9,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 export const SPAN = {
   map: 'w-7', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-4', 'other-games': 'w-6',
   'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12',
-  timers: 'w-6', 'rok-planner': 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
+  timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
 // ---------------------------------------------------------------- Map
@@ -179,15 +179,19 @@ function TarkovQuests({ params }) {
   const [q, setQ] = useState(params.query || '');
   useEffect(() => { if (params.query) setQ(params.query); }, [params.query]);
   const [r, , st] = useRpc('tarkov.quests', { map: params.map, q }, { deps: [q, params.map], debounce: 300 });
+  const [doneList] = useRpc('game.doneQuests', {}, { events: ['game:progress'], initial: [] });
+  const done = new Set(doneList || []);
+  const norm = (x) => String(x).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const [hideDone, setHideDone] = useState(true);
   const [open, setOpen] = useState(null);
   return (
     <Panel title="Quest-Hinweise" sub={params.map ? `Karte: ${params.map}` : 'Alle Karten'}>
-      <input class="inp" placeholder="Quest, Händler oder Ziel suchen…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+      <div class="row"><input class="inp grow" placeholder="Quest, Händler oder Ziel suchen…" value={q} onInput={(e) => setQ(e.currentTarget.value)} /><span class={`chip ${hideDone ? 'active' : ''}`} title="Erledigte Quests ausblenden" onClick={() => setHideDone(!hideDone)}>{done.size} erledigt {hideDone ? 'ausgeblendet' : 'sichtbar'}</span></div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       <div class="col mt" style={{ gap: 6, maxHeight: 250, overflow: 'auto' }}>
-        {(r?.items || []).map((t) => (
-          <div class="result-row" style={{ flexDirection: 'column', alignItems: 'stretch' }} onClick={() => setOpen(open === t.id ? null : t.id)}>
-            <div class="row"><Target size={14} /><b class="grow ellipsis small">{t.name}</b><span class="tiny muted">{t.trader?.name}{t.minPlayerLevel ? ` · Lvl ${t.minPlayerLevel}` : ''}{t.kappaRequired ? ' · Kappa' : ''}</span></div>
+        {(r?.items || []).filter((t) => !hideDone || !done.has(norm(t.name))).map((t) => (
+          <div class="result-row" style={{ flexDirection: 'column', alignItems: 'stretch', opacity: done.has(norm(t.name)) ? 0.55 : 1 }} onClick={() => setOpen(open === t.id ? null : t.id)}>
+            <div class="row"><Checkbox checked={done.has(norm(t.name))} title="Als erledigt markieren" onChange={(v) => rpc('game.questDone', { name: t.name, done: v })} /><b class="grow ellipsis small" style={done.has(norm(t.name)) ? { textDecoration: 'line-through' } : undefined}>{t.name}</b><span class="tiny muted">{t.trader?.name}{t.minPlayerLevel ? ` · Lvl ${t.minPlayerLevel}` : ''}{t.kappaRequired ? ' · Kappa' : ''}</span></div>
             {open === t.id && <>{t.objectives.map((o) => <div class="tiny" style={{ color: 'var(--text-2)', paddingLeft: 22 }}>• {o.description}{o.optional ? ' (optional)' : ''}</div>)}{t.wikiLink && <a class="tiny" style={{ paddingLeft: 22 }} onClick={(e) => { e.stopPropagation(); rpc('shell.openExternal', { url: t.wikiLink }); }}>Wiki</a>}</>}
           </div>
         ))}
@@ -509,6 +513,66 @@ function LolChampion({ params }) {
   );
 }
 
+// ---------------------------------------------------------------- Spielstand
+const PROGRESS_HINT = {
+  eft: '„Jarvis, ich hab Debut abgeschlossen“ · „bin jetzt PMC-Level 34“',
+  rok: '„Jarvis, Sun Tzu ist jetzt Level 40 mit 5-5-5-5“ · „Rathaus ist auf 22“',
+  league: '„Jarvis, ich bin jetzt Gold 2“ · „Kai\'Sa ist mein neuer Main“',
+  ark: '„Jarvis, hab einen Rex Level 220 gezähmt“',
+};
+function Progress({ game, params }) {
+  const [data, reload] = useRpc('game.progress', { game: game.id }, { events: ['game:progress'] });
+  const [cat, setCat] = useState(params.category || '');
+  const [f, setF] = useState({ category: game.id === 'rok' ? 'commander' : game.id === 'eft' ? 'quest' : 'character', name: '', value: '', status: '' });
+  const items = (data?.items || []).filter((x) => !cat || x.category === cat);
+  const cats = data?.categories || {};
+  const used = [...new Set((data?.items || []).map((x) => x.category))];
+  const grouped = {};
+  for (const x of items) (grouped[x.category] = grouped[x.category] || []).push(x);
+  const add = async () => {
+    if (!f.name.trim()) return;
+    await guard(() => rpc('game.progressUpsert', { game: game.id, item: { category: f.category, name: f.name.trim(), value: f.value.trim() || undefined, status: f.status || null } }), 'Gespeichert');
+    setF({ ...f, name: '', value: '' });
+  };
+  const edit = async (x) => {
+    const v = await ask(`${x.name} – neuer Stand (leer = löschen)`, x.value || (x.status === 'done' ? 'erledigt' : ''));
+    if (v === null) return;
+    if (!v.trim()) return rpc('game.progressRemove', { id: x.id });
+    const isDone = /^erledigt$|^done$|^fertig$/i.test(v.trim());
+    rpc('game.progressUpsert', { game: game.id, item: { category: x.category, name: x.name, value: isDone ? '' : v.trim(), status: isDone ? 'done' : x.status } });
+  };
+  return (
+    <Panel icon={Trophy} title="Mein Spielstand" sub="JARVIS kennt diesen Stand bei jeder Frage zum Spiel"
+      right={(data?.items || []).length > 0 && <button class="btn xs ghost" title="Z. B. nach einem Wipe" onClick={async () => { if (await ask(`Spielstand ${game.name} zurücksetzen? Der alte Stand wird archiviert.`, '', { confirmOnly: true, danger: true, okLabel: 'Zurücksetzen' })) guard(() => rpc('game.progressWipe', { game: game.id }), 'Spielstand archiviert – neuer Stand beginnt'); }}>Wipe / Neustart</button>}>
+      {used.length > 1 && <div class="row wrap gap-s mb"><span class={`chip ${!cat ? 'active' : ''}`} onClick={() => setCat('')}>Alle</span>{used.map((c) => <span class={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{cats[c] || c}</span>)}</div>}
+      <div class="col" style={{ gap: 4, maxHeight: 250, overflow: 'auto' }}>
+        {!items.length && <div class="notice small">Noch nichts gespeichert. Erzähl JARVIS einfach von deinem Fortschritt, z. B. {PROGRESS_HINT[game.id] || '„Jarvis, ich bin jetzt Level 30“'} – oder trag es unten ein.</div>}
+        {Object.entries(grouped).map(([c, list]) => (
+          <div>
+            <div class="hud-label" style={{ fontSize: 11, margin: '6px 0 2px' }}>{cats[c] || c} · {list.length}</div>
+            {list.map((x) => (
+              <div class="row small" style={{ padding: '3px 2px', cursor: 'pointer' }} onClick={() => edit(x)} title={`Zuletzt geändert ${fmtDateTime(x.updatedAt)} · Quelle: ${{ chat: 'Gespräch', voice: 'Sprache', manual: 'manuell', api: 'Schnittstelle' }[x.source] || x.source}`}>
+                {x.status === 'done' ? <Check size={14} style={{ color: 'var(--green)' }} /> : <span style={{ width: 14 }} />}
+                <span class="grow ellipsis">{x.name}</span>
+                {x.value && <b style={{ color: 'var(--cyan-2)' }}>{x.value}</b>}
+                {x.status && x.status !== 'done' && <span class="chip static">{x.statusLabel}</span>}
+                <span class="tiny muted">{ago(x.updatedAt)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div class="row wrap gap-s mt">
+        <select class="sel" style={{ width: 130 }} value={f.category} onChange={(e) => setF({ ...f, category: e.currentTarget.value })}>{Object.entries(cats).map(([k, l]) => <option value={k}>{l}</option>)}</select>
+        <input class="inp grow" style={{ minWidth: 140 }} placeholder="Name (z. B. Sun Tzu)" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <input class="inp" style={{ width: 120 }} placeholder="Stand (Level 40)" value={f.value} onInput={(e) => setF({ ...f, value: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <select class="sel" style={{ width: 105 }} value={f.status} onChange={(e) => setF({ ...f, status: e.currentTarget.value })}><option value="">–</option><option value="done">erledigt</option><option value="in_progress">in Arbeit</option><option value="todo">offen</option></select>
+        <button class="btn sm" onClick={add}><Plus size={14} /></button>
+      </div>
+    </Panel>
+  );
+}
+
 // ---------------------------------------------------------------- RoK
 function RokPlanner({ game }) {
   const [plan, reload] = useRpc('game.plan', { game: game.id }, { events: ['game:data'] });
@@ -537,5 +601,5 @@ export const WIDGETS = {
   map: MapWidget, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
-  'rok-planner': RokPlanner,
+  'rok-planner': RokPlanner, progress: Progress,
 };
