@@ -719,7 +719,7 @@ test('Campus Dual: Matrikelnummer + Hash → Stundenplan; leerer Exportlink → 
     assert.match(ev.description, /Prof\. Muster/);
     core.db.run("INSERT INTO calendar_feeds(id,name,url,kind,color,lecture,created_at) VALUES('feed_fep','CD','https://fep.campus-dual.de/ics/ICSSet(guid''x'')/$value','url','#fff',1,'2026-01-01')");
     core.feeds.fetchText = async () => 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:Timetable\r\nEND:VCALENDAR\r\n';
-    await assert.rejects(core.feeds.refresh('feed_fep'), /Campus Dual verbinden/);
+    await assert.rejects(core.feeds.refresh('feed_fep'), /Bei Campus Dual anmelden/);
     core.feeds.remove(r.id); assert.equal(core.secrets.get('campusdual.hash.' + r.id), '');
   } finally { cleanup(); }
 });
@@ -741,4 +741,42 @@ test('Systemcheck: jede Prüfung mit Status und Lösung, keine Ausnahme bei fehl
   const gm = live.find((x) => x.id === 'gemini');
   assert.equal(gm.status, 'error'); assert.match(gm.detail, /kein Guthaben/); assert.equal(gm.fix.url, 'https://aistudio.google.com/');
   cleanup();
+});
+
+test('Campus Dual (neues Portal): Anmeldung im Fenster, Abruf mit Sitzung, Ablauf erkennen, letzter Stand bleibt', async () => {
+  const day = (n, h) => { const x = new Date(); x.setDate(x.getDate() + n); x.setUTCHours(h, 0, 0, 0); return x.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''); };
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:Timetable', 'BEGIN:VEVENT', 'UID:1', 'SUMMARY:Algorithmen', `DTSTART:${day(1, 8)}`, `DTEND:${day(1, 10)}`, 'LOCATION:3.01', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  let logged = false; let expired = false; let logins = 0; const urls = [];
+  const cd = {
+    loggedIn: async () => logged,
+    login: async () => { logins++; logged = true; expired = false; return true; },
+    logout: async () => { logged = false; },
+    fetch: async (url) => {
+      urls.push(url);
+      if (/URLSet/.test(url)) return new Response(JSON.stringify({ d: { Url: "https://fep.campus-dual.de/ics/ICSSet(guid'00505683-ff48-1fd1-b1dc-7a8549a1a000')/$value" } }));
+      if (/ZCM_EM_STUDENT_TIMETABLE_SRV\/\?/.test(url)) return expired ? new Response('<html>Anmeldung</html>') : new Response('{"d":{}}');
+      if (expired) return new Response('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n');
+      return new Response(ics);
+    },
+  };
+  const { core, cleanup } = tempCore({ platform: { campusDual: cd } });
+  try {
+    core.platform.campusDual = cd;
+    const r = await core.feeds.addCampusDualSession({});
+    assert.equal(logins, 1, 'nicht angemeldet → Fenster öffnet sich');
+    assert.equal(r.events, 1, JSON.stringify(r));
+    assert.ok(urls.some((u) => /URLSet\(Objid='00000000'\)/.test(u)), 'ICS-Link selbst gefunden');
+    assert.equal(core.feeds.list()[0].kind, 'campusdual-session');
+    // Sitzung abgelaufen → klare Meldung mit Knopf, Termine bleiben
+    expired = true;
+    await assert.rejects(core.feeds.refresh(r.id), /abgelaufen.*⟨fix:Bei Campus Dual anmelden\|rpc:feeds\.campusDualLogin⟩/);
+    const ev = core.calendar.list(new Date().toISOString(), new Date(Date.now() + 3 * 86400000).toISOString()).filter((e) => e.title === 'Algorithmen');
+    assert.equal(ev.length, 1, 'letzter Stand bleibt sichtbar');
+    const again = await core.feeds.campusDualLogin();
+    assert.equal(again.ok, true); assert.equal(logins, 2);
+    // eingefügter fep-Link wird automatisch zum Anmelde-Abo
+    const r2 = await core.feeds.add({ url: "https://fep.campus-dual.de/ics/ICSSet(guid'00505683-ff48-1fd1-b1dc-7a8549a1a000')/$value" });
+    assert.equal(r2.existed, true);
+    assert.equal(core.feeds.list().filter((f) => f.kind === 'campusdual-session').length, 1);
+  } finally { cleanup(); }
 });

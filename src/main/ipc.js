@@ -135,6 +135,10 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'feeds.refresh': async ({ id }) => (id ? s.feeds.refresh(id) : s.feeds.refreshAll()),
     'feeds.update': ({ id, patch }) => s.feeds.update(id, patch || {}),
     'feeds.remove': ({ id }) => s.feeds.remove(id),
+    'feeds.campusDualLogin': () => s.feeds.campusDualLogin(),
+    'feeds.campusDualConnect': ({ icsUrl, name } = {}) => s.feeds.addCampusDualSession({ icsUrl: icsUrl ? String(icsUrl).trim() : undefined, name }),
+    'feeds.campusDualStatus': async () => ({ available: !!s.platform?.campusDual, loggedIn: s.platform?.campusDual ? await s.platform.campusDual.loggedIn() : false }),
+    'feeds.campusDualLogout': async () => { await s.platform?.campusDual?.logout(); return true; },
     'backup.driveStatus': () => s.driveBackup.status(),
     'backup.driveConnect': async () => {
       try { await s.google.connect({ drive: 'write' }); } finally { showWindow(); }

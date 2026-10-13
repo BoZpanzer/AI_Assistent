@@ -114,3 +114,27 @@ test('Live: Session-Resumption bei GoAway, Extended-Thinking mit NON_BLOCKING-We
   core.voice.stop();
   cleanup();
 });
+
+test('Live: „Geh in den Standby“ → kurz bestätigen, dann pausieren und nur noch auf „Hey Jarvis“ hören', async () => {
+  const { STANDBY_RE } = require('../src/main/voice/live');
+  for (const t of ['Geh in den Standby.', 'Jarvis, Pause!', 'gehe bitte in den Stand-by-Modus', 'schlaf jetzt', 'Hey Jarvis, Standby']) assert.ok(STANDBY_RE.test(t), t);
+  for (const t of ['Wie lange dauert der Standby meines PCs?', 'Mach eine Pause von 5 Minuten in meinem Kalender', 'Ich gehe schlafen um elf']) assert.ok(!STANDBY_RE.test(t), t);
+  const { core, live, cleanup } = await setup();
+  const standby = []; core.bus.on('voice:standby', (d) => standby.push(d));
+  await core.voice.start();
+  const s = live.state.sessions[0];
+  s.callbacks.onmessage({ serverContent: { inputTranscription: { text: 'Geh in den Standby.' } } });
+  assert.equal(core.settings.get('voice').wakeWord, true, 'Wake-Word wird für den Standby eingeschaltet');
+  assert.equal(core.voice.state, 'listening', 'erst bestätigen lassen');
+  s.callbacks.onmessage({ serverContent: { outputTranscription: { text: 'Alles klar.' }, turnComplete: true } });
+  await tick();
+  assert.equal(core.voice.state, 'standby'); assert.equal(s.closed, true);
+  assert.equal(standby.at(-1).pending, false);
+  // Als Werkzeug (z. B. im Text-Chat) ohne offene Sitzung: ehrliche Antwort
+  const out = await core.orchestrator.execute('voice_standby', {}, { conversationId: 'x', channel: 'text' });
+  assert.equal(out.response.ok, false);
+  // Wake-Word → Sitzung wird mit Resumption fortgesetzt
+  await core.voice.start();
+  assert.equal(core.voice.state, 'listening'); assert.equal(live.state.connects.length, 2);
+  core.voice.stop(); cleanup();
+});

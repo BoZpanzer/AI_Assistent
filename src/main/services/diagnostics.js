@@ -14,7 +14,7 @@ function splitFix(msg) {
   const m = String(msg || '').match(FIX_RE);
   if (!m) return { detail: String(msg || ''), fix: null };
   const target = m[2].trim();
-  return { detail: String(msg).replace(m[0], ''), fix: target.startsWith('action:') ? { label: m[1].trim(), action: target.slice(7) } : { label: m[1].trim(), url: target } };
+  return { detail: String(msg).replace(m[0], ''), fix: target.startsWith('action:') ? { label: m[1].trim(), action: target.slice(7) } : target.startsWith('rpc:') ? { label: m[1].trim(), rpc: target.slice(4) } : { label: m[1].trim(), url: target } };
 }
 const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what}: keine Antwort nach ${ms / 1000} s`)), ms))]);
 

@@ -185,6 +185,11 @@ function campusDualEvents(list) {
   }).sort((a, b) => a.start.localeCompare(b.start));
 }
 
+// ---------- Campus Dual (neues Portal, Anmeldung im JARVIS-Fenster) ----------
+const FEP = 'https://fep.campus-dual.de';
+const isFepIcs = (u) => /^https:\/\/fep\.campus-dual\.de\/ics\/ICSSet\(/i.test(String(u || ''));
+const LOGIN_FIX = ' ⟨fix:Bei Campus Dual anmelden|rpc:feeds.campusDualLogin⟩';
+
 // ---------- Feeds ----------
 class Feeds {
   constructor(s) { this.s = s; this.db = s.db; }
@@ -212,6 +217,9 @@ class Feeds {
     }
     const exists = url && this.db.get('SELECT id FROM calendar_feeds WHERE url=?', String(url).trim().replace(/^webcals?:\/\//i, 'https://'));
     if (exists) { const r = await this.refresh(exists.id).catch((e) => ({ error: e.message })); return { id: exists.id, existed: true, ...r }; }
+    if (!file && isFepIcs(String(url || '').trim()) && this.s.platform?.campusDual) {
+      return this.addCampusDualSession({ name, icsUrl: String(url).trim(), color, lecture });
+    }
     if (file) { kind = 'file'; if (!/\.ics$/i.test(file) || !fs.existsSync(file)) throw new Error('Bitte eine .ics-Datei wählen'); clean = file; }
     else {
       clean = String(url || '').trim().replace(/^webcals?:\/\//i, 'https://');
@@ -221,6 +229,48 @@ class Feeds {
     this.db.run('INSERT INTO calendar_feeds(id,name,url,kind,color,lecture,created_at) VALUES(?,?,?,?,?,?,?)', fid, String(name || 'Stundenplan').slice(0, 80), clean, kind, color, lecture ? 1 : 0, nowIso());
     this.db.run('INSERT OR REPLACE INTO calendars(id,name,color,is_primary,selected,writable) VALUES(?,?,?,0,1,0)', 'feed:' + fid, String(name || 'Stundenplan').slice(0, 80), color);
     try { const r = await this.refresh(fid); return { id: fid, ...r }; } catch (e) { return { id: fid, error: e.message }; }
+  }
+
+  /**
+   * Neues Campus Dual: Stundenplan über die eigene Anmeldung abrufen. Ohne ICS-Link versucht JARVIS,
+   * den Link selbst aus Campus Dual zu holen (URLSet des Stundenplan-Dienstes).
+   */
+  async addCampusDualSession({ name, icsUrl, color = '#a78bfa', lecture = true } = {}) {
+    const cd = this.s.platform?.campusDual;
+    if (!cd) throw new Error('Campus-Dual-Anmeldung ist nur in der Desktop-App verfügbar.');
+    if (!(await cd.loggedIn())) { const ok = await cd.login(); if (!ok) throw new Error('Anmeldung bei Campus Dual abgebrochen.'); }
+    if (!icsUrl) icsUrl = await this.discoverCampusDualIcs().catch(() => null);
+    if (!icsUrl) throw new Error('Angemeldet – aber den Kalender-Link konnte JARVIS nicht selbst finden. Bitte in Campus Dual im Stundenplan den ICS-Link erzeugen und hier einfügen.');
+    const ex = this.db.get("SELECT id FROM calendar_feeds WHERE kind='campusdual-session'");
+    const fid = ex?.id || id('feed');
+    const nm = String(name || 'Stundenplan (Campus Dual)').slice(0, 80);
+    if (ex) this.db.run('UPDATE calendar_feeds SET url=?, content_hash=NULL WHERE id=?', icsUrl, fid);
+    else {
+      this.db.run('INSERT INTO calendar_feeds(id,name,url,kind,color,lecture,created_at) VALUES(?,?,?,?,?,?,?)', fid, nm, icsUrl, 'campusdual-session', color, lecture ? 1 : 0, nowIso());
+      this.db.run('INSERT OR REPLACE INTO calendars(id,name,color,is_primary,selected,writable) VALUES(?,?,?,0,1,0)', 'feed:' + fid, nm, color);
+    }
+    // alte Abos mit demselben (leeren) Exportlink ersetzen
+    for (const old of this.db.all("SELECT id FROM calendar_feeds WHERE kind='url' AND url LIKE 'https://fep.campus-dual.de/ics/%'")) this.remove(old.id);
+    try { const r = await this.refresh(fid); return { id: fid, existed: !!ex, ...r }; } catch (e) { return { id: fid, error: e.message }; }
+  }
+
+  /** ICS-Link aus dem Stundenplan-Dienst lesen (falls Campus Dual ihn dort anbietet). */
+  async discoverCampusDualIcs() {
+    const r = await this.s.platform.campusDual.fetch(`${FEP}/sap/opu/odata/sap/ZCM_EM_STUDENT_TIMETABLE_SRV/URLSet(Objid='00000000')?sap-client=100&$format=json`, { headers: { Accept: 'application/json' } });
+    const t = await r.text();
+    const m = t.match(/ICSSet\(guid'([0-9a-f-]{20,})'\)/i);
+    return m ? `${FEP}/ics/ICSSet(guid'${m[1]}')/$value` : null;
+  }
+
+  /** Neu anmelden (z. B. wenn die Sitzung abgelaufen ist) und sofort aktualisieren. */
+  async campusDualLogin() {
+    const cd = this.s.platform?.campusDual;
+    if (!cd) throw new Error('Nur in der Desktop-App verfügbar.');
+    const ok = await cd.login();
+    if (!ok) return { ok: false };
+    const f = this.db.get("SELECT id FROM calendar_feeds WHERE kind='campusdual-session'");
+    if (!f) return { ok: true, ...(await this.addCampusDualSession({}).catch((e) => ({ error: e.message }))) };
+    return { ok: true, ...(await this.refresh(f.id).catch((e) => ({ error: e.message }))) };
   }
 
   remove(fid) {
@@ -267,6 +317,25 @@ class Feeds {
 
   async fetchText(f) {
     if (f.kind === 'file') return fs.readFileSync(f.url, 'utf8');
+    if (f.kind === 'campusdual-session') {
+      const cd = this.s.platform?.campusDual;
+      if (!cd) throw new Error('Campus-Dual-Anmeldung ist nur in der Desktop-App verfügbar.');
+      if (!(await cd.loggedIn())) throw new Error('Nicht bei Campus Dual angemeldet.' + LOGIN_FIX);
+      const r = await cd.fetch(f.url, { headers: { Accept: 'text/calendar,*/*;q=0.5' } });
+      const t = await r.text();
+      let expired = !r.ok || /<html/i.test(t) || !/BEGIN:VCALENDAR/i.test(t);
+      if (!expired && !/BEGIN:VEVENT/i.test(t)) {
+        // Leerer Kalender: wirklich keine Termine oder Sitzung abgelaufen? → angemeldete Testabfrage
+        const probe = await cd.fetch(`${FEP}/sap/opu/odata/sap/ZCM_EM_STUDENT_TIMETABLE_SRV/?sap-client=100&$format=json`, { headers: { Accept: 'application/json' } }).catch(() => null);
+        const pt = probe ? await probe.text().catch(() => '') : '';
+        expired = !probe || !probe.ok || /<html/i.test(pt);
+      }
+      if (expired) {
+        this.s.notifications?.push?.({ category: 'calendar', origin: 'system', dedupeKey: 'cd-login:' + new Date().toISOString().slice(0, 10), title: 'Campus Dual: bitte neu anmelden', body: 'Die Anmeldung bei Campus Dual ist abgelaufen. Kalender → Abos → „Bei Campus Dual anmelden“. Bis dahin bleibt der letzte Stundenplan sichtbar.' });
+        throw new Error('Campus-Dual-Anmeldung abgelaufen – der letzte Stand bleibt sichtbar.' + LOGIN_FIX);
+      }
+      return t;
+    }
     let u = await assertPublicUrl(f.url); let res;
     for (let hop = 0; hop < 4; hop++) {
       res = await this.s.fetch(u.toString(), { redirect: 'manual', headers: { 'User-Agent': 'JARVIS-Desktop/3', Accept: 'text/calendar,text/plain;q=0.8,*/*;q=0.5', ...(f.etag ? { 'If-None-Match': f.etag } : {}) }, signal: AbortSignal.timeout(20000) });
@@ -296,7 +365,7 @@ class Feeds {
         hash = sha256(text);
         parsed = parseIcs(text);
         // Campus-Dual-Exportlinks (fep.campus-dual.de/ics/…) enthalten ohne Anmeldung keine Termine
-        if (!parsed.events.length && /campus-dual\.de\/ics/i.test(f.url || '')) throw new Error('Dieser Campus-Dual-Exportlink enthält ohne Anmeldung keine Termine. Nutze stattdessen „Campus Dual verbinden“ (Matrikelnummer + Hash).');
+        if (!parsed.events.length && f.kind === 'url' && /campus-dual\.de\/ics/i.test(f.url || '')) throw new Error('Dieser Campus-Dual-Link enthält ohne Anmeldung keine Termine. Nutze „Bei Campus Dual anmelden“ – den Link kannst du dort einfügen.' + (this.s.platform?.campusDual ? LOGIN_FIX : ''));
         if (hash === f.content_hash) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true }; }
         const from = new Date(Date.now() - 30 * 86400000); const to = new Date(Date.now() + 365 * 86400000);
         inst = expand(parsed.events, from, to).slice(0, 5000);

@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.15.0 – Campus Dual mit Anmeldung, Sprach-Standby
+
+- **Campus Dual (neues Portal) mit Anmeldung:** Kalender → Abos → **„Bei Campus Dual anmelden“** öffnet ein Fenster, in dem du dich ganz normal anmeldest. JARVIS sieht und speichert dein Passwort nicht. Danach findet JARVIS deinen Stundenplan-Link selbst (oder du fügst deinen ICS-Link ein) und lädt ihn alle 15 Minuten mit deiner Anmeldung. Die Anmeldung bleibt auch nach einem Neustart erhalten (verschlüsselt gespeichert).
+- Läuft die Anmeldung bei Campus Dual ab, bleibt der letzte Stundenplan sichtbar. JARVIS meldet das mit dem Knopf „Bei Campus Dual anmelden“.
+- Ein eingefügter fep.campus-dual.de-Link wird automatisch zum Abo mit Anmeldung. Für das alte Selfservice-Portal gibt es weiter den Weg über Matrikelnummer und Hash.
+- **Sprach-Standby:** Sag „Geh in den Standby“, „Jarvis, Pause“ oder „Schlaf jetzt“. JARVIS bestätigt kurz, pausiert dann die Sprachaufnahme und hört nur noch auf **„Hey Jarvis“**. Danach geht das Gespräch weiter, wo es war. Ist das Wake-Word noch aus, schaltet JARVIS es dafür ein. Der Befehl wird direkt im Transkript erkannt und klappt deshalb auch, wenn das Modell gerade hängt. „Mach eine Pause von 5 Minuten im Kalender“ löst ihn nicht aus.
+
 ## 3.14.0 – Systemcheck, Campus Dual direkt, Drive-Backup repariert
 
 - **Drive-Backup repariert:** „Jetzt in Drive sichern“ brach mit `net::ERR_INVALID_ARGUMENT` ab, weil JARVIS beim Hochladen eine Angabe selbst gesetzt hat, die Chromium nicht erlaubt. Behoben. Der Release-Test prüft das Hochladen jetzt bei jedem Build.

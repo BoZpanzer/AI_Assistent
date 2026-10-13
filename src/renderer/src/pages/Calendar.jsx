@@ -152,6 +152,15 @@ function Feeds({ onChange }) {
     setBusy(false);
     if (r) { if (r.error) toast('Campus Dual: ' + r.error, 'error', 10000); else { toast(`Campus Dual verbunden: ${r.events ?? 0} Termine`); setCd({ open: false, userid: '', hash: '' }); } reload(); onChange?.(); }
   };
+  const [cdSt, reloadCdSt] = useRpc('feeds.campusDualStatus', {}, { events: ['feeds:changed'], initial: null });
+  const [cdIcs, setCdIcs] = useState('');
+  const loginCd = async () => {
+    setBusy(true);
+    const hasFeed = feeds.some((f) => f.kind === 'campusdual-session');
+    const r = await guard(() => (hasFeed ? rpc('feeds.campusDualLogin') : rpc('feeds.campusDualConnect', { icsUrl: cdIcs.trim() || undefined })));
+    setBusy(false); reloadCdSt(); reload(); onChange?.();
+    if (r) { if (r.error) toast('Campus Dual: ' + r.error, 'error', 12000); else if (r.ok === false) toast('Anmeldung abgebrochen'); else toast(`Campus Dual verbunden${r.events != null ? `: ${r.events} Termine` : ''}`); }
+  };
   const fepLink = /fep\.campus-dual\.de\/ics/i.test(url);
   const add = async () => {
     if (!url.trim()) return;
@@ -171,25 +180,32 @@ function Feeds({ onChange }) {
           <div class="tiny" style={{ color: f.error ? 'var(--red)' : 'var(--text-3, #7fa3b5)' }}>{f.error ? <FixText text={'Fehler: ' + f.error} /> : `${f.events} Termine · aktualisiert ${f.lastFetch ? ago(f.lastFetch) : '—'}`}</div>
         </div>
       ))}
-      {!feeds.length && <div class="tiny muted">Noch keine Abos. Für Campus Dual unten „Campus Dual verbinden“ nutzen, für andere Kalender einen ICS-Link einfügen.</div>}
+      {!feeds.length && <div class="tiny muted">Noch keine Abos. Für Campus Dual unten „Bei Campus Dual anmelden“, für andere Kalender einen ICS-Link einfügen.</div>}
       <div class="col mt" style={{ gap: 6, padding: 8, border: '1px solid var(--line)', borderRadius: 8 }}>
-        <div class="row gap-s"><b class="small grow">Campus Dual verbinden (empfohlen)</b>{!cd.open && <button class="btn xs" onClick={() => setCd({ ...cd, open: true })}>Einrichten</button>}</div>
-        {!cd.open && <div class="tiny muted">Holt deinen Stundenplan direkt aus Campus Dual – alle 15 Min. aktuell, ohne Passwort.</div>}
+        <b class="small">Campus Dual</b>
+        {cdSt?.available ? <>
+          <div class="tiny muted">Du meldest dich in einem JARVIS-Fenster ganz normal bei Campus Dual an – JARVIS sieht dein Passwort nicht und holt den Stundenplan danach alle 15 Min. Läuft die Anmeldung ab, sagt JARVIS Bescheid.</div>
+          <div class="tiny" style={{ color: cdSt.loggedIn ? 'var(--cyan)' : 'var(--text-3)' }}>{cdSt.loggedIn ? '● angemeldet' : '○ nicht angemeldet'}</div>
+          {!feeds.some((f) => f.kind === 'campusdual-session') && <input class="inp" placeholder="ICS-Link aus Campus Dual (optional – JARVIS versucht ihn selbst zu finden)" value={cdIcs} onInput={(e) => setCdIcs(e.currentTarget.value)} />}
+          <div class="row gap-s" style={{ justifyContent: 'flex-end' }}>
+            {cdSt.loggedIn && <button class="btn xs ghost" title="Anmeldung in JARVIS löschen" onClick={() => guard(() => rpc('feeds.campusDualLogout'), 'Abgemeldet').then(reloadCdSt)}>Abmelden</button>}
+            <button class="btn sm primary" disabled={busy} onClick={loginCd}>{busy ? <Spinner /> : <Link2 size={14} />}{feeds.some((f) => f.kind === 'campusdual-session') ? 'Neu anmelden' : 'Bei Campus Dual anmelden'}</button>
+          </div>
+        </> : <div class="tiny muted">Die Anmeldung ist nur in der Desktop-App verfügbar.</div>}
+        <div class="row gap-s"><span class="tiny muted grow">Altes Selfservice-Portal?</span>{!cd.open && <button class="btn xs ghost" onClick={() => setCd({ ...cd, open: true })}>Matrikelnummer + Hash</button>}</div>
         {cd.open && <>
           <ol class="tiny" style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-2)' }}>
             <li>Bei <a onClick={() => rpc('shell.openExternal', { url: 'https://selfservice.campus-dual.de/' })}>selfservice.campus-dual.de</a> anmelden und den Stundenplan öffnen.</li>
-            <li>Rechtsklick → „Seitenquelltext anzeigen“ (Strg+U), dann mit Strg+F nach deiner Matrikelnummer suchen.</li>
-            <li>Direkt daneben steht <code>hash</code> mit einer langen Zeichenkette (0–9, a–f) – die kopieren. Der Hash ändert sich nicht.</li>
+            <li>F12 → Netzwerk → F5 → im Filter „room“ eingeben → Rechtsklick auf „json?userid=…“ → URL kopieren.</li>
+            <li>Die Adresse unten ins Hash-Feld einfügen (oder Matrikelnummer + Hash einzeln).</li>
           </ol>
-          <div class="tiny muted">Alternativ: Entwicklertools (F12) → Netzwerk → Anfrage „json?userid=…“ – die komplette Adresse ins Hash-Feld einfügen.</div>
           <input class="inp" placeholder="Matrikelnummer" value={cd.userid} onInput={(e) => setCd({ ...cd, userid: e.currentTarget.value })} />
           <input class="inp" type="password" placeholder="Hash (oder kopierte json-Adresse)" value={cd.hash} onInput={(e) => setCd({ ...cd, hash: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && connectCd()} />
-          <div class="tiny muted">Der Hash wird verschlüsselt gespeichert (Windows-DPAPI).</div>
-          <div class="row gap-s" style={{ justifyContent: 'flex-end' }}><button class="btn xs ghost" onClick={() => setCd({ open: false, userid: '', hash: '' })}>Abbrechen</button><button class="btn sm primary" disabled={busy || !cd.hash.trim() || (!cd.userid.trim() && !cd.hash.includes('userid='))} onClick={connectCd}>{busy ? <Spinner /> : <Link2 size={14} />}Verbinden</button></div>
+          <div class="row gap-s" style={{ justifyContent: 'flex-end' }}><button class="btn xs ghost" onClick={() => setCd({ open: false, userid: '', hash: '' })}>Abbrechen</button><button class="btn sm" disabled={busy || !cd.hash.trim() || (!cd.userid.trim() && !cd.hash.includes('userid='))} onClick={connectCd}>{busy ? <Spinner /> : <Link2 size={14} />}Verbinden</button></div>
         </>}
       </div>
       <input class="inp mt" placeholder="Anderer Kalender: https://…/…ics oder webcal://…" value={url} onInput={(e) => setUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-      {fepLink && <div class="notice warn mt tiny">Campus-Dual-Exportlinks (fep.campus-dual.de/ics/…) enthalten ohne Anmeldung keine Termine. Nutze oben „Campus Dual verbinden“.</div>}
+      {fepLink && <div class="notice warn mt tiny">Campus-Dual-Links brauchen deine Anmeldung – nutze oben „Bei Campus Dual anmelden“ (den Link kannst du dort einfügen).</div>}
       <div class="row gap-s mt"><input class="inp grow" placeholder="Name (optional)" value={name} onInput={(e) => setName(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn sm primary" disabled={busy || !url.trim()} onClick={add}>{busy ? <Spinner /> : <CirclePlus size={14} />}Abonnieren</button></div>
       <button class="btn xs ghost mt" onClick={() => guard(() => rpc('feeds.addFile', {})).then((r) => { if (r) { reload(); onChange?.(); } })}><Upload size={12} />.ics-Datei einmalig importieren</button>
     </Panel>

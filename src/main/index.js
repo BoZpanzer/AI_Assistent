@@ -162,7 +162,7 @@ function applyDesktopSettings() {
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
-    'game:context', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio',
+    'game:context', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
     'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported',
     'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
@@ -185,6 +185,7 @@ app.whenReady().then(async () => {
     updatePublicKey: loadUpdateKey(), updateRepo: loadUpdateRepo(),
     genaiSdk: isE2E && process.env.JARVIS_FAKE_GEMINI === '1' ? require('../../tests/e2e/fake-genai.js') : undefined,
   });
+  core.platform.campusDual = require('./campusdual-session').createCampusDual({ secrets: core.secrets, log: logger.scope('campusdual'), parent: () => win });
   if (isSmoke && process.env.JARVIS_SMOKE_ANIM) core.settings.update({ animations: process.env.JARVIS_SMOKE_ANIM, setupComplete: true });
   const log = logger.scope('main');
   log.info(`JARVIS ${VERSION} startet (Electron ${process.versions.electron})`);

@@ -397,7 +397,7 @@ function UpdateSection({ s }) {
 
 export function SelfTest({ r, onClose, onRerun }) {
   const ICON = { ok: <CircleCheck size={16} class="ok" />, warn: <TriangleAlert size={16} style={{ color: 'var(--orange)' }} />, error: <CircleX size={16} class="err" />, info: <Info size={16} style={{ color: 'var(--text-3)' }} /> };
-  const go = (fix) => { if (fix.url) rpc('shell.openExternal', { url: fix.url }); else { setState({ page: fix.action || 'settings' }); onClose(); } };
+  const go = (fix) => { if (fix.url) rpc('shell.openExternal', { url: fix.url }); else if (fix.rpc) guard(() => rpc(fix.rpc)); else { setState({ page: fix.action || 'settings' }); onClose(); } };
   const list = r === 'loading' ? [] : r;
   const bad = list.filter((x) => x.status === 'error').length; const warn = list.filter((x) => x.status === 'warn').length;
   return (

@@ -25,7 +25,7 @@ function systemPrompt({ settings, primer = [], game, progress = '', now = new Da
     '- Gaming: konstruktiver Coach – Optionen und Begründungen, keine Befehle.',
     'Der Stil ändert niemals Fakten, Berechtigungen oder Sicherheitsregeln.',
     voice
-      ? 'Du sprichst gerade per Sprache: antworte in natürlichen, kurzen Sätzen ohne Markdown, Listen oder Links. Zahlen und Zeiten ausschreiben, wie man sie sagt.'
+      ? 'Du sprichst gerade per Sprache: antworte in natürlichen, kurzen Sätzen ohne Markdown, Listen oder Links. Zahlen und Zeiten ausschreiben, wie man sie sagt. Sagt der Nutzer „geh in den Standby“, „Pause“, „schlaf“ o. ä., rufe voice_standby auf und bestätige in zwei, drei Wörtern.'
       : 'Formatiere mit Markdown (Listen, Tabellen, Codeblöcke), wenn es hilft. Halte Antworten so kurz wie möglich, so ausführlich wie nötig.',
     '',
     '## Werkzeuge & Wahrheit',

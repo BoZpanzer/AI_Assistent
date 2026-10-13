@@ -15,6 +15,9 @@ const NO = /\b(nein|nö|nee|abbrechen|stopp|lass es|doch nicht|nicht machen|verw
  *   `interrupted` events flush the queue as well.
  * - Session resumption + GoAway handling + context window compression.
  */
+/** „Geh in den Standby“, „Jarvis, Pause“, „schlaf jetzt“ … – lokal erkannt, damit es auch ohne Modell klappt. */
+const STANDBY_RE = /\b(?:geh|gehe|wechsel|wechsle|schalt|schalte|ab)\b[^.!?]{0,20}\b(?:stand-?by|ruhemodus|schlafmodus)\b|\bstand-?by[- ]?modus\b|^\W*(?:(?:hey\s+)?jarvis\W*)?(?:stand-?by|pause|schlaf(?:\s+jetzt|\s+gut)?|sei\s+(?:mal\s+)?still)\W*$/i;
+
 class LiveVoice {
   constructor(s) {
     this.s = s;
@@ -139,6 +142,7 @@ class LiveVoice {
       if (sc.inputTranscription?.text) {
         this.inText += sc.inputTranscription.text;
         this.lastUserUtterance = { text: this.inText, at: Date.now() };
+        if (!this.standbyPending && STANDBY_RE.test(this.inText.trim())) this.requestStandby({ reason: 'Sprachbefehl', quick: true });
         this.s.bus.emit('voice:transcript', { role: 'user', text: this.inText, final: false });
         this.touch();
       }
@@ -154,6 +158,7 @@ class LiveVoice {
       }
       if (sc.turnComplete) {
         this.flushTurn(false);
+        if (this.standbyPending) { this.enterStandby(); return; }
         const idle = !this.extended || (m.interactionStatus || sc.interactionStatus) === 'IDLE' || !(m.interactionStatus || sc.interactionStatus);
         if (idle && !this.pendingTools) this.setState('listening');
       }
@@ -227,7 +232,36 @@ class LiveVoice {
     this.reconnect();
   }
 
+  /**
+   * Standby auf Wunsch: JARVIS bestätigt kurz, dann wird die Live-Sitzung pausiert und nur noch
+   * das Wake-Word „Hey Jarvis“ gehört (wird bei Bedarf eingeschaltet).
+   */
+  requestStandby({ reason = 'Befehl', quick = false } = {}) {
+    if (!this.isOpen() && this.state !== 'speaking') return { ok: false, note: 'Der Sprachmodus ist gerade nicht aktiv.' };
+    const vs = this.s.settings.get('voice') || {};
+    let wakeEnabled = false;
+    if (!vs.wakeWord) { this.s.settings.update({ voice: { wakeWord: true } }); wakeEnabled = true; }
+    this.standbyPending = true;
+    log.info('Standby angefordert (' + reason + ')');
+    clearTimeout(this.standbyTimer);
+    // Falls das Modell nicht mehr antwortet: spätestens nach ein paar Sekunden pausieren
+    this.standbyTimer = setTimeout(() => this.enterStandby(), quick ? 6000 : 4000);
+    this.s.bus.emit('voice:standby', { pending: true, wakeEnabled });
+    return { ok: true, note: 'Standby: Bestätige in zwei, drei Wörtern. Danach hört JARVIS nur noch auf „Hey Jarvis“.' + (wakeEnabled ? ' Das Wake-Word wurde dafür eingeschaltet.' : '') };
+  }
+
+  enterStandby() {
+    clearTimeout(this.standbyTimer);
+    if (!this.standbyPending) return;
+    this.standbyPending = false;
+    if (this.state === 'speaking') { this.standbyTimer = setTimeout(() => { this.standbyPending = true; this.enterStandby(); }, 1500); return; }
+    this.stop({ standby: true });
+    this.s.bus.emit('voice:standby', { pending: false });
+  }
+
   stop({ standby = false } = {}) {
+    clearTimeout(this.standbyTimer);
+    if (!standby) this.standbyPending = false;
     this.closing = true;
     clearTimeout(this.idleTimer);
     this.flushTurn(false);
@@ -238,4 +272,4 @@ class LiveVoice {
   }
 }
 
-module.exports = { LiveVoice, YES, NO };
+module.exports = { LiveVoice, YES, NO, STANDBY_RE };

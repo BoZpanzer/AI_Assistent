@@ -190,7 +190,9 @@ export function FixText({ text, class: cls }) {
   const m = str.match(/\s*⟨fix:([^|⟩]+)\|([^⟩]+)⟩/);
   const body = m ? str.replace(m[0], '') : str;
   const parts = body.split(/(https:\/\/[^\s)]+)/g);
-  const go = (target) => (target.startsWith('action:') ? import('../lib/store.js').then(({ setState }) => setState({ page: target.slice(7) })) : import('../lib/api.js').then(({ rpc }) => rpc('shell.openExternal', { url: target })));
+  const go = (target) => (target.startsWith('action:') ? import('../lib/store.js').then(({ setState }) => setState({ page: target.slice(7) }))
+    : target.startsWith('rpc:') ? Promise.all([import('../lib/api.js'), import('../lib/store.js')]).then(([{ rpc }, { guard }]) => guard(() => rpc(target.slice(4))))
+      : import('../lib/api.js').then(({ rpc }) => rpc('shell.openExternal', { url: target })));
   return (
     <span class={cls}>
       {parts.map((p) => (/^https:\/\//.test(p) ? <a onClick={() => go(p)} title={p}>{p.replace(/^https:\/\//, '').slice(0, 48)}{p.length > 56 ? '…' : ''}</a> : p))}
