@@ -159,6 +159,20 @@ app.whenReady().then(async () => {
     await waitFor(() => js(`document.querySelectorAll('.gnode.domain').length >= 8`));
     await js(`document.querySelectorAll('.result-row')[0]?.click()`);
     await shot('70-brain');
+    // kleineres Fenster (wie 1540×1050 bei Skalierung): Karten rechts dürfen sich nicht überlappen
+    win.setSize(1366, 900); await sleep(500);
+    const overlap = await js(`(()=>{const c=[...document.querySelectorAll('.rightcol .rcard')].map(e=>e.getBoundingClientRect()); for(let i=1;i<c.length;i++) if(c[i].top < c[i-1].bottom - 1) return i; return 0;})()`);
+    if (overlap) throw new Error('Rechte Karten überlappen (Karte ' + overlap + ')');
+    const out = await js(`(()=>{const w=document.querySelector('.graph-wrap').getBoundingClientRect(); return [...document.querySelectorAll('.gnode.domain')].filter(g=>{const r=g.getBoundingClientRect(); return r.top < w.top-1 || r.bottom > w.bottom+1 || r.left < w.left-1 || r.right > w.right+1;}).length;})()`);
+    if (out) throw new Error(out + ' Graph-Knoten ragen aus der Fläche');
+    await shot('71-brain-small');
+    // Geburtstag im Brain → Termin im Kalender
+    core.brain.add({ content: 'Meine Schwester Anna hat am 3. Mai Geburtstag', domain: 'personal', kind: 'fact' });
+    const r = await core.birthdays.sync();
+    if (r.created !== 1) throw new Error('Geburtstag nicht eingetragen: ' + JSON.stringify(r));
+    const ev = core.calendar.list(new Date(new Date().getFullYear(), 4, 1).toISOString(), new Date(new Date().getFullYear(), 4, 31).toISOString()).find((e) => e.title === 'Geburtstag: Anna (Schwester)');
+    if (!ev || !ev.allDay) throw new Error('Termin fehlt oder nicht ganztägig');
+    win.setSize(1600, 1000); await sleep(300);
   });
   await step('Sprachmodus: Mikrofon → Gemini Live (Fake) → Audioantwort → Transkript im Chat', async () => {
     await nav('dashboard');

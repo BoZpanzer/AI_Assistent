@@ -111,6 +111,7 @@ function Ai({ s, secrets }) {
       <Field label="Temperatur"><Select value={String(s.temperature)} onChange={(v) => upd({ temperature: Number(v) })} options={[['0.3', 'Präzise (0.3)'], ['0.7', 'Ausgewogen (0.7)'], ['1', 'Kreativ (1.0)']].map(([value, label]) => ({ value, label }))} /></Field>
       <Field label="Websuche für aktuelle Informationen"><Toggle checked={s.webSearch} onChange={(v) => upd({ webSearch: v })} /></Field>
       <Field label="Wichtiges automatisch merken (Brain)" hint="Sensibles nur auf ausdrücklichen Wunsch"><Toggle checked={s.autoMemory} onChange={(v) => upd({ autoMemory: v })} /></Field>
+      <Field label="Geburtstage aus dem Brain in den Kalender" hint="ganztägig, jährlich – auch nach Google"><Toggle checked={s.birthdaysToCalendar !== false} onChange={(v) => upd({ birthdaysToCalendar: v })} /></Field>
       <div class="row mt"><button class="btn xs" disabled={busy || !secrets['gemini.api_key']} onClick={() => test('')}><RefreshCw size={12} />Modelle neu prüfen</button><span class="tiny muted grow">Diese Sitzung: {usage?.requests || 0} Anfragen · {Math.round(((usage?.inputTokens || 0) + (usage?.outputTokens || 0)) / 1000)}k Tokens</span></div>
       <div class="tiny muted mt">Hinweis: Ein Google-AI-Abo (Gemini App) ist nicht automatisch API-Kontingent – Limits gelten pro API-Schlüssel.</div>
     </Panel>

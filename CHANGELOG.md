@@ -2,6 +2,14 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.9.0 – Brain aufgeräumt, Geburtstage in den Kalender
+
+- **Brain-Layout repariert:** Die Karten rechts (Übersicht, Kategorien, Projekte, Pflege) überlappen sich nicht mehr, die Spalte scrollt stattdessen. Der Wissensgraph passt sich der Fenstergröße an: Beschriftungen stehen unter den Knoten, die Anzahl als kleines Abzeichen, und Einträge werden nur so lang angezeigt, wie Platz ist. Mit der Maus siehst du den vollen Titel. Kategorien ohne Einträge sind gedimmt, und unter „Kategorien“ stehen jetzt auch Technologie und Gaming.
+- **Geburtstage aus dem Brain landen automatisch im Kalender:** „Max hat am 12. März Geburtstag“, „Geburtstag von Lisa: 04.05.1999“, „Paul (geb. 14.07.1998)“, „Mama hat am 24.12. Geburtstag und Papa am 1.1.“ usw. werden zu ganztägigen, jährlichen Terminen „Geburtstag: Name“, mit Google synchronisiert.
+  - Änderst du das Datum im Brain, wandert der Termin mit. Löschst du den Eintrag, verschwindet auch der Termin.
+  - Löschst du den Termin selbst, legt JARVIS ihn nicht wieder an. Gibt es den Geburtstag schon im Kalender (z. B. aus Google), entsteht keine Dublette.
+  - Abschaltbar unter Einstellungen → Gemini / KI → „Geburtstage aus dem Brain in den Kalender“.
+
 ## 3.8.0 – Steam-Bibliothek, Drive-Backup, Neustart nach Update
 
 - **Neustart nach dem Update:** JARVIS startet nach der Installation automatisch wieder und zeigt kurz „JARVIS aktualisiert“.

@@ -110,7 +110,7 @@ function buildTools(s) {
     schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' }, domains: { type: 'array', items: { type: 'string', enum: Object.keys(DOMAINS) } }, game: { type: 'string' } } },
     run: async ({ query, domains, game }) => { const r = await s.brain.search(query, { scope: 'knowledge', domains, game, limit: 8 }); return { results: r.results.map((x) => ({ id: x.id, title: x.title, text: x.snippet, domain: x.domainLabel, source: x.sourceType, url: x.sourceUrl, possiblyOutdated: x.stale || undefined, updated: x.updatedAt })) }; } });
 
-  def({ name: 'remember', mode: 'write', description: 'Dauerhaft im Brain speichern (Vorlieben, Fakten über den Nutzer, Projekte, Ideen, Erfahrungen, Spielnotizen).',
+  def({ name: 'remember', mode: 'write', description: 'Dauerhaft im Brain speichern (Vorlieben, Fakten über den Nutzer, Personen, Projekte, Ideen, Erfahrungen, Spielnotizen). Geburtstage als „Geburtstag von <Name>: TT.MM.JJJJ“ (Jahr nur wenn bekannt) speichern – JARVIS trägt sie dann automatisch jährlich in den Kalender ein, kein zusätzliches create_event nötig.',
     schema: { type: 'object', required: ['content'], properties: { content: { type: 'string' }, title: { type: 'string' }, domain: { type: 'string', enum: Object.keys(DOMAINS) }, kind: { type: 'string', enum: KINDS },
       subjectKey: { type: 'string', description: 'stabiler Schlüssel für Fakten, die sich ändern können, z. B. "lieblingschampion"' }, tags: { type: 'array', items: { type: 'string' } },
       game: { type: 'string' }, userExplicitlyAsked: { type: 'boolean', description: 'true, wenn der Nutzer ausdrücklich ums Merken gebeten hat' } } },

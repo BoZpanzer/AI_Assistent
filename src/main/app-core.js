@@ -27,6 +27,7 @@ const { Updater } = require('./services/updater');
 const { Drive } = require('./services/drive');
 const { Feeds } = require('./services/ics');
 const { DriveBackup } = require('./services/drivebackup');
+const { Birthdays } = require('./services/birthdays');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 const { GameBrainSync } = require('./services/gaming/brainsync');
@@ -60,6 +61,7 @@ function createCore(opts) {
   s.feeds = new Feeds(s);
   s.vectors = new VectorIndex(s);
   s.brain = new Brain(s);
+  s.birthdays = new Birthdays(s);
   s.study = new Study(s);
   s.drive = new Drive(s);
   s.web = new Web(s);
@@ -86,13 +88,15 @@ function createCore(opts) {
     s.study.start();
     s.scheduler.start();
     s._brainSyncTimer = setTimeout(() => s.gaming.brainSync.syncAll(), 30_000);
+    s.birthdays.schedule(20_000);
+    bus.on('settings:changed', ({ keys }) => { if (keys.includes('birthdaysToCalendar')) s.birthdays.schedule(500); });
     bus.on('settings:changed', ({ keys }) => {
       if (keys.includes('study')) { s.study.start(); s.scheduler.runNow('study-scan'); if (s.drive.active()) s.scheduler.runNow('drive-sync'); }
       if (keys.includes('gaming')) s.gaming.context.start();
     });
   };
   s.stop = () => {
-    try { clearTimeout(s._brainSyncTimer); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._brainSyncTimer); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

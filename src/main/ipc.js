@@ -179,6 +179,8 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'brain.conflicts': () => s.brain.conflicts(),
     'brain.link': ({ a, b }) => s.brain.link(a, b),
     'brain.maintain': () => s.brain.maintain(),
+    'brain.birthdays': () => s.birthdays.list(),
+    'brain.birthdaysSync': () => s.birthdays.sync(),
     'brain.embed': () => s.vectors.backfill({ maxItems: 300 }),
     'brain.addSource': async ({ url }) => s.web.savePage(url, { refresh: true }),
 

@@ -153,6 +153,7 @@ a:hover { text-decoration: underline; }
 
 /* ---------- Right column ---------- */
 .rightcol { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; padding: 8px; }
+.rightcol > * { flex-shrink: 0; }
 .rcard { padding: 12px 14px 12px; cursor: pointer; transition: border-color .15s; }
 .rcard:hover { border-color: var(--line-strong); }
 .rcard-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid rgba(56, 189, 248, 0.14); margin-bottom: 8px; }
@@ -352,7 +353,10 @@ a:hover { text-decoration: underline; }
 .graph-wrap svg { width: 100%; height: 100%; display: block; }
 .gnode { cursor: pointer; }
 .gnode text { fill: var(--text-2); font-size: 12px; }
-.gnode.domain text { fill: white; font-size: 13px; font-weight: 600; }
+.gnode.domain text.glabel { fill: white; font-size: 12.5px; font-weight: 600; paint-order: stroke; stroke: rgba(4, 14, 26, 0.9); stroke-width: 3px; }
+.gnode.domain.empty text.glabel { fill: var(--text-2); font-weight: 500; }
+.gnode.domain text.gcount { fill: white; font-size: 10px; font-weight: 700; }
+.graph-hint { position: absolute; top: 8px; left: 16px; right: 16px; text-align: left; color: var(--text-3); font-size: 12px; pointer-events: none; }
 .gnode:hover text { fill: var(--cyan-2); }
 .result-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(8, 26, 44, 0.6); cursor: pointer; }
 .result-row:hover, .result-row.sel { border-color: var(--line-strong); background: rgba(34, 211, 238, 0.07); }

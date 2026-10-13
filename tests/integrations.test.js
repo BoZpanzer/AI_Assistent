@@ -509,3 +509,50 @@ test('Drive-Backup: Ordner „coding“ finden/anlegen, hochladen, nur eigene al
   await assert.rejects(core.driveBackup.run({ force: true }), /Schreibzugriff/);
   cleanup();
 });
+
+test('Geburtstage aus dem Brain → jährlicher ganztägiger Termin (anlegen, ändern, entfernen, keine Dubletten)', async () => {
+  const { findBirthdays } = require('../src/main/services/birthdays');
+  assert.deepEqual(findBirthdays('Max hat am 12. März Geburtstag').map((b) => [b.name, b.day, b.month]), [['Max', 12, 3]]);
+  assert.deepEqual(findBirthdays('Mama hat am 24.12. Geburtstag und Papa am 1.1.').map((b) => b.name), ['Mama', 'Papa']);
+  assert.deepEqual(findBirthdays('Ich habe am 5. Juni Geburtstag').map((b) => b.name), ['ich']);
+  assert.equal(findBirthdays('Paul (geb. 14.07.1998) ist mein Mitbewohner')[0].year, 1998);
+  assert.deepEqual(findBirthdays('Klausur Mathe am 12.03.'), [], 'kein Geburtstag ohne Stichwort');
+  assert.deepEqual(findBirthdays('Opa hat am 30. Februar Geburtstag'), [], 'ungültiges Datum');
+
+  const { core, cleanup } = tempCore();
+  const y = new Date().getFullYear();
+  const find = (title) => core.calendar.list(new Date(y, 0, 1).toISOString(), new Date(y, 11, 31, 23).toISOString()).filter((e) => e.title === title);
+  const k = core.brain.add({ content: 'Geburtstag von Lisa: 04.05.1999', domain: 'personal', kind: 'fact' }).entry;
+  core.brain.add({ content: 'Tom hat am 1. Februar Geburtstag', domain: 'personal', kind: 'fact' });
+  let r = await core.birthdays.sync();
+  assert.equal(r.created, 2);
+  const lisa = find('Geburtstag: Lisa');
+  assert.equal(lisa.length, 1); assert.equal(lisa[0].allDay, true);
+  assert.equal(new Date(lisa[0].start).getDate(), 4); assert.equal(new Date(lisa[0].start).getMonth(), 4);
+  assert.match(lisa[0].description, /1999/);
+  assert.equal((await core.birthdays.sync()).created, 0, 'zweiter Lauf legt nichts doppelt an');
+  // Datum korrigiert → Termin verschoben
+  core.brain.update(k.id, { content: 'Geburtstag von Lisa: 06.05.1999' });
+  r = await core.birthdays.sync();
+  assert.equal(r.updated, 1);
+  assert.equal(new Date(find('Geburtstag: Lisa')[0].start).getDate(), 6);
+  // Eintrag gelöscht → JARVIS-Termin weg
+  core.brain.remove(k.id);
+  r = await core.birthdays.sync();
+  assert.equal(r.removed, 1); assert.equal(find('Geburtstag: Lisa').length, 0);
+  // Termin vom Nutzer gelöscht → nicht wieder anlegen
+  const tom = find('Geburtstag: Tom')[0];
+  await core.calendar.remove(tom.id);
+  await core.birthdays.sync(); await core.birthdays.sync();
+  assert.equal(find('Geburtstag: Tom').length, 0);
+  // Schon vorhandener Geburtstagstermin (z. B. aus Google) → keine Dublette
+  await core.calendar.create({ title: '🎂 Anna Geburtstag', start: new Date(y, 6, 9).toISOString(), allDay: true, recurrence: { freq: 'yearly' } });
+  core.brain.add({ content: 'Anna hat am 9.7. Geburtstag', domain: 'personal', kind: 'fact' });
+  r = await core.birthdays.sync();
+  assert.equal(r.created, 0);
+  // abschaltbar
+  core.settings.update({ birthdaysToCalendar: false });
+  core.brain.add({ content: 'Geburtstag von Ben: 02.03.', domain: 'personal', kind: 'fact' });
+  assert.equal((await core.birthdays.sync()).created, 0);
+  cleanup();
+});

@@ -92,6 +92,9 @@ export function Brain() {
   );
 }
 
+/** Kürzt eine Beschriftung auf die verfügbare Breite (≈ 6,6 px pro Zeichen bei 12 px). */
+const fitLabel = (s, px) => { const n = Math.floor(px / 6.6); if (n < 4) return ''; return s.length > n ? s.slice(0, Math.max(3, n - 1)) + '…' : s; };
+
 /** Radial graph: JARVIS core → domain hubs → recent entries. Real data only. */
 function Graph({ data, onDomain, onEntry, activeDomain }) {
   const wrap = useRef(); const [size, setSize] = useState({ w: 900, h: 420 });
@@ -101,20 +104,42 @@ function Graph({ data, onDomain, onEntry, activeDomain }) {
     const { w, h } = size; const cx = w / 2, cy = h / 2;
     const domains = data.nodes.filter((n) => n.type === 'domain');
     const pos = { core: { x: cx, y: cy } };
-    const rx = Math.min(w * 0.3, 360), ry = Math.min(h * 0.33, 170);
+    // Knoten (r) + Beschriftung darunter müssen komplett in die Fläche passen
+    const nr = Math.max(22, Math.min(30, h / 13));
+    const coreR = Math.max(34, Math.min(64, h * 0.15));
+    const rx = Math.max(coreR + nr + 40, Math.min(w / 2 - nr - 150, 380)); // seitlich Platz für Einträge + Beschriftung
+    const ry = Math.max(coreR + nr + 6, Math.min(h / 2 - nr - 26, 190));
     domains.forEach((d, i) => { const a = -Math.PI / 2 + (i / domains.length) * Math.PI * 2; pos[d.id] = { x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, a }; });
     const leaves = data.nodes.filter((n) => n.type === 'entry' || n.type === 'document');
     const byHub = {};
     for (const e of data.edges) if (pos[e.a] && e.a.startsWith('d:')) (byHub[e.a] = byHub[e.a] || []).push(e.b);
     for (const [hub, ids] of Object.entries(byHub)) {
       const p = pos[hub]; const n = ids.length;
+      if (Math.abs(Math.sin(p.a)) > 0.8) {
+        // Knoten oben/unten: Einträge links und rechts daneben, damit nichts über die Beschriftung läuft
+        ids.forEach((id, i) => { const side = i % 2 ? 1 : -1; const row = Math.floor(i / 2); pos[id] = { side, x: p.x + side * (nr + 34 + row * 10), y: Math.max(10, Math.min(h - 10, p.y + (Math.sin(p.a) > 0 ? -1 : 1) * (row * 17 - nr * 0.4))) }; });
+        continue;
+      }
       ids.forEach((id, i) => {
         const spread = 1.1; const a = p.a + (n > 1 ? (i / (n - 1) - 0.5) * spread : 0);
         const dist = 78 + (i % 2) * 22;
-        pos[id] = { x: p.x + Math.cos(a) * dist * 1.25, y: p.y + Math.sin(a) * dist * 0.75 };
+        const x = p.x + Math.cos(a) * dist * 1.25, y = p.y + Math.sin(a) * dist * 0.75;
+        pos[id] = { side: Math.cos(a) >= 0 ? 1 : -1, x: Math.max(12, Math.min(w - 12, x)), y: Math.max(10, Math.min(h - 10, y)) };
       });
     }
-    return { pos, domains, leaves, cx, cy };
+    // Platz für jede Beschriftung: bis zum nächsten Knoten/Punkt in Leserichtung, höchstens 170 px
+    const obstacles = [{ x: cx, y: cy, r: coreR * 1.2 }, ...domains.map((d) => ({ ...pos[d.id], r: nr + 4 })), ...leaves.filter((n) => pos[n.id]).map((n) => ({ ...pos[n.id], r: 6, id: n.id }))];
+    for (const n of leaves) {
+      const p = pos[n.id]; if (!p) continue;
+      let room = Math.min(170, p.side > 0 ? w - p.x - 6 : p.x - 6);
+      for (const o of obstacles) {
+        if (o.id === n.id || Math.abs(o.y - p.y) > o.r + 8) continue;
+        const dx = (o.x - p.x) * p.side;
+        if (dx > 0) room = Math.min(room, dx - o.r - 6);
+      }
+      p.room = room;
+    }
+    return { pos, domains, leaves, cx, cy, nr, coreR };
   }, [data, size]);
   return (
     <div class="graph-wrap" ref={wrap}>
@@ -126,26 +151,28 @@ function Graph({ data, onDomain, onEntry, activeDomain }) {
           </defs>
           {data.edges.map((e) => { const a = layout.pos[e.a], b = layout.pos[e.b]; if (!a || !b) return null; return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={e.cross ? 'rgba(167,139,250,0.55)' : 'rgba(56,189,248,0.35)'} stroke-width={e.cross ? 1.4 : 1} stroke-dasharray={e.cross ? '4 3' : undefined} />; })}
           <g class="gnode" onClick={() => onDomain(null)}>
-            <circle cx={layout.cx} cy={layout.cy} r={78} fill="url(#core)" filter="url(#glow)" />
-            <circle cx={layout.cx} cy={layout.cy} r={64} fill="none" stroke="rgba(56,225,255,0.6)" stroke-width="1.5" />
-            <circle cx={layout.cx} cy={layout.cy} r={90} fill="none" stroke="rgba(56,225,255,0.25)" stroke-dasharray="2 6" />
-            <text x={layout.cx} y={layout.cy + 6} text-anchor="middle" style={{ fill: 'white', fontFamily: 'var(--font-hud)', fontWeight: 700, fontSize: 18, letterSpacing: 2 }}>JARVIS</text>
+            <circle cx={layout.cx} cy={layout.cy} r={layout.coreR * 1.2} fill="url(#core)" filter="url(#glow)" />
+            <circle cx={layout.cx} cy={layout.cy} r={layout.coreR} fill="none" stroke="rgba(56,225,255,0.6)" stroke-width="1.5" />
+            <circle cx={layout.cx} cy={layout.cy} r={layout.coreR * 1.4} fill="none" stroke="rgba(56,225,255,0.25)" stroke-dasharray="2 6" />
+            <text x={layout.cx} y={layout.cy + 6} text-anchor="middle" style={{ fill: 'white', fontFamily: 'var(--font-hud)', fontWeight: 700, fontSize: Math.round(layout.coreR / 3.6), letterSpacing: 2 }}>JARVIS</text>
           </g>
           {layout.leaves.map((n) => { const p = layout.pos[n.id]; if (!p) return null; return (
             <g class="gnode" onClick={() => (n.type === 'document' ? setState({ page: 'study', focusDoc: n.id.slice(4) }) : onEntry(n.id))}>
+              <title>{n.label}</title>
               <circle cx={p.x} cy={p.y} r={5} fill="#22d3ee" filter="url(#glow)" />
-              <text x={p.x + (p.x >= layout.cx ? 9 : -9)} y={p.y + 4} text-anchor={p.x >= layout.cx ? 'start' : 'end'}>{n.label.length > Math.max(8, Math.floor((p.x >= layout.cx ? size.w - p.x : p.x) / 7.2) - 2) ? n.label.slice(0, Math.max(6, Math.floor((p.x >= layout.cx ? size.w - p.x : p.x) / 7.2) - 3)) + '…' : n.label}</text>
+              <text x={p.x + p.side * 9} y={p.y + 4} text-anchor={p.side > 0 ? 'start' : 'end'}>{fitLabel(n.label, p.room - 10)}</text>
             </g>); })}
-          {layout.domains.map((d) => { const p = layout.pos[d.id]; const Icon = DOMAIN_ICON[d.domain]; const active = activeDomain === d.domain; return (
-            <g class="gnode domain" onClick={() => onDomain(d.domain)}>
-              <circle cx={p.x} cy={p.y} r={34} fill="rgba(6,24,42,0.95)" stroke={active ? '#fff' : 'rgba(56,225,255,0.85)'} stroke-width={active ? 2.5 : 1.6} filter="url(#glow)" />
-              <foreignObject x={p.x - 12} y={p.y - 20} width="24" height="24"><div style={{ color: '#7dd3fc' }}><Icon size={22} /></div></foreignObject>
-              <text x={p.x} y={p.y + 16} text-anchor="middle" style={{ fontSize: 10.5 }}>{d.label}</text>
-              <text x={p.x} y={p.y + 50} text-anchor="middle" style={{ fill: 'var(--text-3)', fontSize: 11 }}>{d.count}</text>
+          {layout.domains.map((d) => { const p = layout.pos[d.id]; const Icon = DOMAIN_ICON[d.domain]; const active = activeDomain === d.domain; const r = layout.nr; const ic = Math.round(r * 0.8); const bx = p.x + r * 0.72, by = p.y - r * 0.72; return (
+            <g class={`gnode domain ${d.count ? '' : 'empty'}`} onClick={() => onDomain(d.domain)}>
+              <title>{`${d.label}: ${d.count} Einträge`}</title>
+              <circle cx={p.x} cy={p.y} r={r} fill="rgba(6,24,42,0.95)" stroke={active ? '#fff' : d.count ? 'rgba(56,225,255,0.85)' : 'rgba(56,225,255,0.4)'} stroke-width={active ? 2.5 : 1.6} filter="url(#glow)" />
+              <foreignObject x={p.x - ic / 2} y={p.y - ic / 2} width={ic} height={ic}><div style={{ color: d.count ? '#7dd3fc' : '#4b6b85', lineHeight: 0 }}><Icon size={ic} /></div></foreignObject>
+              <text class="glabel" x={p.x} y={p.y + r + 16} text-anchor="middle">{d.label}</text>
+              {d.count > 0 && <><circle cx={bx} cy={by} r={9} fill="#0891b2" stroke="rgba(6,24,42,0.95)" stroke-width="2" /><text class="gcount" x={bx} y={by + 3.5} text-anchor="middle">{d.count > 99 ? '99+' : d.count}</text></>}
             </g>); })}
         </svg>
       )}
-      {data && data.overview.memories === 0 && data.overview.sources === 0 && <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0 }} class="empty">Der Graph füllt sich mit echten Einträgen – Erinnerungen, Quellen und indexierten Dokumenten.</div>}
+      {data && data.overview.memories === 0 && data.overview.sources === 0 && <div class="graph-hint">Der Graph füllt sich mit echten Einträgen – Erinnerungen, Quellen und Dokumenten.</div>}
     </div>
   );
 }
@@ -244,7 +271,7 @@ function BrainRight({ ov, onDomain, onSel }) {
         <button class="btn xs mt" onClick={async () => { setEmbedding(true); await guard(() => rpc('brain.embed'), 'Semantischer Index aktualisiert'); setEmbedding(false); }}>{embedding ? <Spinner size={12} /> : <Sparkles size={12} />}Index aktualisieren</button>
       </Box>
       <Box icon={CalendarDays} title="KATEGORIEN" sub="Wissen strukturieren">
-        <ul class="bullets">{DOMAIN_OPTS.slice(0, 7).map(([k, l]) => <li style={{ cursor: 'pointer' }} onClick={() => onDomain(k)}><span class="grow">{l}</span><span class="v">{ov?.byDomain?.[k] ?? 0}</span></li>)}</ul>
+        <ul class="bullets">{DOMAIN_OPTS.map(([k, l]) => <li style={{ cursor: 'pointer' }} onClick={() => onDomain(k)}><span class="grow">{l}</span><span class="v">{ov?.byDomain?.[k] ?? 0}</span></li>)}</ul>
       </Box>
       <Box icon={Network} title="AKTUELLE PROJEKTE" sub="Wissenssammlungen">
         <ul class="bullets">{projects.length ? projects.map((p) => <li style={{ cursor: 'pointer' }} onClick={() => onSel(p.id)}><span class="grow ellipsis">{p.title}</span></li>) : <li class="empty">Noch keine Projekte</li>}</ul>
