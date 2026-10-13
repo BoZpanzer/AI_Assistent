@@ -4,9 +4,10 @@
 // passt der private Schlüssel nicht zum eingebauten öffentlichen, bricht der Build ab.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const file = 'JARVIS_Setup.exe';
 const setup = path.join(root, 'release', file);
