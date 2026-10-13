@@ -3,7 +3,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, CirclePlus, Sparkle
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
-import { Panel, Toggle, Spinner, ask } from '../components/ui.jsx';
+import { Panel, Toggle, Spinner, ask, FixText } from '../components/ui.jsx';
 import { fmtTime, ago } from '../lib/format.js';
 
 const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -145,6 +145,14 @@ function Feeds({ onChange }) {
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [cd, setCd] = useState({ open: false, userid: '', hash: '' });
+  const connectCd = async () => {
+    setBusy(true);
+    const r = await guard(() => rpc('feeds.add', { name: 'Stundenplan (Campus Dual)', campusDual: { userid: cd.userid, hash: cd.hash, url: cd.hash.includes('userid=') ? cd.hash : undefined } }));
+    setBusy(false);
+    if (r) { if (r.error) toast('Campus Dual: ' + r.error, 'error', 10000); else { toast(`Campus Dual verbunden: ${r.events ?? 0} Termine`); setCd({ open: false, userid: '', hash: '' }); } reload(); onChange?.(); }
+  };
+  const fepLink = /fep\.campus-dual\.de\/ics/i.test(url);
   const add = async () => {
     if (!url.trim()) return;
     setBusy(true);
@@ -153,18 +161,35 @@ function Feeds({ onChange }) {
     if (r) { if (r.error) toast('Abo angelegt, aber Abruf fehlgeschlagen: ' + r.error, 'error', 8000); else toast(r.existed ? `Abo aktualisiert: ${r.events ?? 'keine Änderung'}` : `Abo hinzugefügt: ${r.events ?? 0} Termine`); setUrl(''); setName(''); reload(); onChange?.(); }
   };
   return (
-    <Panel icon={Link2} title="Abos & Stundenplan" sub="ICS-Links, z. B. Campus Dual · alle 15 Min. aktualisiert">
+    <Panel icon={Link2} title="Abos & Stundenplan" sub="Campus Dual & ICS-Links · alle 15 Min. aktualisiert">
       {feeds.map((f) => (
         <div class="col" style={{ gap: 2, padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
           <div class="row gap-s"><span class="status-dot" style={{ background: f.color }} /><b class="small grow ellipsis">{f.name}</b>
             <button class="btn icon xs ghost" title="Jetzt aktualisieren" onClick={() => guard(() => rpc('feeds.refresh', { id: f.id }), 'Aktualisiert').then(reload)}><RefreshCw size={12} /></button>
             <button class="btn icon xs ghost" title="Abo entfernen" onClick={async () => { if (await ask(`Abo „${f.name}“ entfernen? Die Termine daraus verschwinden aus JARVIS (nicht aus der Quelle).`, '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) { await rpc('feeds.remove', { id: f.id }); reload(); onChange?.(); } }}><Trash2 size={12} /></button>
           </div>
-          <div class="tiny" style={{ color: f.error ? 'var(--red)' : 'var(--text-3, #7fa3b5)' }}>{f.error ? 'Fehler: ' + f.error : `${f.events} Termine · aktualisiert ${f.lastFetch ? ago(f.lastFetch) : '—'}`}</div>
+          <div class="tiny" style={{ color: f.error ? 'var(--red)' : 'var(--text-3, #7fa3b5)' }}>{f.error ? <FixText text={'Fehler: ' + f.error} /> : `${f.events} Termine · aktualisiert ${f.lastFetch ? ago(f.lastFetch) : '—'}`}</div>
         </div>
       ))}
-      {!feeds.length && <div class="tiny muted">Noch keine Abos. Füge z. B. deinen Campus-Dual-Stundenplan hinzu (ICS-Link aus Campus Dual → Stundenplan → Export).</div>}
-      <input class="inp mt" placeholder="https://…/…ics oder webcal://…" value={url} onInput={(e) => setUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+      {!feeds.length && <div class="tiny muted">Noch keine Abos. Für Campus Dual unten „Campus Dual verbinden“ nutzen, für andere Kalender einen ICS-Link einfügen.</div>}
+      <div class="col mt" style={{ gap: 6, padding: 8, border: '1px solid var(--line)', borderRadius: 8 }}>
+        <div class="row gap-s"><b class="small grow">Campus Dual verbinden (empfohlen)</b>{!cd.open && <button class="btn xs" onClick={() => setCd({ ...cd, open: true })}>Einrichten</button>}</div>
+        {!cd.open && <div class="tiny muted">Holt deinen Stundenplan direkt aus Campus Dual – alle 15 Min. aktuell, ohne Passwort.</div>}
+        {cd.open && <>
+          <ol class="tiny" style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-2)' }}>
+            <li>Bei <a onClick={() => rpc('shell.openExternal', { url: 'https://selfservice.campus-dual.de/' })}>selfservice.campus-dual.de</a> anmelden und den Stundenplan öffnen.</li>
+            <li>Rechtsklick → „Seitenquelltext anzeigen“ (Strg+U), dann mit Strg+F nach deiner Matrikelnummer suchen.</li>
+            <li>Direkt daneben steht <code>hash</code> mit einer langen Zeichenkette (0–9, a–f) – die kopieren. Der Hash ändert sich nicht.</li>
+          </ol>
+          <div class="tiny muted">Alternativ: Entwicklertools (F12) → Netzwerk → Anfrage „json?userid=…“ – die komplette Adresse ins Hash-Feld einfügen.</div>
+          <input class="inp" placeholder="Matrikelnummer" value={cd.userid} onInput={(e) => setCd({ ...cd, userid: e.currentTarget.value })} />
+          <input class="inp" type="password" placeholder="Hash (oder kopierte json-Adresse)" value={cd.hash} onInput={(e) => setCd({ ...cd, hash: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && connectCd()} />
+          <div class="tiny muted">Der Hash wird verschlüsselt gespeichert (Windows-DPAPI).</div>
+          <div class="row gap-s" style={{ justifyContent: 'flex-end' }}><button class="btn xs ghost" onClick={() => setCd({ open: false, userid: '', hash: '' })}>Abbrechen</button><button class="btn sm primary" disabled={busy || !cd.hash.trim() || (!cd.userid.trim() && !cd.hash.includes('userid='))} onClick={connectCd}>{busy ? <Spinner /> : <Link2 size={14} />}Verbinden</button></div>
+        </>}
+      </div>
+      <input class="inp mt" placeholder="Anderer Kalender: https://…/…ics oder webcal://…" value={url} onInput={(e) => setUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+      {fepLink && <div class="notice warn mt tiny">Campus-Dual-Exportlinks (fep.campus-dual.de/ics/…) enthalten ohne Anmeldung keine Termine. Nutze oben „Campus Dual verbinden“.</div>}
       <div class="row gap-s mt"><input class="inp grow" placeholder="Name (optional)" value={name} onInput={(e) => setName(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn sm primary" disabled={busy || !url.trim()} onClick={add}>{busy ? <Spinner /> : <CirclePlus size={14} />}Abonnieren</button></div>
       <button class="btn xs ghost mt" onClick={() => guard(() => rpc('feeds.addFile', {})).then((r) => { if (r) { reload(); onChange?.(); } })}><Upload size={12} />.ics-Datei einmalig importieren</button>
     </Panel>

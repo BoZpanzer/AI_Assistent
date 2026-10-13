@@ -160,19 +160,56 @@ function keepWallTime(startIso, instIso, zone) {
   return new Date(zonedToUtc(+p.year, +p.month, +p.day + days, +p.hour, +p.minute, +p.second, zone)).toISOString();
 }
 
+// ---------- Campus Dual (Selfservice-JSON mit Matrikelnummer + Hash) ----------
+const CD_HOST = 'https://selfservice.campus-dual.de';
+/** Aus Eingabe „Matrikelnummer + Hash“ oder einer kopierten room/json-Adresse die Zugangsdaten lesen. */
+function parseCampusDual({ userid, hash, url } = {}) {
+  if (url && /userid=/i.test(url)) {
+    try { const u = new URL(String(url).trim()); userid = userid || u.searchParams.get('userid') || u.searchParams.get('user'); hash = hash || u.searchParams.get('hash'); } catch { /* ignore */ }
+  }
+  userid = String(userid || '').trim().replace(/s$/i, ''); hash = String(hash || '').trim();
+  if (!/^\d{5,12}$/.test(userid)) throw new Error('Matrikelnummer fehlt oder ist ungültig (nur Ziffern, ohne „s“).');
+  if (!/^[0-9a-f]{16,64}$/i.test(hash)) throw new Error('Der Campus-Dual-Hash fehlt oder hat das falsche Format (lange Zeichenkette aus 0–9 und a–f).');
+  return { userid, hash };
+}
+/** Campus-Dual-Einträge → Termine. Feldnamen tolerant (title/description, room/sroom, instructor/sinstructor). */
+function campusDualEvents(list) {
+  const ms = (v) => { const n = Number(v); return n > 1e12 ? n : n * 1000; };
+  return (Array.isArray(list) ? list : []).filter((x) => x && x.start && x.end).map((x) => {
+    const title = String(x.title || x.description || 'Vorlesung').trim();
+    const room = x.room || x.sroom || '';
+    const who = x.sinstructor || x.instructor || '';
+    const desc = [x.description && x.description !== title ? x.description : null, who ? 'Dozent: ' + who : null, x.remarks ? 'Hinweis: ' + x.remarks : null].filter(Boolean).join('\n');
+    const start = new Date(ms(x.start)).toISOString(); const end = new Date(ms(x.end)).toISOString();
+    return { uid: 'cd-' + sha256(title + '|' + start).slice(0, 16), title, location: String(room), description: desc, start, end, allDay: !!x.allDay };
+  }).sort((a, b) => a.start.localeCompare(b.start));
+}
+
 // ---------- Feeds ----------
 class Feeds {
   constructor(s) { this.s = s; this.db = s.db; }
 
   list() {
     return this.db.all('SELECT * FROM calendar_feeds ORDER BY created_at').map((f) => ({
-      id: f.id, name: f.name, url: f.url ? f.url.replace(/([?&](?:token|key|auth|hash)=)[^&]+/gi, '$1…').replace(/guid'([0-9a-f-]{6})[0-9a-f-]+'/i, "guid'$1…'") : null, kind: f.kind, color: f.color, lecture: !!f.lecture,
+      id: f.id, name: f.name, url: f.kind === 'campusdual' ? 'Campus Dual · ' + String(f.url).split(':')[1].replace(/\d(?=\d{3})/g, '•') : f.url ? f.url.replace(/([?&](?:token|key|auth|hash)=)[^&]+/gi, '$1…').replace(/guid'([0-9a-f-]{6})[0-9a-f-]+'/i, "guid'$1…'") : null, kind: f.kind, color: f.color, lecture: !!f.lecture,
       lastFetch: f.last_fetch, error: f.last_error, events: this.db.get('SELECT COUNT(*) c FROM events WHERE calendar_id=?', 'feed:' + f.id).c,
     }));
   }
 
-  async add({ name, url, file, color = '#a78bfa', lecture = true }) {
+  async add({ name, url, file, color = '#a78bfa', lecture = true, campusDual }) {
     let kind = 'url'; let clean = null;
+    if (campusDual || (url && /selfservice\.campus-dual\.de\/room\/json/i.test(url))) {
+      const cd = parseCampusDual({ ...(campusDual || {}), url });
+      const key = 'campusdual:' + cd.userid;
+      const ex = this.db.get('SELECT id FROM calendar_feeds WHERE url=?', key);
+      const fid = ex?.id || id('feed');
+      this.s.secrets.set('campusdual.hash.' + fid, cd.hash);
+      if (!ex) {
+        this.db.run('INSERT INTO calendar_feeds(id,name,url,kind,color,lecture,created_at) VALUES(?,?,?,?,?,?,?)', fid, String(name || 'Stundenplan (Campus Dual)').slice(0, 80), key, 'campusdual', color, lecture ? 1 : 0, nowIso());
+        this.db.run('INSERT OR REPLACE INTO calendars(id,name,color,is_primary,selected,writable) VALUES(?,?,?,0,1,0)', 'feed:' + fid, String(name || 'Stundenplan (Campus Dual)').slice(0, 80), color);
+      }
+      try { const r = await this.refresh(fid); return { id: fid, existed: !!ex, ...r }; } catch (e) { return { id: fid, error: e.message }; }
+    }
     const exists = url && this.db.get('SELECT id FROM calendar_feeds WHERE url=?', String(url).trim().replace(/^webcals?:\/\//i, 'https://'));
     if (exists) { const r = await this.refresh(exists.id).catch((e) => ({ error: e.message })); return { id: exists.id, existed: true, ...r }; }
     if (file) { kind = 'file'; if (!/\.ics$/i.test(file) || !fs.existsSync(file)) throw new Error('Bitte eine .ics-Datei wählen'); clean = file; }
@@ -187,6 +224,7 @@ class Feeds {
   }
 
   remove(fid) {
+    try { this.s.secrets.delete('campusdual.hash.' + fid); } catch { /* ignore */ }
     this.db.tx(() => {
       this.db.run('DELETE FROM events WHERE calendar_id=?', 'feed:' + fid);
       this.db.run('DELETE FROM calendars WHERE id=?', 'feed:' + fid);
@@ -205,6 +243,26 @@ class Feeds {
     this.db.run('UPDATE calendars SET name=?, color=? WHERE id=?', name, color, 'feed:' + fid);
     this.s.bus.emit('calendar:changed', {}); this.s.bus.emit('feeds:changed', {});
     return true;
+  }
+
+  /** Campus Dual: Termine von 30 Tagen zurück bis 1 Jahr voraus direkt als JSON. */
+  async fetchCampusDual(f) {
+    const userid = String(f.url).split(':')[1];
+    const hash = this.s.secrets.get('campusdual.hash.' + f.id);
+    if (!hash) throw new Error('Campus-Dual-Hash fehlt – Abo entfernen und neu verbinden.');
+    const start = Math.floor(Date.now() / 1000) - 30 * 86400; const end = Math.floor(Date.now() / 1000) + 365 * 86400;
+    let res;
+    try {
+      res = await this.s.fetch(`${CD_HOST}/room/json?userid=${encodeURIComponent(userid)}&hash=${encodeURIComponent(hash)}&start=${start}&end=${end}&_=${Date.now()}`, { headers: { Accept: 'application/json', 'User-Agent': 'JARVIS-Desktop/3' }, signal: AbortSignal.timeout(25000) });
+    } catch (e) {
+      throw new Error(/CERT|certificate|SSL/i.test(e.message) ? 'Campus Dual: Zertifikatsfehler beim Server (selfservice.campus-dual.de). Bitte später erneut versuchen.' : 'Campus Dual nicht erreichbar: ' + e.message);
+    }
+    if (res.status === 401 || res.status === 403) throw new Error('Campus Dual lehnt Matrikelnummer/Hash ab – bitte den Hash neu kopieren.');
+    if (!res.ok) throw new Error('Campus Dual antwortet mit HTTP ' + res.status);
+    const text = await res.text();
+    let list;
+    try { list = JSON.parse(text); } catch { throw new Error(/<html|login/i.test(text) ? 'Campus Dual verlangt eine Anmeldung – Matrikelnummer oder Hash stimmen nicht.' : 'Unerwartete Antwort von Campus Dual'); }
+    return campusDualEvents(list);
   }
 
   async fetchText(f) {
@@ -227,14 +285,23 @@ class Feeds {
     const f = this.db.get('SELECT * FROM calendar_feeds WHERE id=?', fid);
     if (!f) throw new Error('Abo nicht gefunden');
     try {
-      const text = await this.fetchText(f);
-      if (text === null) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true }; }
-      if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error('Keine gültige iCalendar-Datei (.ics)');
-      const hash = sha256(text);
-      if (hash === f.content_hash) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true }; }
-      const parsed = parseIcs(text);
-      const from = new Date(Date.now() - 30 * 86400000); const to = new Date(Date.now() + 365 * 86400000);
-      const inst = expand(parsed.events, from, to).slice(0, 5000);
+      let inst; let hash; let parsed = { name: null };
+      if (f.kind === 'campusdual') {
+        inst = (await this.fetchCampusDual(f)).slice(0, 5000);
+        hash = sha256(JSON.stringify(inst));
+      } else {
+        const text = await this.fetchText(f);
+        if (text === null) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true }; }
+        if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error(/<html/i.test(text) ? 'Der Link liefert eine Webseite statt eines Kalenders – vermutlich ist eine Anmeldung nötig.' : 'Keine gültige iCalendar-Datei (.ics)');
+        hash = sha256(text);
+        parsed = parseIcs(text);
+        // Campus-Dual-Exportlinks (fep.campus-dual.de/ics/…) enthalten ohne Anmeldung keine Termine
+        if (!parsed.events.length && /campus-dual\.de\/ics/i.test(f.url || '')) throw new Error('Dieser Campus-Dual-Exportlink enthält ohne Anmeldung keine Termine. Nutze stattdessen „Campus Dual verbinden“ (Matrikelnummer + Hash).');
+        if (hash === f.content_hash) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true }; }
+        const from = new Date(Date.now() - 30 * 86400000); const to = new Date(Date.now() + 365 * 86400000);
+        inst = expand(parsed.events, from, to).slice(0, 5000);
+      }
+      if (hash === f.content_hash) { this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=NULL WHERE id=?', nowIso(), fid); return { unchanged: true, events: inst.length }; }
       const cal = 'feed:' + fid; const now = nowIso();
       this.db.tx(() => {
         this.db.run('DELETE FROM events WHERE calendar_id=?', cal);
@@ -248,7 +315,7 @@ class Feeds {
       this.s.bus.emit('calendar:changed', {}); this.s.bus.emit('feeds:changed', {});
       return { events: inst.length, calendarName: parsed.name };
     } catch (e) {
-      this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=? WHERE id=?', nowIso(), e.message.slice(0, 300), fid);
+      this.db.run('UPDATE calendar_feeds SET last_fetch=?, last_error=? WHERE id=?', nowIso(), e.message.slice(0, 700), fid);
       this.s.bus.emit('feeds:changed', {});
       throw e;
     }
@@ -280,4 +347,4 @@ function courseName(title) {
     .replace(/\s+/g, ' ').replace(/[\s,;\-–]+$/, '').trim() || String(title || '');
 }
 
-module.exports = { Feeds, parseIcs, expand, parseDate, courseName, zonedToUtc };
+module.exports = { Feeds, parseIcs, expand, parseDate, courseName, zonedToUtc, parseCampusDual, campusDualEvents };

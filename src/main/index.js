@@ -270,6 +270,12 @@ async function runSmoke() {
       });
     });
     report.steps.push({ name: 'Weiterleitungen (Update-Download)', ok: redirectOk === 'OK', detail: redirectOk });
+    const uploadOk = await new Promise((resolve) => {
+      const srv = require('node:http').createServer((q, r) => { let n = 0; q.on('data', (c) => { n += c.length; }); q.on('end', () => { r.writeHead(200, { 'content-type': 'application/json' }); r.end(JSON.stringify({ n })); }); }).listen(0, '127.0.0.1', async () => {
+        try { const r = await core.fetch(`http://127.0.0.1:${srv.address().port}/`, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: Buffer.alloc(300000, 1) }); const j = await r.json(); resolve(j.n === 300000 ? 'OK' : 'Bytes ' + j.n); } catch (e) { resolve(e.message); } finally { srv.close(); }
+      });
+    });
+    report.steps.push({ name: 'Datei-Upload (Drive-Backup)', ok: uploadOk === 'OK', detail: uploadOk });
     const t = core.tasks.create({ title: 'Smoke' }); core.tasks.complete(t.id); report.steps.push({ name: 'Aufgabe anlegen/abschließen', ok: core.tasks.get(t.id).done });
     report.steps.push({ name: 'Tray', ok: !!tray });
     app.getAppMetrics(); // prime CPU counters

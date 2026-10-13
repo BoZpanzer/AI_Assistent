@@ -157,7 +157,8 @@ class Orchestrator {
       if (this.s.settings.get('voice').speakReplies && channel === 'text') bus.emit('tts:speak', { text: stripMd(final.content).slice(0, 1200) });
       return final;
     } catch (e) {
-      const err = friendlyError(e);
+      // Lösungs-Marker → Markdown-Link (Chat rendert Markdown)
+      const err = friendlyError(e).replace(/\s*⟨fix:([^|⟩]+)\|([^⟩]+)⟩/, (_, label, target) => (target.startsWith('https://') ? ` → [${label.trim()}](${target.trim()})` : ` → ${label.trim()}`));
       log.warn('Chat fehlgeschlagen', e);
       conversations.update(msg.id, { content: (full ? full + '\n\n' : '') + `⚠️ ${err}`, meta: { streaming: false, error: true, cards, sources } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: err });

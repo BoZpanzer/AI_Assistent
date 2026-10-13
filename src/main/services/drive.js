@@ -84,7 +84,7 @@ class Drive {
       let folderId = this.cfg().driveFolderId;
       if (!folderId) {
         const found = await this.findFolders();
-        if (!found.length) throw new Error(`Kein Ordner „${this.folderName()}“ in deinem Google Drive gefunden.`);
+        if (!found.length) throw new Error(`Kein Ordner „${this.folderName()}“ in deinem Google Drive gefunden. Lege ihn an (Groß-/Kleinschreibung egal) oder trage unter Einstellungen → Studium den richtigen Ordnernamen ein. ⟨fix:Google Drive öffnen|https://drive.google.com/⟩`);
         folderId = found[0].id;
         this.s.settings.update({ study: { driveFolderId: folderId } });
       }

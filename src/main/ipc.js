@@ -130,7 +130,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       } finally { showWindow(); } // JARVIS nach der Browser-Anmeldung wieder nach vorne holen – auch bei Fehlern
     },
     'feeds.list': () => s.feeds.list(),
-    'feeds.add': ({ name, url, color, lecture }) => s.feeds.add({ name, url, color, lecture }),
+    'feeds.add': ({ name, url, color, lecture, campusDual }) => s.feeds.add({ name, url, color, lecture, campusDual }),
     'feeds.addFile': async ({ name }) => { const f = (await pick({ properties: ['openFile'], filters: [{ name: 'Kalender (.ics)', extensions: ['ics'] }] }))?.[0]; return f ? s.feeds.add({ name: name || path.basename(f, '.ics'), file: f }) : null; },
     'feeds.refresh': async ({ id }) => (id ? s.feeds.refresh(id) : s.feeds.refreshAll()),
     'feeds.update': ({ id, patch }) => s.feeds.update(id, patch || {}),
@@ -353,6 +353,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     },
     'system.installUpdate': () => M['update.install'](),
     'system.selfTest': async () => selfTest(s),
+    'system.diagnostics': async () => require('./services/diagnostics').runDiagnostics(s),
 
     // --- overlay & screen ---
     'screen.ask': async ({ question }) => { const r = await s.screen.hotkeyQuestion(String(question || '').slice(0, 500)); return { content: r?.content || '' }; },

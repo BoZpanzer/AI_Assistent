@@ -679,3 +679,66 @@ test('LoL-Analyse ohne laufenden Client: gespeicherte Matches statt „starte de
   assert.match(r.note, /gespeicherten Matches/);
   cleanup();
 });
+
+test('Google-Fehler mit Lösung: API nicht aktiviert → Aktivieren-Knopf; fehlende Berechtigung → neu verbinden', () => {
+  const { googleError } = require('../src/main/providers/google');
+  const { splitFix } = require('../src/main/services/diagnostics');
+  const e = googleError(403, { error: { message: 'Google Drive API has not been used in project 566012473947 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=566012473947 then retry.', errors: [{ reason: 'accessNotConfigured' }] } });
+  const f = splitFix(e.message);
+  assert.match(f.detail, /Google Drive API ist in deinem Google-Cloud-Projekt noch nicht aktiviert/);
+  assert.equal(f.fix.url, 'https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=566012473947');
+  const e2 = googleError(403, { error: { message: 'Request had insufficient authentication scopes.', details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] } });
+  assert.equal(splitFix(e2.message).fix.action, 'settings');
+  const { friendlyError } = require('../src/main/providers/gemini');
+  assert.match(friendlyError(e), /⟨fix:Google Drive API aktivieren\|https:\/\/console/, 'Knopf übersteht die Fehleraufbereitung');
+});
+
+test('Campus Dual: Matrikelnummer + Hash → Stundenplan; leerer Exportlink → klare Anleitung', async () => {
+  const { parseCampusDual, campusDualEvents } = require('../src/main/services/ics');
+  assert.deepEqual(parseCampusDual({ url: 'https://selfservice.campus-dual.de/room/json?userid=4001234&hash=0123456789abcdef0123456789abcdef&start=1&end=2' }), { userid: '4001234', hash: '0123456789abcdef0123456789abcdef' });
+  assert.throws(() => parseCampusDual({ userid: 'abc', hash: 'x' }), /Matrikelnummer/);
+  const now = Math.floor(Date.now() / 1000);
+  const items = [{ title: 'Mathematik II', start: now + 86400, end: now + 86400 + 5400, room: '2.14', sinstructor: 'Prof. Muster', remarks: 'Übung' }, { title: 'Programmierung', start: now + 2 * 86400, end: now + 2 * 86400 + 5400, sroom: 'Lab 1' }];
+  assert.equal(campusDualEvents(items)[0].location, '2.14');
+  let calls = [];
+  const fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).startsWith('https://selfservice.campus-dual.de/room/json')) return new Response(JSON.stringify(items), { headers: { 'Content-Type': 'application/json' } });
+    if (String(url).includes('fep.campus-dual.de')) return new Response('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:Timetable\r\nEND:VCALENDAR\r\n', { headers: { 'Content-Type': 'text/calendar' } });
+    throw new Error('offline');
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  try {
+    const r = await core.feeds.add({ campusDual: { userid: '4001234', hash: '0123456789abcdef0123456789abcdef' } });
+    assert.equal(r.events, 2, JSON.stringify(r));
+    assert.match(calls[0], /userid=4001234&hash=0123456789abcdef0123456789abcdef&start=\d+&end=\d+/);
+    const list = core.feeds.list();
+    assert.equal(list[0].kind, 'campusdual'); assert.ok(!list[0].url.includes('0123456789abcdef'), 'Hash wird nie angezeigt');
+    assert.equal(core.secrets.get('campusdual.hash.' + r.id), '0123456789abcdef0123456789abcdef');
+    const ev = core.calendar.list(new Date().toISOString(), new Date(Date.now() + 5 * 86400000).toISOString()).find((e) => e.title === 'Mathematik II');
+    assert.match(ev.description, /Prof\. Muster/);
+    core.db.run("INSERT INTO calendar_feeds(id,name,url,kind,color,lecture,created_at) VALUES('feed_fep','CD','https://fep.campus-dual.de/ics/ICSSet(guid''x'')/$value','url','#fff',1,'2026-01-01')");
+    core.feeds.fetchText = async () => 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:Timetable\r\nEND:VCALENDAR\r\n';
+    await assert.rejects(core.feeds.refresh('feed_fep'), /Campus Dual verbinden/);
+    core.feeds.remove(r.id); assert.equal(core.secrets.get('campusdual.hash.' + r.id), '');
+  } finally { cleanup(); }
+});
+
+test('Systemcheck: jede Prüfung mit Status und Lösung, keine Ausnahme bei fehlender Einrichtung', async () => {
+  const { runDiagnostics } = require('../src/main/services/diagnostics');
+  const { core, cleanup } = tempCore();
+  const list = await runDiagnostics(core, { live: false });
+  const by = Object.fromEntries(list.map((x) => [x.id, x]));
+  assert.equal(by.db.status, 'ok');
+  assert.equal(by.gemini.status, 'error'); assert.equal(by.gemini.fix.action, 'settings');
+  assert.equal(by.google.status, 'info');
+  assert.ok(list.every((x) => ['ok', 'warn', 'error', 'info'].includes(x.status) && x.name && x.detail));
+  // live: Gemini ohne Guthaben → klare Meldung mit Link
+  core.secrets.set('gemini.api_key', 'AIzaTEST'); core.settings.update({ availableModels: ['gemini-3.8-flash'] });
+  core.gemini.client = () => ({ models: { generateContent: async () => { throw Object.assign(new Error('{"error":{"code":402,"message":"prepayment credits are depleted","status":"PAYMENT_REQUIRED"}}'), { status: 402 }); } } });
+  core.updater.check = async () => ({});
+  const live = await runDiagnostics(core, { live: true });
+  const gm = live.find((x) => x.id === 'gemini');
+  assert.equal(gm.status, 'error'); assert.match(gm.detail, /kein Guthaben/); assert.equal(gm.fix.url, 'https://aistudio.google.com/');
+  cleanup();
+});

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Settings as Gear, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket } from 'lucide-preact';
+import { Settings as Gear, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info } from 'lucide-preact';
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar, UpdateModal } from '../components/Shell.jsx';
-import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask } from '../components/ui.jsx';
+import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask, FixText } from '../components/ui.jsx';
 import { audio, playStartSound } from '../lib/audio.js';
 import { ago } from '../lib/format.js';
 
@@ -35,10 +35,10 @@ export function Settings() {
       </div>
       <ChatBar actions={[
         { icon: Save, label: 'Speichern', onClick: () => toast('Alle Einstellungen sind gespeichert (Änderungen werden sofort übernommen).') },
-        { icon: Link2, label: 'Verbindung prüfen', onClick: async () => { setSelftest('loading'); setSelftest(await rpc('system.selfTest')); } },
+        { icon: Link2, label: 'Systemcheck', onClick: async () => { setSelftest('loading'); setSelftest(await rpc('system.diagnostics').catch((e) => [{ name: 'Systemcheck', status: 'error', detail: e.message }])); } },
         { icon: Upload, label: 'Import', onClick: () => setImportOpen(true) },
       ]} />
-      {selftest && <SelfTest r={selftest} onClose={() => setSelftest(null)} />}
+      {selftest && <SelfTest r={selftest} onClose={() => setSelftest(null)} onRerun={async () => { setSelftest('loading'); setSelftest(await rpc('system.diagnostics').catch((e) => [{ name: 'Systemcheck', status: 'error', detail: e.message }])); }} />}
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
     </div>
   );
@@ -252,7 +252,7 @@ function TarkovTrackerField() {
           {st?.configured && <button class="btn xs ghost" onClick={async () => { await rpc('tracker.disconnect'); reload(); }}>Trennen</button>}
         </div>
       </Field>
-      {st?.configured && <div class="tiny muted">{st.error ? 'Fehler: ' + st.error : st.lastSync ? `Zuletzt abgeglichen ${ago(st.lastSync)}${st.counts ? ` · ${st.counts.done} Quests erledigt` : ''}` : 'Noch nicht abgeglichen'}{st.gameMode ? ` · Modus ${st.gameMode.toUpperCase()}` : ''}</div>}
+      {st?.configured && <div class="tiny muted">{st.error ? <FixText text={'Fehler: ' + st.error} /> : st.lastSync ? `Zuletzt abgeglichen ${ago(st.lastSync)}${st.counts ? ` · ${st.counts.done} Quests erledigt` : ''}` : 'Noch nicht abgeglichen'}{st.gameMode ? ` · Modus ${st.gameMode.toUpperCase()}` : ''}</div>}
     </>
   );
 }
@@ -360,7 +360,7 @@ function DriveBackupField({ s }) {
       <div class="row gap-s">
         {!st?.granted ? <button class="btn xs primary" disabled={busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={12} />}Drive-Backup aktivieren</button>
           : <button class="btn xs" disabled={busy || st?.running} onClick={now}>{busy || st?.running ? <Spinner /> : <Upload size={12} />}Jetzt in Drive sichern</button>}
-        <span class="tiny muted grow" style={{ color: st?.lastError ? 'var(--red)' : undefined }}>{st?.running ? 'Sichere …' : st?.lastError ? 'Fehler: ' + st.lastError : st?.lastSuccess ? `Zuletzt: ${ago(st.lastSuccess)} · ${st.lastFile} (${Math.round((st.lastSize || 0) / 1024)} KB) in „${st.folder}“` : st?.granted ? 'Noch keine Sicherung in Drive' : 'Braucht einmalig Schreibzugriff auf dein Google Drive (Google-Anmeldung)'}</span>
+        <span class="tiny muted grow" style={{ color: st?.lastError ? 'var(--red)' : undefined }}>{st?.running ? 'Sichere …' : st?.lastError ? <FixText text={'Fehler: ' + st.lastError} /> : st?.lastSuccess ? `Zuletzt: ${ago(st.lastSuccess)} · ${st.lastFile} (${Math.round((st.lastSize || 0) / 1024)} KB) in „${st.folder}“` : st?.granted ? 'Noch keine Sicherung in Drive' : 'Braucht einmalig Schreibzugriff auf dein Google Drive (Google-Anmeldung)'}</span>
       </div>
     </div>
   );
@@ -395,10 +395,20 @@ function UpdateSection({ s }) {
   );
 }
 
-function SelfTest({ r, onClose }) {
+export function SelfTest({ r, onClose, onRerun }) {
+  const ICON = { ok: <CircleCheck size={16} class="ok" />, warn: <TriangleAlert size={16} style={{ color: 'var(--orange)' }} />, error: <CircleX size={16} class="err" />, info: <Info size={16} style={{ color: 'var(--text-3)' }} /> };
+  const go = (fix) => { if (fix.url) rpc('shell.openExternal', { url: fix.url }); else { setState({ page: fix.action || 'settings' }); onClose(); } };
+  const list = r === 'loading' ? [] : r;
+  const bad = list.filter((x) => x.status === 'error').length; const warn = list.filter((x) => x.status === 'warn').length;
   return (
-    <Modal title="Verbindungs- und Systemprüfung" onClose={onClose} actions={<button class="btn sm" onClick={onClose}>Schließen</button>}>
-      {r === 'loading' ? <Spinner /> : r.map((x) => <div class="check-line">{x.ok ? <CircleCheck size={16} class="ok" /> : <CircleX size={16} class="err" />}<span class="grow">{x.name}</span><span class="small muted">{String(x.detail)}</span><span class="tiny muted">{x.ms} ms</span></div>)}
+    <Modal title="Systemcheck" sub={r === 'loading' ? 'Prüft alle Verbindungen mit echten Testanfragen …' : bad ? `${bad} Problem${bad > 1 ? 'e' : ''}${warn ? `, ${warn} Hinweis${warn > 1 ? 'e' : ''}` : ''} – mit Lösung` : warn ? `Alles läuft, ${warn} Hinweis${warn > 1 ? 'e' : ''}` : 'Alles in Ordnung'} onClose={onClose}
+      actions={<>{onRerun && r !== 'loading' && <button class="btn sm ghost" onClick={onRerun}>Erneut prüfen</button>}<button class="btn sm" onClick={onClose}>Schließen</button></>}>
+      {r === 'loading' ? <div class="center" style={{ padding: 20 }}><Spinner /></div> : [...list].sort((a, b) => ['error', 'warn', 'ok', 'info'].indexOf(a.status) - ['error', 'warn', 'ok', 'info'].indexOf(b.status)).map((x) => (
+        <div class="check-line" style={{ alignItems: 'flex-start' }}>
+          {ICON[x.status] || (x.ok ? ICON.ok : ICON.error)}
+          <div class="grow"><div class="small" style={{ fontWeight: 600 }}>{x.name}</div><div class="tiny" style={{ color: x.status === 'error' ? 'var(--red)' : 'var(--text-2)' }}>{String(x.detail)}</div></div>
+          {x.fix && <button class="btn xs" onClick={() => go(x.fix)}>{x.fix.label}</button>}
+        </div>))}
     </Modal>
   );
 }

@@ -205,6 +205,20 @@ app.whenReady().then(async () => {
     if (!global.__fakeLive.closed) throw new Error('Live-Sitzung nicht geschlossen');
   });
   await step('Einstellungen', async () => { await nav('settings'); await shot('80-settings'); });
+  await step('Systemcheck: Probleme mit Lösungs-Knopf', async () => {
+    core.updater.check = async () => ({});
+    await js(`[...document.querySelectorAll('.chatbar .btn')].find(b=>b.textContent.includes('Systemcheck')).click()`);
+    await waitFor(() => js(`!!document.querySelector('.modal') && document.querySelector('.modal').textContent.includes('Datenbank')`), 30000);
+    await shot('81-systemcheck');
+    if (!(await js(`document.querySelectorAll('.modal .check-line').length >= 6`))) throw new Error('zu wenige Prüfungen');
+    await js(`[...document.querySelectorAll('.modal .btn')].find(b=>b.textContent.trim()==='Schließen').click()`);
+  });
+  await step('Kalender: Campus Dual verbinden (Anleitung sichtbar)', async () => {
+    await nav('calendar');
+    await js(`[...document.querySelectorAll('.btn')].find(b=>b.textContent.trim()==='Einrichten')?.click()`);
+    await waitFor(() => js(`document.body.textContent.includes('Seitenquelltext anzeigen')`), 5000);
+    await shot('46-campusdual');
+  });
   await step('Kalender: ganztägiger Geburtstag mit Farbe + eigenes Dropdown', async () => {
     await nav('calendar');
     await js(`(()=>{ const c=[...document.querySelectorAll('.cal-cell')].find((x)=>!x.classList.contains('other')); c.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); })()`);

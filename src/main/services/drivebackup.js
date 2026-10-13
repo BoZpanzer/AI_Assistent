@@ -59,7 +59,8 @@ class DriveBackup {
     if (!init.ok) throw new Error(`Drive-Upload konnte nicht starten (HTTP ${init.status})`);
     const loc = init.headers.get('location');
     if (!loc || !/^https:\/\/www\.googleapis\.com\//.test(loc)) throw new Error('Drive-Upload: unerwartete Antwort');
-    const r = await this.s.fetch(loc, { method: 'PUT', headers: { 'Content-Type': 'application/zip', 'Content-Length': String(size) }, body: fs.readFileSync(file) });
+    // Content-Length setzt Chromium selbst – manuell gesetzt bricht net.fetch mit ERR_INVALID_ARGUMENT ab
+    const r = await this.s.fetch(loc, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: fs.readFileSync(file) });
     if (!r.ok) throw new Error(`Drive-Upload fehlgeschlagen (HTTP ${r.status})`);
     return r.json();
   }

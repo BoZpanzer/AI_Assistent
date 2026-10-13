@@ -2,6 +2,18 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.14.0 – Systemcheck, Campus Dual direkt, Drive-Backup repariert
+
+- **Drive-Backup repariert:** „Jetzt in Drive sichern“ brach mit `net::ERR_INVALID_ARGUMENT` ab, weil JARVIS beim Hochladen eine Angabe selbst gesetzt hat, die Chromium nicht erlaubt. Behoben. Der Release-Test prüft das Hochladen jetzt bei jedem Build.
+- **Campus Dual direkt verbinden:** Der Exportlink (fep.campus-dual.de/ics/…) liefert ohne Anmeldung einen leeren Kalender. Deshalb ging bisher nur das Hochladen der .ics-Datei. Neu: Kalender → Abos → **„Campus Dual verbinden“** mit Matrikelnummer und Hash. Der Hash steht im Seitenquelltext deines Stundenplans, die Anleitung ist direkt dabei. JARVIS holt die Termine dann alle 15 Minuten direkt aus Campus Dual, inklusive Raum, Dozent und Hinweisen, ganz ohne Passwort. Der Hash wird verschlüsselt gespeichert.
+- Fügt jemand den leeren Exportlink ein, erklärt JARVIS das sofort, statt still 0 Termine anzuzeigen.
+- **Systemcheck** (Einstellungen → „Systemcheck“): Er prüft mit echten Testanfragen Gemini, Google-Konto, Google Kalender, Google Drive, Drive-Backup, Studienordner, Kalender-Abos, League, Steam, Updates, lokale Sicherungen und Speicherplatz. Jedes Problem steht mit einer verständlichen Erklärung und einem **Lösungs-Knopf** da, z. B. „Google Drive API aktivieren“, „AI Studio öffnen“ oder „Google neu verbinden“. Einmal täglich läuft er auch im Hintergrund und meldet nur echte Probleme.
+- **Verständliche Google-Fehler mit Lösung:**
+  - Ist eine Google-API im Projekt nicht aktiviert, steht genau das da, mit Knopf direkt zur Aktivierungsseite.
+  - Fehlende Berechtigungen führen zu „Google neu verbinden“.
+  - Läuft die Anmeldung alle 7 Tage ab, erklärt JARVIS den Testmodus der Google-App und wie man ihn beendet.
+- Fehlermeldungen in Einstellungen, Kalender-Abos, Drive-Backup, Benachrichtigungen und Chat zeigen Links jetzt als Knöpfe.
+
 ## 3.13.0 – LoL-Fehleranalyse aus deinen Ranked-Spielen
 
 - **JARVIS schaut sich deine Ranked-Spiele im Detail an**, über die Spiel-Timelines aus dem League-Client (ohne API-Schlüssel) oder optional die Riot-API. Pro Spiel wertet es aus:

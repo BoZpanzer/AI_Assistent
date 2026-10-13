@@ -325,17 +325,18 @@ function innerMessage(msg) {
 
 function friendlyError(e) {
   const msg = String(e?.message || e);
-  if (isPayment(e)) return 'Dein Gemini-Konto hat kein Guthaben (402). Die Abrechnung ist aktiv, aber das Vorauszahlungsguthaben steht auf 0 € – im Google AI Studio unter „Abrechnung“ Guthaben aufladen (z. B. 5 €, automatisches Aufladen aus). Danach wird dein monatliches Abo-Guthaben automatisch zuerst verbraucht.';
+  if (isPayment(e)) return 'Dein Gemini-Konto hat kein Guthaben (402). Die Abrechnung ist aktiv, aber das Vorauszahlungsguthaben steht auf 0 € – im Google AI Studio unter „Abrechnung“ Guthaben aufladen (z. B. 5 €, automatisches Aufladen aus). Danach wird dein monatliches Abo-Guthaben automatisch zuerst verbraucht. ⟨fix:AI Studio öffnen|https://aistudio.google.com/⟩';
   const q = isQuota(e) ? quotaInfo(e) : null;
   if (q && q.limit === 0) return `Dein Gemini-Schlüssel darf ${q.model || 'dieses Modell'} im kostenlosen Tarif nicht nutzen. JARVIS nimmt ab jetzt automatisch ein anderes Modell – bitte nochmal versuchen.`;
   if (isQuota(e) && isDaily(e)) return 'Das Tageskontingent deines Gemini-Schlüssels ist aufgebraucht (kostenloser Tarif). Es wird täglich um 9:00 Uhr deutscher Zeit zurückgesetzt – oder du aktivierst im Google AI Studio die Abrechnung für höhere Limits.';
-  if (isQuota(e)) return `Gemini-Limit erreicht: ${q.label}${q.model ? ` bei ${q.model}` : ''}${q.freeTier ? ' – kostenloser Tarif' : ''}. JARVIS hat andere Modelle probiert und eine Minute gewartet. Dauerhafte Lösung: im Google AI Studio die Abrechnung aktivieren (Tier 1).`;
+  if (isQuota(e)) return `Gemini-Limit erreicht: ${q.label}${q.model ? ` bei ${q.model}` : ''}${q.freeTier ? ' – kostenloser Tarif' : ''}. JARVIS hat andere Modelle probiert und eine Minute gewartet. Dauerhafte Lösung: im Google AI Studio die Abrechnung aktivieren (Tier 1). ⟨fix:AI Studio öffnen|https://aistudio.google.com/⟩`;
   if (isOverloaded(e)) return 'Gemini ist gerade überlastet (Google-Server, 503). JARVIS hat es mehrmals und mit anderen Gemini-Modellen versucht – tippe gleich auf „Nochmal versuchen“.';
-  if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED|401|403/i.test(msg)) return 'Der Gemini-API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen.';
+  if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED|401|403/i.test(msg)) return 'Der Gemini-API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen. ⟨fix:Einstellungen öffnen|action:settings⟩';
   if (/net::ERR|fetch failed|ENOTFOUND|ECONNRESET|ECONNREFUSED|network|ETIMEDOUT|EAI_AGAIN/i.test(msg)) return 'Keine Verbindung – Internetverbindung prüfen (Dienst nicht erreichbar).';
   if (/not found|404/i.test(msg) && /model/i.test(msg)) return 'Das gewählte Modell ist für deinen Schlüssel nicht verfügbar. Bitte Modellprüfung in den Einstellungen ausführen.';
   if (/aborted/i.test(msg)) return 'Abgebrochen.';
-  return innerMessage(msg).slice(0, 300);
+  const fix = (msg.match(/ ⟨fix:[^⟩]+⟩/) || [''])[0];
+  return innerMessage(msg.replace(fix, '')).slice(0, 360) + fix;
 }
 
 module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo };

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
 import { Copy, Volume2, CircleCheck, SquareCheckBig, Brain, Timer, Gamepad2, NotebookPen, Link as LinkIcon, BookOpen, CalendarDays, Undo2, X, Check, TriangleAlert, FileText, Mic, Wrench, ChevronDown, RotateCcw } from 'lucide-preact';
 import { rpc, useEvent } from '../lib/api.js';
 import { useStore, setState, getState, guard, toast, navigate } from '../lib/store.js';
+import { FixText } from './ui.jsx';
 import { renderMarkdown, onMarkdownClick } from '../lib/markdown.js';
 import { fmtTime } from '../lib/format.js';
 import { BrandMark } from './Shell.jsx';
@@ -145,7 +146,7 @@ function ConfirmCard({ card }) {
         {status === 'done' && <span class="small ok">Ausgeführt</span>}
         {status === 'declined' && <span class="small muted">Abgelehnt</span>}
         {status === 'expired' && <span class="small muted">Abgelaufen – bitte erneut anfragen</span>}
-        {status === 'error' && <span class="small err">Fehler: {c.error}</span>}
+        {status === 'error' && <span class="small err"><FixText text={'Fehler: ' + c.error} /></span>}
       </div>
     </div>
   );

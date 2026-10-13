@@ -96,6 +96,13 @@ class Scheduler {
     }, { heavy: true, initialDelayMs: 90_000 });
     // Client gerade gestartet → Matches gleich abgleichen (Spiele von unterwegs/anderen PCs)
     s.bus.on('game:client', ({ league }) => { if (league) setTimeout(() => this.runNow('lol-sync'), 25_000); });
+    // Täglicher Systemcheck: meldet Probleme (z. B. Google-API nicht aktiviert, Gemini ohne Guthaben) mit Lösung
+    this.add('diagnostics', 24 * 3600_000, async () => {
+      const list = await require('../services/diagnostics').runDiagnostics(s);
+      const bad = list.filter((x) => x.status === 'error');
+      s.system.setMeta('diagnostics:last', JSON.stringify({ at: new Date().toISOString(), list }));
+      if (bad.length) s.notifications.push({ category: 'system', origin: 'system', dedupeKey: 'diag:' + new Date().toISOString().slice(0, 10) + ':' + bad.map((x) => x.id).join(','), title: `Systemcheck: ${bad.length} Problem${bad.length > 1 ? 'e' : ''}`, body: bad.map((x) => `${x.name}: ${x.detail}`).join(' · ').slice(0, 400) + ' – Einstellungen → Systemcheck' });
+    }, { heavy: true, initialDelayMs: 3 * 60_000 });
     this.add('tarkovtracker', 30 * 60_000, async () => {
       if (!s.gaming.tracker.configured() || s.settings.get('gaming').tarkovTrackerSync === false) return;
       await s.gaming.tracker.sync();

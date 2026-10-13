@@ -28,7 +28,7 @@ class GoogleClient {
   clientCreds() {
     const clientId = this.settings.get('google').clientId;
     const secret = this.secrets.get('google.client_secret');
-    if (!clientId) throw new Error('Google OAuth-Client-ID fehlt (Einstellungen → Kalender & Google).');
+    if (!clientId) throw new Error('Google OAuth-Client-ID fehlt (Einstellungen → Kalender & Google). Anleitung: docs/GOOGLE_SETUP.md. ⟨fix:Zu den Einstellungen|action:settings⟩');
     return { clientId, secret };
   }
 
@@ -122,7 +122,7 @@ class GoogleClient {
     const r = await this.fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
     const tok = await r.json();
     if (!r.ok) {
-      if (tok.error === 'invalid_grant') { this.secrets.delete('google.refresh_token'); throw new Error('Google-Anmeldung abgelaufen – bitte neu verbinden'); }
+      if (tok.error === 'invalid_grant') { this.secrets.delete('google.refresh_token'); throw new Error('Google-Anmeldung abgelaufen – bitte neu verbinden. Passiert das alle 7 Tage, steht deine Google-App noch im „Testmodus“: In der Google Cloud Console unter „OAuth-Zustimmungsbildschirm“ auf „App veröffentlichen“ klicken. ⟨fix:Google neu verbinden|action:settings⟩'); }
       throw new Error('Token-Aktualisierung fehlgeschlagen: ' + (tok.error || r.status));
     }
     this.access = { token: tok.access_token, exp: Date.now() + (tok.expires_in - 60) * 1000 };
@@ -141,11 +141,7 @@ class GoogleClient {
       if ((r.status === 429 || r.status >= 500) && attempt < 2) { await new Promise((s) => setTimeout(s, 800 * (attempt + 1) ** 2)); continue; }
       if (r.status === 204) return null;
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const e = new Error(`Google API ${r.status}: ${data.error?.message || 'Fehler'}`);
-        e.status = r.status;
-        throw e;
-      }
+      if (!r.ok) throw googleError(r.status, data);
       return data;
     }
     throw new Error('Google API nicht erreichbar');
@@ -171,4 +167,33 @@ class GoogleClient {
   deleteEvent(calendarId, eventId) { return this.api('DELETE', `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`); }
 }
 
-module.exports = { GoogleClient, SCOPES };
+const API_NAMES = { 'drive.googleapis.com': 'Google Drive API', 'calendar-json.googleapis.com': 'Google Calendar API', 'people.googleapis.com': 'People API' };
+/**
+ * Google-Fehler in verständliche Meldungen mit Lösung übersetzen.
+ * e.fix = { label, url } → die Oberfläche zeigt daraus einen Knopf.
+ */
+function googleError(status, data) {
+  const msg = data?.error?.message || 'Fehler';
+  const details = data?.error?.details || [];
+  const reason = (data?.error?.errors || [])[0]?.reason || details.find((d) => d.reason)?.reason || '';
+  let e;
+  const disabled = /has not been used in project|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(msg + ' ' + reason);
+  if (disabled) {
+    const url = (msg.match(/https:\/\/console\.(?:developers|cloud)\.google\.com\/[^\s"]+/) || [])[0] || details.flatMap((d) => d.links || []).find((l) => /console/.test(l.url))?.url;
+    const svc = (msg.match(/(\w[\w-]*\.googleapis\.com)/) || [])[1] || details.find((d) => d.metadata?.service)?.metadata?.service || '';
+    const api = API_NAMES[svc] || (svc ? svc.replace('.googleapis.com', '') + '-API' : 'benötigte Google-API');
+    e = new Error(`Die ${api} ist in deinem Google-Cloud-Projekt noch nicht aktiviert. Einmal auf „Aktivieren“ klicken, 2–3 Minuten warten, dann erneut versuchen.`);
+    if (url && /^https:\/\/console\.(developers|cloud)\.google\.com\//.test(url)) { e.fix = { label: `${api} aktivieren`, url }; e.message += ` ⟨fix:${e.fix.label}|${url}⟩`; }
+  } else if (status === 403 && /insufficient|scope/i.test(msg + ' ' + reason)) {
+    e = new Error('JARVIS fehlt für diese Funktion eine Google-Berechtigung. Unter Einstellungen → Konten Google neu verbinden und alle Häkchen setzen.');
+    e.fix = { label: 'Google neu verbinden', action: 'google.connect' }; e.message += ' ⟨fix:Google neu verbinden|action:settings⟩';
+  } else if (status === 404) {
+    e = new Error(`Bei Google nicht gefunden (404): ${msg}`);
+  } else {
+    e = new Error(`Google API ${status}: ${msg}`);
+  }
+  e.status = status;
+  return e;
+}
+
+module.exports = { GoogleClient, SCOPES, googleError };

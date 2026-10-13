@@ -124,7 +124,7 @@ export function Modal({ title, sub, children, onClose, actions, width }) {
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
-  return <div class="toasts">{toasts.map((t) => <div key={t.id} class={`toast ${t.kind}`}>{t.text}</div>)}</div>;
+  return <div class="toasts">{toasts.map((t) => <div key={t.id} class={`toast ${t.kind}`}><FixText text={t.text} /></div>)}</div>;
 }
 
 export function Empty({ children }) { return <div class="empty">{children}</div>; }
@@ -181,5 +181,20 @@ export function AskHost() {
         ? <textarea class="ta" value={v} onInput={(e) => setV(e.currentTarget.value)} autofocus rows={5} />
         : <input class="inp" value={v} onInput={(e) => setV(e.currentTarget.value)} autofocus onKeyDown={(e) => { if (e.key === 'Enter') done(v); }} />)}
     </Modal>
+  );
+}
+
+/** Fehlertext mit Lösungs-Knopf: „… ⟨fix:Label|https://…⟩“ oder „⟨fix:Label|action:settings⟩“. Links im Text werden klickbar. */
+export function FixText({ text, class: cls }) {
+  const str = String(text ?? '');
+  const m = str.match(/\s*⟨fix:([^|⟩]+)\|([^⟩]+)⟩/);
+  const body = m ? str.replace(m[0], '') : str;
+  const parts = body.split(/(https:\/\/[^\s)]+)/g);
+  const go = (target) => (target.startsWith('action:') ? import('../lib/store.js').then(({ setState }) => setState({ page: target.slice(7) })) : import('../lib/api.js').then(({ rpc }) => rpc('shell.openExternal', { url: target })));
+  return (
+    <span class={cls}>
+      {parts.map((p) => (/^https:\/\//.test(p) ? <a onClick={() => go(p)} title={p}>{p.replace(/^https:\/\//, '').slice(0, 48)}{p.length > 56 ? '…' : ''}</a> : p))}
+      {m && <button class="btn xs fix-btn" onClick={(e) => { e.stopPropagation(); go(m[2].trim()); }}>{m[1].trim()}</button>}
+    </span>
   );
 }
