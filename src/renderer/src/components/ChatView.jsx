@@ -7,6 +7,7 @@ import { fmtTime } from '../lib/format.js';
 import { BrandMark } from './Shell.jsx';
 
 const TOOL_LABEL = {
+  quota_wait: 'Gemini-Minutenlimit erreicht – JARVIS wartet kurz und versucht es dann automatisch erneut',
   get_today_overview: 'Tagesüberblick', list_tasks: 'Aufgaben', create_task: 'Aufgabe anlegen', update_task: 'Aufgabe ändern', complete_task: 'Aufgabe abhaken', list_events: 'Kalender',
   find_free_slots: 'Freie Zeiten', create_event: 'Termin vorbereiten', schedule_events: 'Termine planen', search_brain: 'Brain-Suche', remember: 'Merken', search_study: 'Studium durchsuchen',
   read_document: 'Dokument lesen', web_research: 'Webrecherche', read_webpage: 'Webseite lesen', save_webpage: 'Quelle speichern', set_game_context: 'Spielkontext', show_game_widget: 'Gaming-Widget',
@@ -29,6 +30,8 @@ export function useConversation(cid) {
   useEvent('message:update', (m) => { if (m.conversationId === cid) setMsgs((x) => x.map((y) => (y.id === m.id ? m : y))); }, [cid]);
   useEvent('chat:delta', (d) => { if (d.conversationId === cid) setMsgs((x) => x.map((y) => (y.id === d.messageId ? { ...y, content: y.content + d.delta } : y))); }, [cid]);
   useEvent('chat:card', (d) => { if (d.conversationId === cid) setMsgs((x) => x.map((y) => (y.id === d.messageId ? { ...y, meta: { ...y.meta, cards: [...(y.meta?.cards || []), d.card] } } : y))); }, [cid]);
+  useEvent('chat:done', (d) => { if (d.conversationId === cid) setTools((t) => ({ ...t, [d.messageId]: null })); }, [cid]);
+  useEvent('chat:delta', (d) => { if (d.conversationId === cid) setTools((t) => (t[d.messageId] === 'quota_wait' ? { ...t, [d.messageId]: null } : t)); }, [cid]);
   useEvent('chat:tool', (d) => { if (d.conversationId === cid) setTools((t) => ({ ...t, [d.messageId]: d.state === 'running' ? d.name : null })); }, [cid]);
   useEvent('voice:transcript', (t) => { if (t.role === 'done') setLive(null); else setLive((l) => ({ ...(l || {}), [t.role]: t.text })); }, [cid]);
   return { msgs, tools, live };

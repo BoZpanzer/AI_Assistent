@@ -625,3 +625,26 @@ test('Gemini überlastet (503): erneut versuchen, dann anderes Gemini-Modell; le
   assert.ok(core.conversations.history(conv.id).every((t) => !t.parts.some((p) => /⚠️/.test(p.text || ''))), 'Fehlermeldungen nicht im Verlauf ans Modell');
   cleanup();
 });
+
+test('Gemini 429: „limit 0“-Modell wird übersprungen, Minutenlimit → abwarten statt Fehler, Meldung nennt das Limit', async () => {
+  const { quotaInfo, friendlyError } = require('../src/main/providers/gemini');
+  const err = (txt) => Object.assign(new Error(txt), { status: 429 });
+  const zero = () => err('{"error":{"code":429,"message":"You exceeded your current quota. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro","status":"RESOURCE_EXHAUSTED"}}');
+  const minute = () => err('{"error":{"code":429,"message":"Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10, model: gemini-3.8-flash. Please retry in 21.5s.","status":"RESOURCE_EXHAUSTED","details":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}}');
+  assert.equal(quotaInfo(zero()).limit, 0);
+  assert.equal(quotaInfo(minute()).perDay, false); assert.equal(quotaInfo(minute()).limit, 10);
+  assert.match(friendlyError(minute()), /Anfragen pro Minute \(Limit 10\)/);
+  const { core, cleanup } = tempCore();
+  const g = core.gemini; const waits = [];
+  g.sleep = async (ms) => { waits.push(ms); };
+  core.settings.update({ availableModels: ['gemini-3.1-pro', 'gemini-3.8-flash', 'gemini-3.8-flash-lite'], models: { reasoning: '', fast: '' } });
+  assert.equal(g.model('reasoning'), 'gemini-3.1-pro');
+  const r = await g.withFallback('gemini-3.1-pro', async (m) => { if (m === 'gemini-3.1-pro') throw zero(); return m; });
+  assert.equal(r, 'gemini-3.8-flash');
+  assert.notEqual(g.model('reasoning'), 'gemini-3.1-pro', 'Pro wird danach direkt übersprungen');
+  // Minutenlimit überall → einmal warten (mit Hinweis), dann klappt es
+  let round = 0; const notices = [];
+  const out = await g.withFallback('gemini-3.8-flash', async (m) => { if (round < 2) { round++; throw minute(); } return 'ok:' + m; }, { onWait: (ms) => notices.push(ms) });
+  assert.match(out, /^ok:/); assert.equal(notices.length, 1); assert.ok(notices[0] >= 20000 && notices[0] <= 65000);
+  cleanup();
+});

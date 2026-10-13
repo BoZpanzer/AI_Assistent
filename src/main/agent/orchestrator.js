@@ -134,6 +134,7 @@ class Orchestrator {
       for (let step = 0; step < MAX_STEPS; step++) {
         const r = await gemini.stepStream({
           model, system: this.system(channel, text), contents, tools: this.declarations(), signal: ac.signal,
+          onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),
           onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); },
         });
         contents.push({ role: 'model', parts: r.parts.length ? r.parts : [{ text: r.text || '' }] });

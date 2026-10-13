@@ -47,8 +47,28 @@ class Gemini {
 
   model(role) {
     const m = this.settings.get('models') || {};
-    if (role === 'liveThinking') return pickModel('liveThinking', this.settings.get('availableModels') || []);
-    return m[role] || pickModel(role, this.settings.get('availableModels') || []) || '';
+    const all = this.settings.get('availableModels') || [];
+    const avail = all.filter((n) => !this.blocked(String(n).replace(/^models\//, '')));
+    if (role === 'liveThinking') return pickModel('liveThinking', avail);
+    const anyFlash = avail.map((n) => String(n).replace(/^models\//, '')).find((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|lite)/.test(n));
+    const chosen = m[role] || pickModel(role, avail) || (['fast', 'research', 'reasoning'].includes(role) ? anyFlash : null) || pickModel(role, all) || '';
+    // Reasoning-Modell gerade nicht nutzbar (z. B. nicht im kostenlosen Tarif) → schnelles Modell
+    if (role === 'reasoning' && (!chosen || this.blocked(chosen))) return this.model('fast');
+    return chosen;
+  }
+
+  /** Modelle, für die Google „limit: 0“ meldet (nicht im Tarif) oder deren Tageskontingent leer ist. */
+  blocked(model) {
+    const b = this._blocked || (this._blocked = new Map());
+    const until = b.get(model);
+    if (until && until > Date.now()) return true;
+    if (until) b.delete(model);
+    return false;
+  }
+  block(model, ms, why) {
+    if (!model) return;
+    (this._blocked || (this._blocked = new Map())).set(model, Date.now() + ms);
+    log.warn(`Modell ${model} vorübergehend übersprungen: ${why}`);
   }
 
   requireModel(role) {
@@ -93,7 +113,7 @@ class Gemini {
    * Streams one model step. Returns { parts, text, functionCalls, finishReason }.
    * `onText` receives incremental text.
    */
-  async stepStream({ model, system, contents, tools, temperature, onText, signal, thinking }) {
+  async stepStream({ model, system, contents, tools, temperature, onText, signal, thinking, onWait }) {
     const config = { systemInstruction: system, temperature: temperature ?? this.settings.get('temperature') };
     if (tools?.length) config.tools = tools;
     if (thinking) config.thinkingConfig = thinking;
@@ -103,7 +123,7 @@ class Gemini {
       const s = await this.client().models.generateContentStream({ model: m, contents, config });
       const iter = s[Symbol.asyncIterator]();
       return { it: iter, first: await iter.next() };
-    });
+    }, { onWait });
     const chunks = (async function* () { if (!first.done) { yield first.value; for (let n = await it.next(); !n.done; n = await it.next()) yield n.value; } })();
     const parts = []; let text = ''; let finishReason; let last;
     for await (const chunk of chunks) {
@@ -167,37 +187,56 @@ class Gemini {
    * - 429 Minutenlimit: Wartezeit aus der Antwort abwarten, sonst ein anderes Flash-Modell (eigenes Kontingent)
    * Fehler wie ungültiger Schlüssel werden sofort gemeldet.
    */
-  async withFallback(model, fn, { sleep = (ms) => new Promise((res) => setTimeout(res, ms)) } = {}) {
+  async withFallback(model, fn, { sleep = this.sleep || ((ms) => new Promise((res) => setTimeout(res, ms))), onWait, maxWaitMs = 65000 } = {}) {
     const avail = (this.settings.get('availableModels') || []).map((n) => String(n).replace(/^models\//, ''));
     const usable = (n) => !/(image|tts|live|audio|embedding|thinking-exp|vision|aqa|imagen|veo)/.test(n);
     const flash = avail.filter((n) => /flash/.test(n) && usable(n)).sort((a, b) => (/lite/.test(a) - /lite/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
     const pro = avail.filter((n) => /pro/.test(n) && usable(n)).sort((a, b) => b.localeCompare(a, 'en', { numeric: true }));
-    let last;
-    const tried = new Set();
-    const chainFor = (e) => [...new Set([model, ...(isOverloaded(e) ? [...flash.slice(0, 2), ...pro.slice(0, 1), ...flash.slice(2)] : flash)])].filter(Boolean).slice(0, 5);
-    let chain = [model];
-    for (let i = 0; i < chain.length; i++) {
-      const m = chain[i];
-      if (tried.has(m)) continue;
-      tried.add(m);
-      const tries = i === 0 ? 3 : 2; // Hauptmodell: 2 Wiederholungen, Ausweichmodelle: 1
-      for (let attempt = 0; attempt < tries; attempt++) {
-        try {
-          const r = await fn(m);
-          if (m !== model) log.info(`${model} ${isOverloaded(last) ? 'überlastet' : 'Kontingent erschöpft'} – Ausweichmodell ${m} verwendet`);
-          return r;
-        } catch (e) {
-          if (/aborted|AbortError/i.test(String(e?.name) + String(e?.message))) throw e;
-          if (!isQuota(e) && !isOverloaded(e)) throw e;
-          last = e;
-          if (i === 0) chain = chainFor(e);
-          if (isOverloaded(e) && attempt < tries - 1) { await sleep(attempt === 0 ? 1500 : 4000); continue; }
-          const wait = retryDelayMs(e);
-          if (isQuota(e) && attempt === 0 && !isDaily(e) && wait != null && wait <= 12000) { await sleep(wait + 300); continue; }
-          break;
+    let last; let waited = 0;
+    for (let round = 0; round < 2; round++) {
+      const first = this.blocked(model) ? (flash.find((f) => !this.blocked(f)) || model) : model;
+      let chain = [first];
+      const tried = new Set();
+      let minWait = null;
+      for (let i = 0; i < chain.length; i++) {
+        const m = chain[i];
+        if (tried.has(m) || (i > 0 && this.blocked(m))) continue;
+        tried.add(m);
+        const tries = i === 0 ? 3 : 2; // Hauptmodell: 2 Wiederholungen, Ausweichmodelle: 1
+        for (let attempt = 0; attempt < tries; attempt++) {
+          try {
+            const r = await fn(m);
+            if (m !== model) log.info(`${model} nicht nutzbar (${last ? quotaInfo(last).label || 'Fehler' : 'übersprungen'}) – Ausweichmodell ${m} verwendet`);
+            return r;
+          } catch (e) {
+            if (/aborted|AbortError/i.test(String(e?.name) + String(e?.message))) throw e;
+            if (!isQuota(e) && !isOverloaded(e)) throw e;
+            last = e;
+            if (i === 0 && chain.length === 1) chain = [...new Set([m, ...(isOverloaded(e) ? [...flash.slice(0, 2), ...pro.slice(0, 1), ...flash.slice(2)] : flash)])].filter(Boolean).slice(0, 5);
+            if (isOverloaded(e) && attempt < tries - 1) { await sleep(attempt === 0 ? 1500 : 4000); continue; }
+            if (isQuota(e)) {
+              const q = quotaInfo(e);
+              if (q.limit === 0) { this.block(m, 24 * 3600_000, 'im aktuellen Tarif nicht verfügbar (limit: 0)'); break; }
+              if (q.perDay) { this.block(m, 6 * 3600_000, 'Tageskontingent aufgebraucht'); break; }
+              const wait = retryDelayMs(e);
+              if (wait != null) minWait = minWait == null ? wait : Math.min(minWait, wait);
+              if (attempt === 0 && wait != null && wait <= 12000) { await sleep(wait + 300); continue; }
+            }
+            break;
+          }
         }
       }
+      // Alle Modelle im Minutenlimit → einmal abwarten statt aufzugeben (mit Hinweis im Chat)
+      if (round === 0 && isQuota(last) && !quotaInfo(last).perDay && quotaInfo(last).limit !== 0) {
+        const ms = Math.min(maxWaitMs, (minWait ?? 30000) + 1000);
+        onWait?.(ms);
+        waited += ms;
+        await sleep(ms);
+        continue;
+      }
+      break;
     }
+    if (last) last.quota = quotaInfo(last);
     throw last;
   }
 
@@ -251,6 +290,19 @@ class Gemini {
 /** 503/500/504 – Gemini überlastet oder kurz nicht erreichbar (nicht dein Kontingent). */
 function isOverloaded(e) { const m = String(e?.message || e); return [500, 502, 503, 504].includes(e?.status) || /\b(500|502|503|504)\b|UNAVAILABLE|overloaded|high demand|Service Unavailable|INTERNAL|DEADLINE_EXCEEDED/i.test(m); }
 function isQuota(e) { return /RESOURCE_EXHAUSTED|quota|\b429\b/i.test(String(e?.message || e)) || e?.status === 429; }
+/** Liest aus Googles Fehler, welches Limit gegriffen hat (Anfragen/Token, pro Minute/Tag, Wert, Modell). */
+function quotaInfo(e) {
+  const msg = String(e?.message || e || '');
+  const metric = (msg.match(/quota_?metric["\s:]*"?([\w./-]+)/i) || msg.match(/metric:\s*([\w./-]+)/i) || [])[1] || '';
+  const qid = (msg.match(/quota_?id["\s:]*"?([\w-]+)/i) || [])[1] || '';
+  const lim = msg.match(/limit:\s*(\d+)/i) || msg.match(/quota_?value["\s:]*"?(\d+)/i);
+  const model = (msg.match(/model:\s*([\w.-]+)/i) || msg.match(/"model"\s*:\s*"([\w.-]+)"/i) || [])[1] || null;
+  const perDay = /PerDay|per day|daily/i.test(qid + ' ' + msg);
+  const tokens = /token/i.test(metric + qid);
+  const limit = lim ? Number(lim[1]) : null;
+  const label = limit === 0 ? 'Modell im kostenlosen Tarif nicht freigeschaltet' : `${tokens ? 'Token' : 'Anfragen'} pro ${perDay ? 'Tag' : 'Minute'}${limit ? ` (Limit ${limit})` : ''}`;
+  return { metric, quotaId: qid, limit, model, perDay, tokens, freeTier: /free_?tier/i.test(metric + qid), label };
+}
 function isDaily(e) { return /PerDay|per day|daily/i.test(String(e?.message || e)); }
 function retryDelayMs(e) {
   const m = String(e?.message || e).match(/retry(?:Delay)?["\s:]*(?:in\s*)?"?([\d.]+)\s*s/i);
@@ -268,8 +320,10 @@ function innerMessage(msg) {
 
 function friendlyError(e) {
   const msg = String(e?.message || e);
+  const q = isQuota(e) ? quotaInfo(e) : null;
+  if (q && q.limit === 0) return `Dein Gemini-Schlüssel darf ${q.model || 'dieses Modell'} im kostenlosen Tarif nicht nutzen. JARVIS nimmt ab jetzt automatisch ein anderes Modell – bitte nochmal versuchen.`;
   if (isQuota(e) && isDaily(e)) return 'Das Tageskontingent deines Gemini-Schlüssels ist aufgebraucht (kostenloser Tarif). Es wird täglich um 9:00 Uhr deutscher Zeit zurückgesetzt – oder du aktivierst im Google AI Studio die Abrechnung für höhere Limits.';
-  if (isQuota(e)) return 'Gemini-Limit pro Minute erreicht (429) – JARVIS hat schon Ausweichmodelle probiert. Bitte eine Minute warten und nochmal versuchen.';
+  if (isQuota(e)) return `Gemini-Limit erreicht: ${q.label}${q.model ? ` bei ${q.model}` : ''}${q.freeTier ? ' – kostenloser Tarif' : ''}. JARVIS hat andere Modelle probiert und eine Minute gewartet. Dauerhafte Lösung: im Google AI Studio die Abrechnung aktivieren (Tier 1).`;
   if (isOverloaded(e)) return 'Gemini ist gerade überlastet (Google-Server, 503). JARVIS hat es mehrmals und mit anderen Gemini-Modellen versucht – tippe gleich auf „Nochmal versuchen“.';
   if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED|401|403/i.test(msg)) return 'Der Gemini-API-Schlüssel wurde abgelehnt. Bitte in den Einstellungen prüfen.';
   if (/net::ERR|fetch failed|ENOTFOUND|ECONNRESET|ECONNREFUSED|network|ETIMEDOUT|EAI_AGAIN/i.test(msg)) return 'Keine Verbindung – Internetverbindung prüfen (Dienst nicht erreichbar).';
@@ -278,4 +332,4 @@ function friendlyError(e) {
   return innerMessage(msg).slice(0, 300);
 }
 
-module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, retryDelayMs };
+module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, retryDelayMs, quotaInfo };
