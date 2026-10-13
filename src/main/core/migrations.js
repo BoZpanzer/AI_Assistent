@@ -182,4 +182,9 @@ module.exports = [
       tips TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(game, ref));
     CREATE TABLE screenshots(id TEXT PRIMARY KEY, file TEXT NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', game TEXT, created_at TEXT NOT NULL);
   `),
+  // v4 — Terminfarben (Google colorId) und Termintyp (z. B. Geburtstag)
+  (db) => db.exec(`
+    ALTER TABLE events ADD COLUMN color TEXT;
+    ALTER TABLE events ADD COLUMN event_type TEXT;
+  `),
 ];

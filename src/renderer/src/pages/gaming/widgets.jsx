@@ -106,7 +106,7 @@ function MapWidget({ game, params }) {
     <div class={full ? 'overlay' : ''} style={full ? { placeItems: 'stretch', padding: 30 } : undefined}>
       <Panel icon={MapIcon} title={game.name} sub={isEft ? 'Interaktive Karte · eigene Marker' : 'Interaktive Karte'} glow={full} style={full ? { height: '100%' } : undefined}
         right={<div class="row gap-s">
-          <select class="sel" style={{ width: 170 }} value={map} onChange={(e) => setMap(e.currentTarget.value)}>{options.map((o) => <option value={o.value}>Karte: {o.label}</option>)}</select>
+          <Select style={{ width: 170 }} value={map} onChange={setMap} options={options.map((o) => ({ value: o.value, label: 'Karte: ' + o.label }))} />
           <button class="btn sm" onClick={() => setFull(!full)}>{full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}{full ? 'Schließen' : 'Vollbild'}</button>
         </div>}>
         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, height: full ? 'calc(100% - 10px)' : 380 }}>
@@ -156,7 +156,7 @@ function TarkovRaid({ game, params }) {
   const [data, , st] = useRpc('tarkov.map', { map }, { deps: [map] });
   const m = data?.map;
   return (
-    <Panel title="Raid-Status & Intelligente Hilfe" sub="Kartenwissen (keine Live-Raid-Daten verfügbar)" right={<select class="sel" style={{ width: 150 }} value={map} onChange={(e) => setMap(e.currentTarget.value)}>{(maps?.maps || [{ id: map, name: map }]).map((x) => <option value={x.id}>{x.name}</option>)}</select>}>
+    <Panel title="Raid-Status & Intelligente Hilfe" sub="Kartenwissen (keine Live-Raid-Daten verfügbar)" right={<Select style={{ width: 150 }} value={map} onChange={setMap} options={(maps?.maps || [{ id: map, name: map }]).map((x) => ({ value: x.id, label: x.name }))} />}>
       <div class="tabs sm">{[['overview', 'Übersicht'], ['exits', 'Exits'], ['keys', 'Schlüssel'], ['bosses', 'Bosse']].map(([k, l]) => <button class={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       {!m && !st.error && <div class="mt"><Spinner /></div>}
@@ -285,7 +285,7 @@ function Timers({ game, params }) {
       </div>
       <div class="row mt gap-s">
         <input class="inp grow" placeholder="z. B. Rathaus Stufe 22" value={f.label} onInput={(e) => setF({ ...f, label: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <select class="sel" style={{ width: 120 }} value={f.kind} onChange={(e) => setF({ ...f, kind: e.currentTarget.value })}>{kinds.map((k) => <option value={k}>{TIMER_KINDS[k]?.[0] || k}</option>)}</select>
+        <Select style={{ width: 120 }} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={kinds.map((k) => ({ value: k, label: TIMER_KINDS[k]?.[0] || k }))} />
         <input class="inp" type="number" min="0" style={{ width: 60 }} value={f.h} onInput={(e) => setF({ ...f, h: e.currentTarget.value })} title="Stunden" /><span class="tiny muted">h</span>
         <input class="inp" type="number" min="0" max="59" style={{ width: 60 }} value={f.m} onInput={(e) => setF({ ...f, m: e.currentTarget.value })} title="Minuten" /><span class="tiny muted">m</span>
         <button class="btn sm" onClick={add}><Plus size={14} /></button>
@@ -617,10 +617,10 @@ function Progress({ game, params }) {
         ))}
       </div>
       <div class="row wrap gap-s mt">
-        <select class="sel" style={{ width: 130 }} value={f.category} onChange={(e) => setF({ ...f, category: e.currentTarget.value })}>{Object.entries(cats).map(([k, l]) => <option value={k}>{l}</option>)}</select>
+        <Select style={{ width: 130 }} value={f.category} onChange={(v) => setF({ ...f, category: v })} options={Object.entries(cats).map(([k, l]) => ({ value: k, label: l }))} />
         <input class="inp grow" style={{ minWidth: 140 }} placeholder="Name (z. B. Sun Tzu)" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <input class="inp" style={{ width: 120 }} placeholder="Stand (Level 40)" value={f.value} onInput={(e) => setF({ ...f, value: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <select class="sel" style={{ width: 105 }} value={f.status} onChange={(e) => setF({ ...f, status: e.currentTarget.value })}><option value="">–</option><option value="done">erledigt</option><option value="in_progress">in Arbeit</option><option value="todo">offen</option></select>
+        <Select style={{ width: 105 }} value={f.status} onChange={(v) => setF({ ...f, status: v })} options={[{ value: '', label: '–' }, { value: 'done', label: 'erledigt' }, { value: 'in_progress', label: 'in Arbeit' }, { value: 'todo', label: 'offen' }]} />
         <button class="btn sm" onClick={add}><Plus size={14} /></button>
       </div>
     </Panel>
@@ -643,7 +643,7 @@ function RokPlanner({ game }) {
       ))}
       {!goals.length && <Empty>Lege Ziele an, z. B. „Rathaus 25“, „Forschung: Ausrüstung“ oder „Kommandant Sun Tzu auf 5-1-1-1“.</Empty>}
       <div class="row gap-s mt">
-        <select class="sel" style={{ width: 140 }} value={cat} onChange={(e) => setCat(e.currentTarget.value)}>{CATS2.map((c) => <option>{c}</option>)}</select>
+        <Select style={{ width: 140 }} value={cat} onChange={setCat} options={CATS2} />
         <input class="inp grow" placeholder="Ziel hinzufügen (Enter)" value={t} onInput={(e) => setT(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter' && t.trim()) { save([...goals, { text: t.trim(), category: cat, done: false }]); setT(''); } }} />
       </div>
       <button class="btn xs mt" onClick={() => setState({ page: 'chat', chatDraft: 'Hilf mir, meine Rise-of-Kingdoms-Entwicklung zu priorisieren. Recherchiere aktuelle Empfehlungen (mit Quellen) für: ' })}><Sparkles size={12} />Kommandanten/Strategie recherchieren</button>

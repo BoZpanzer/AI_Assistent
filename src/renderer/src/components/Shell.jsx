@@ -4,7 +4,7 @@ import { useStore, navigate, setState, toast, guard, getState } from '../lib/sto
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { audio } from '../lib/audio.js';
 import { fmtTime, relDay, ago } from '../lib/format.js';
-import { Modal, Field } from './ui.jsx';
+import { Modal, Field, Toggle } from './ui.jsx';
 import { MiniChat } from './ChatView.jsx';
 
 export const PAGES = [
@@ -301,34 +301,75 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
   );
 }
 
+const EV_COLORS = [['auto', 'Automatisch', null], ['1', 'Lavendel', '#7986cb'], ['2', 'Salbei', '#33b679'], ['3', 'Traube', '#8e24aa'], ['4', 'Flamingo', '#e67c73'], ['5', 'Banane', '#f6bf26'], ['6', 'Mandarine', '#f4511e'], ['7', 'Pfau', '#039be5'], ['8', 'Graphit', '#616161'], ['9', 'Heidelbeere', '#3f51b5'], ['10', 'Basilikum', '#0b8043'], ['11', 'Tomate', '#d50000']];
+const REPEAT = [['', 'Nie'], ['daily', 'Täglich'], ['weekly', 'Wöchentlich'], ['monthly', 'Monatlich'], ['yearly', 'Jährlich']];
+const isBirthday = (t) => /geburtstag|birthday|\bgeb\.?\b/i.test(t || '');
+
 export function QuickEventModal() {
   const q = useStore((s) => s.quickEvent);
   const [f, setF] = useState(null);
+  const [touched, setTouched] = useState({});
   useEffect(() => {
     if (q) {
       let s = new Date(); s.setMinutes(0, 0, 0); s.setHours(s.getHours() + 1);
       if (q.start) s = new Date(q.start);
-      setF({ title: q.title || '', start: toLocal(s), end: toLocal(new Date(s.getTime() + 3600000)), location: '', allDay: false, ...(q.event ? fromEvent(q.event) : {}) });
+      const base = { title: q.title || '', start: toLocal(s), end: toLocal(new Date(s.getTime() + 3600000)), day: toDay(s), dayEnd: toDay(s), location: '', allDay: !!q.allDay, repeat: '', color: 'auto' };
+      setF({ ...base, ...(q.event ? fromEvent(q.event) : {}) });
+      setTouched({});
     }
   }, [q]);
   if (!q || !f) return null;
   const editing = q.event?.id;
+  const recurring = editing && q.event?.recurring;
   const close = () => setState({ quickEvent: null });
+  const set = (patch) => setF((x) => {
+    const n = { ...x, ...patch };
+    // Geburtstag erkannt → ganztägig + jährlich vorschlagen (solange nicht selbst geändert)
+    if (!editing && patch.title !== undefined && isBirthday(patch.title) && !isBirthday(x.title)) {
+      if (!touched.allDay) n.allDay = true;
+      if (!touched.repeat) n.repeat = 'yearly';
+    }
+    return n;
+  });
   const save = async () => {
-    const body = { title: f.title, start: new Date(f.start).toISOString(), end: new Date(f.end).toISOString(), location: f.location, allDay: f.allDay, description: f.description || '' };
+    let start, end;
+    if (f.allDay) {
+      start = new Date(f.day + 'T00:00:00');
+      const last = new Date((f.dayEnd && f.dayEnd >= f.day ? f.dayEnd : f.day) + 'T00:00:00'); last.setDate(last.getDate() + 1);
+      end = last;
+    } else { start = new Date(f.start); end = new Date(f.end); if (end <= start) end = new Date(start.getTime() + 3600000); }
+    const body = { title: f.title, start: start.toISOString(), end: end.toISOString(), location: f.location, allDay: f.allDay, description: f.description || '', color: f.color || 'auto' };
+    if (!recurring) body.recurrence = f.repeat ? { freq: f.repeat, interval: 1 } : null;
+    if (editing && !touched.repeat) delete body.recurrence;
     const r = await guard(() => (editing ? rpc('calendar.update', { id: q.event.id, patch: body }) : rpc('calendar.create', body)), editing ? 'Termin aktualisiert' : 'Termin eingetragen');
     if (r) close();
   };
+  const ro = q.event?.readOnly;
   return (
-    <Modal title={editing ? 'Termin bearbeiten' : 'Neuer Kalendereintrag'} sub={getState().google.connected ? 'Wird mit Google Kalender synchronisiert' : 'Nur lokal – Google in den Einstellungen verbinden'} onClose={close}
-      actions={<>{editing && <button class="btn sm danger" onClick={async () => { if (await guard(() => rpc('calendar.remove', { id: q.event.id }), 'Termin gelöscht')) close(); }}>Löschen</button>}<button class="btn sm ghost" onClick={close}>Abbrechen</button><button class="btn sm primary" onClick={save} disabled={!f.title}>Speichern</button></>}>
-      <Field label="Titel" wide><input class="inp" value={f.title} onInput={(e) => setF({ ...f, title: e.currentTarget.value })} autofocus /></Field>
-      <Field label="Beginn" wide><input class="inp" type="datetime-local" value={f.start} onInput={(e) => setF({ ...f, start: e.currentTarget.value })} /></Field>
-      <Field label="Ende" wide><input class="inp" type="datetime-local" value={f.end} onInput={(e) => setF({ ...f, end: e.currentTarget.value })} /></Field>
-      <Field label="Ort" wide><input class="inp" value={f.location} onInput={(e) => setF({ ...f, location: e.currentTarget.value })} /></Field>
-      <Field label="Notiz" wide><textarea class="ta" value={f.description || ''} onInput={(e) => setF({ ...f, description: e.currentTarget.value })} /></Field>
+    <Modal title={editing ? (ro ? 'Termin' : 'Termin bearbeiten') : 'Neuer Kalendereintrag'} sub={ro ? 'Aus einem abonnierten Kalender – schreibgeschützt' : getState().google.connected ? 'Wird mit Google Kalender synchronisiert' : 'Nur lokal – Google in den Einstellungen verbinden'} onClose={close}
+      actions={ro ? <button class="btn sm" onClick={close}>Schließen</button> : <>{editing && <button class="btn sm danger" onClick={async () => { if (await guard(() => rpc('calendar.remove', { id: q.event.id }), 'Termin gelöscht')) close(); }}>Löschen</button>}<button class="btn sm ghost" onClick={close}>Abbrechen</button><button class="btn sm primary" onClick={save} disabled={!f.title}>Speichern</button></>}>
+      <Field label="Titel" wide><input class="inp" value={f.title} onInput={(e) => set({ title: e.currentTarget.value })} placeholder="z. B. Geburtstag Mama, Klausur Mathe II …" autofocus /></Field>
+      <Field label="Ganztägig"><Toggle checked={f.allDay} onChange={(v) => { setTouched({ ...touched, allDay: true }); set({ allDay: v }); }} /></Field>
+      {f.allDay ? <>
+        <Field label="Datum" wide><input class="inp" type="date" value={f.day} onInput={(e) => set({ day: e.currentTarget.value, dayEnd: f.dayEnd < e.currentTarget.value ? e.currentTarget.value : f.dayEnd })} /></Field>
+        <Field label="Bis einschließlich" hint="für mehrtägige Einträge, z. B. Urlaub" wide><input class="inp" type="date" value={f.dayEnd} min={f.day} onInput={(e) => set({ dayEnd: e.currentTarget.value })} /></Field>
+      </> : <>
+        <Field label="Beginn" wide><input class="inp" type="datetime-local" value={f.start} onInput={(e) => { const v = e.currentTarget.value; const dur = Date.parse(f.end) - Date.parse(f.start); set({ start: v, end: dur > 0 ? toLocal(new Date(Date.parse(v) + dur)) : f.end }); }} /></Field>
+        <Field label="Ende" wide><input class="inp" type="datetime-local" value={f.end} onInput={(e) => set({ end: e.currentTarget.value })} /></Field>
+      </>}
+      {!recurring && <Field label="Wiederholen" wide><div class="seg">{REPEAT.map(([v, l]) => <button type="button" class={f.repeat === v ? 'active' : ''} onClick={() => { setTouched({ ...touched, repeat: true }); set({ repeat: v }); }}>{l}</button>)}</div></Field>}
+      {recurring && <div class="tiny muted">Serientermin – Änderungen gelten für die ganze Serie.</div>}
+      <Field label="Farbe" hint={f.color === 'auto' ? 'Automatisch: Geburtstage rosa 🎂, Feiertage grün, Prüfungen rot, Lernen lila …' : undefined} wide>
+        <div class="swatches">{EV_COLORS.map(([id, name, hex]) => <button type="button" title={name} class={`sw ${f.color === id ? 'on' : ''} ${id === 'auto' ? 'auto' : ''}`} style={hex ? { background: hex } : undefined} onClick={() => set({ color: id })}>{id === 'auto' ? 'A' : ''}</button>)}</div>
+      </Field>
+      <Field label="Ort" wide><input class="inp" value={f.location} onInput={(e) => set({ location: e.currentTarget.value })} /></Field>
+      <Field label="Notiz" wide><textarea class="ta" value={f.description || ''} onInput={(e) => set({ description: e.currentTarget.value })} /></Field>
     </Modal>
   );
 }
+function toDay(d) { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
 function toLocal(d) { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
-function fromEvent(e) { return { title: e.title, start: toLocal(new Date(e.start)), end: toLocal(new Date(e.end)), location: e.location || '', description: e.description || '', allDay: e.allDay }; }
+function fromEvent(e) {
+  const s = new Date(e.start); const en = new Date(e.end); const last = new Date(en.getTime() - 1);
+  return { title: e.title, start: toLocal(s), end: toLocal(en), day: toDay(s), dayEnd: toDay(e.allDay ? last : s), location: e.location || '', description: e.description || '', allDay: !!e.allDay, color: e.colorId || 'auto', repeat: e.recurrence?.freq || '' };
+}

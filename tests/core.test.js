@@ -10,7 +10,7 @@ const { redact } = require('../src/main/core/logger');
 
 test('Datenbank: Migration, Schema-Version, Backup vor Migration', () => {
   const { core, cleanup } = tempCore();
-  assert.equal(core.db.version, 3);
+  assert.equal(core.db.version, 4);
   const snap = core.db.snapshot('test');
   assert.ok(fs.existsSync(snap));
   cleanup();
@@ -278,5 +278,30 @@ test('Benachrichtigungen: Ruhezeiten, Deduplizierung', () => {
   core.notifications.push({ title: 'B' });
   assert.equal(toasts.length, 1, 'Ruhezeit unterdrückt Toast');
   assert.equal(core.notifications.unreadCount(), 2);
+  cleanup();
+});
+
+test('Kalender: ganztägige Termine, Geburtstags-/Kategorie-Farben, eigene Farbe, jährliche Wiederholung', async () => {
+  const { core, cleanup } = tempCore();
+  const day = new Date(2026, 10, 20, 15, 30); // 20.11.2026 15:30 lokal
+  const b = await core.calendar.create({ title: 'Geburtstag Mama', start: day.toISOString(), allDay: true, recurrence: { freq: 'yearly' } });
+  assert.equal(b.allDay, true);
+  assert.equal(new Date(b.start).getHours(), 0, 'auf Mitternacht gerundet');
+  assert.equal(Date.parse(b.end) - Date.parse(b.start), 86400000, 'Ende exklusiv am Folgetag');
+  assert.equal(b.category, 'birthday'); assert.equal(b.icon, '🎂'); assert.equal(b.color, '#f472b6');
+  const next = core.calendar.list(new Date(2027, 10, 19), new Date(2027, 10, 22));
+  assert.ok(next.some((e) => e.title === 'Geburtstag Mama'), 'jährlich wiederholt');
+  // Dienst-Ebene: Ende exklusiv (wie Google) – 1. bis einschließlich 5. Juli = Ende 6. Juli 00:00
+  const u = await core.calendar.create({ title: 'Urlaub Ostsee', start: new Date(2026, 6, 1).toISOString(), end: new Date(2026, 6, 6).toISOString(), allDay: true });
+  assert.equal(Math.round((Date.parse(u.end) - Date.parse(u.start)) / 86400000), 5, '1.–5. Juli inklusive = 5 Tage');
+  assert.equal(u.category, 'vacation');
+  const k = await core.calendar.create({ title: 'Klausur Mathe II', start: new Date(2026, 11, 3, 9).toISOString() });
+  assert.equal(k.category, 'exam');
+  const own = await core.calendar.update(k.id, { color: '7' });
+  assert.equal(own.color, '#039be5', 'eigene Farbe schlägt Kategorie'); assert.equal(own.colorId, '7');
+  const back = await core.calendar.update(k.id, { color: 'auto' });
+  assert.equal(back.color, '#f87171');
+  const plain = await core.calendar.create({ title: 'Kaffee mit Max', start: new Date(2026, 11, 3, 15).toISOString() });
+  assert.equal(plain.category, null); assert.equal(plain.color, plain.calendarColor);
   cleanup();
 });

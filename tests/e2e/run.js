@@ -176,6 +176,30 @@ app.whenReady().then(async () => {
     if (!global.__fakeLive.closed) throw new Error('Live-Sitzung nicht geschlossen');
   });
   await step('Einstellungen', async () => { await nav('settings'); await shot('80-settings'); });
+  await step('Kalender: ganztägiger Geburtstag mit Farbe + eigenes Dropdown', async () => {
+    await nav('calendar');
+    await js(`(()=>{ const c=[...document.querySelectorAll('.cal-cell')].find((x)=>!x.classList.contains('other')); c.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); })()`);
+    await waitFor(() => js('!!document.querySelector(".modal")'), 4000);
+    await js(`(()=>{ const t=document.querySelector('.modal input.inp'); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; set.call(t,'Geburtstag Testperson'); t.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+    await sleep(200);
+    if (!(await js('!!document.querySelector(".modal input[type=date]")'))) throw new Error('Ganztägig wurde nicht vorgeschlagen');
+    if (!(await js('[...document.querySelectorAll(".modal .seg button.active")].some((b)=>b.textContent==="Jährlich")'))) throw new Error('Jährlich nicht vorgeschlagen');
+    await js('document.querySelectorAll(".modal .swatches .sw")[4].click()');
+    await shot('45-geburtstag');
+    await js('[...document.querySelectorAll(".modal button")].find((b)=>b.textContent==="Speichern").click()');
+    await waitFor(() => js('!document.querySelector(".modal")'), 4000);
+    const ev = core.calendar.list(new Date(Date.now() - 40 * 86400000), new Date(Date.now() + 60 * 86400000)).find((e) => e.title === 'Geburtstag Testperson');
+    if (!ev || !ev.allDay || ev.colorId !== '4' || !ev.recurring) throw new Error('Termin falsch gespeichert: ' + JSON.stringify(ev && { allDay: ev.allDay, colorId: ev.colorId, recurring: ev.recurring }));
+    // Eigenes Dropdown (Einstellungen → Startseite)
+    await nav('settings');
+    await js('[...document.querySelectorAll(".sel.dd")].find((b)=>b.textContent.trim()==="Dashboard").click()');
+    await waitFor(() => js('!!document.querySelector(".dd-list")'), 2000);
+    const before = core.settings.get('startPage');
+    await js(`(()=>{ const o=[...document.querySelectorAll('.dd-opt')].find((x)=>x.textContent.includes('Aufgaben')); o.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); })()`);
+    await sleep(300);
+    if (core.settings.get('startPage') !== 'tasks') throw new Error('Dropdown-Auswahl nicht übernommen (vorher ' + before + ')');
+    core.settings.update({ startPage: before });
+  });
   await step('Update-Button: erscheint bei signiertem Update, Dialog mit Changelog', async () => {
     core.updater.set({ state: 'available', version: '9.9.9', signed: true, notes: '## Neu\n- Testfeature', size: 110 * 1048576, publishedAt: new Date().toISOString() });
     await waitFor(() => js('!!document.querySelector(".update-btn")'), 5000);

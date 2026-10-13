@@ -13,6 +13,7 @@ const EVENT_SCHEMA = {
     location: { type: 'string', maxLength: 500 },
     description: { type: 'string', maxLength: 8000 },
     calendarId: { type: 'string', maxLength: 300 },
+    color: { type: 'string', enum: ['auto', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'] },
     recurrence: { type: 'object', nullable: true, properties: {
       freq: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'yearly'] }, interval: { type: 'integer' },
       byDay: { type: 'array', items: { type: 'string' } }, until: { type: 'string' }, count: { type: 'integer' } } },
@@ -20,6 +21,28 @@ const EVENT_SCHEMA = {
 };
 
 const LOCAL_CAL = 'local';
+
+/** Google-Terminfarben (colorId → Name/Hex), wie in Google Kalender. */
+const COLORS = {
+  1: ['Lavendel', '#7986cb'], 2: ['Salbei', '#33b679'], 3: ['Traube', '#8e24aa'], 4: ['Flamingo', '#e67c73'],
+  5: ['Banane', '#f6bf26'], 6: ['Mandarine', '#f4511e'], 7: ['Pfau', '#039be5'], 8: ['Graphit', '#616161'],
+  9: ['Heidelbeere', '#3f51b5'], 10: ['Basilikum', '#0b8043'], 11: ['Tomate', '#d50000'],
+};
+/** Automatische Kategorien (Farbe + Symbol), wenn keine eigene Farbe gesetzt ist. */
+const CATEGORIES = [
+  { id: 'birthday', label: 'Geburtstag', color: '#f472b6', icon: '🎂', test: (t, cal, type) => type === 'birthday' || /geburtstag|birthday|\bgeb\.?\b|b-?day/i.test(t) || /geburtstag|birthday/i.test(cal) },
+  { id: 'holiday', label: 'Feiertag', color: '#34d399', icon: '🎉', test: (t, cal) => /feiertag|holiday/i.test(cal) || /^(neujahr|karfreitag|ostermontag|pfingstmontag|tag der deutschen einheit|reformationstag|heiligabend|silvester|1\. weihnachtstag|2\. weihnachtstag|christi himmelfahrt|fronleichnam|buß- und bettag)/i.test(t) },
+  { id: 'exam', label: 'Prüfung', color: '#f87171', icon: '📝', test: (t) => /klausur|prüfung|pruefung|exam|testat/i.test(t) },
+  { id: 'deadline', label: 'Abgabe', color: '#fb7185', icon: '⏰', test: (t) => /abgabe|deadline|frist/i.test(t) },
+  { id: 'study', label: 'Lernen', color: '#a78bfa', icon: '📚', test: (t) => /^📚|lernen|lerneinheit|wiederholung/i.test(t) },
+  { id: 'vacation', label: 'Urlaub', color: '#fbbf24', icon: '🌴', test: (t) => /urlaub|ferien|vacation|reise/i.test(t) },
+  { id: 'health', label: 'Gesundheit', color: '#2dd4bf', icon: '🩺', test: (t) => /arzt|zahnarzt|termin beim|physio|impfung/i.test(t) },
+  { id: 'sport', label: 'Sport', color: '#fb923c', icon: '🏃', test: (t) => /training|gym|fitness|sport|laufen|fußball|fussball/i.test(t) },
+];
+function categorize(title, calName, type) {
+  for (const c of CATEGORIES) if (c.test(String(title || ''), String(calName || ''), type)) return c;
+  return null;
+}
 const tz = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Berlin';
 
 /**
@@ -53,8 +76,11 @@ class Calendar {
 
   toPublic(r) {
     const cal = this.db.get('SELECT name,color FROM calendars WHERE id=?', r.calendar_id);
+    const cat = categorize(r.title, cal?.name, r.event_type);
+    const own = r.color && COLORS[r.color] ? COLORS[r.color][1] : null;
     return {
-      id: r.id, calendarId: r.calendar_id, calendarName: cal?.name || r.calendar_id, color: cal?.color || '#22d3ee',
+      id: r.id, calendarId: r.calendar_id, calendarName: cal?.name || r.calendar_id, calendarColor: cal?.color || '#22d3ee',
+      color: own || cat?.color || cal?.color || '#22d3ee', colorId: r.color || 'auto', category: cat?.id || null, categoryLabel: cat?.label || null, icon: cat?.icon || null, eventType: r.event_type || null,
       title: r.title, description: r.description, location: r.location, start: r.start_at, end: r.end_at, allDay: !!r.all_day,
       recurrence: r.rrule ? rec.fromRRule(r.rrule) : null, recurring: !!(r.rrule || r.recurring_event_id),
       source: r.calendar_id === LOCAL_CAL ? 'local' : String(r.calendar_id).startsWith('feed:') ? 'feed' : 'google', syncState: r.sync_state, readOnly: String(r.calendar_id).startsWith('feed:'),
@@ -104,7 +130,15 @@ class Calendar {
       if (!d.title) throw new Error('Titel fehlt');
       if (!d.start) throw new Error('Startzeit fehlt');
     }
-    if (d.start && !d.end) d.end = new Date(Date.parse(d.start) + (d.allDay ? 86400000 : 3600000)).toISOString();
+    if (d.allDay && d.start) {
+      // Ganztägig: auf lokale Mitternacht runden, Ende exklusiv (Tag danach 00:00)
+      const s0 = new Date(d.start); s0.setHours(0, 0, 0, 0);
+      let e0 = d.end ? new Date(d.end) : new Date(s0);
+      if (e0.getHours() || e0.getMinutes() || e0.getSeconds() || e0 <= s0) { e0.setHours(0, 0, 0, 0); e0.setDate(e0.getDate() + 1); }
+      if (e0 <= s0) { e0 = new Date(s0); e0.setDate(e0.getDate() + 1); }
+      d.start = s0.toISOString(); d.end = e0.toISOString();
+    }
+    if (d.start && !d.end) d.end = new Date(Date.parse(d.start) + 3600000).toISOString();
     if (d.start && d.end && Date.parse(d.end) <= Date.parse(d.start)) throw new Error('Ende liegt vor dem Beginn');
     return d;
   }
@@ -124,6 +158,7 @@ class Calendar {
       }
     }
     if (d.recurrence !== undefined) ev.recurrence = d.recurrence ? [rec.toRRule(d.recurrence)] : [];
+    if (d.color !== undefined) ev.colorId = d.color && d.color !== 'auto' ? String(d.color) : null;
     ev.extendedProperties = { private: { createdBy: 'JARVIS' } };
     return ev;
   }
@@ -144,12 +179,12 @@ class Calendar {
     }
     const vals = [g.summary || '(ohne Titel)', g.description || '', g.location || '', new Date(start).toISOString(), new Date(end).toISOString(),
       g.start?.date ? 1 : 0, g.start?.timeZone || null, (g.recurrence || []).find((x) => x.startsWith('RRULE')) || null, g.recurringEventId || null,
-      g.status || 'confirmed', g.etag || null, g.updated || null, nowIso()];
+      g.status || 'confirmed', g.etag || null, g.updated || null, nowIso(), g.colorId || null, g.eventType && g.eventType !== 'default' ? g.eventType : null];
     if (existing) {
-      this.db.run(`UPDATE events SET title=?,description=?,location=?,start_at=?,end_at=?,all_day=?,time_zone=?,rrule=?,recurring_event_id=?,status=?,etag=?,remote_updated=?,local_updated=?,sync_state='synced',conflict_data=NULL WHERE id=?`, ...vals, existing.id);
+      this.db.run(`UPDATE events SET title=?,description=?,location=?,start_at=?,end_at=?,all_day=?,time_zone=?,rrule=?,recurring_event_id=?,status=?,etag=?,remote_updated=?,local_updated=?,color=?,event_type=?,sync_state='synced',conflict_data=NULL WHERE id=?`, ...vals, existing.id);
     } else {
-      this.db.run(`INSERT INTO events(title,description,location,start_at,end_at,all_day,time_zone,rrule,recurring_event_id,status,etag,remote_updated,local_updated,id,calendar_id,google_id,sync_state)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'synced')`, ...vals, id('e'), calId, g.id);
+      this.db.run(`INSERT INTO events(title,description,location,start_at,end_at,all_day,time_zone,rrule,recurring_event_id,status,etag,remote_updated,local_updated,color,event_type,id,calendar_id,google_id,sync_state)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'synced')`, ...vals, id('e'), calId, g.id);
     }
   }
 
@@ -162,9 +197,9 @@ class Calendar {
     if (!cal.writable) throw new Error('Dieser Kalender ist schreibgeschützt');
     const eid = id('e');
     const now = nowIso();
-    this.db.run(`INSERT INTO events(id,calendar_id,title,description,location,start_at,end_at,all_day,time_zone,rrule,sync_state,local_updated)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, eid, calId, d.title, d.description || '', d.location || '', new Date(d.start).toISOString(),
-    new Date(d.end).toISOString(), d.allDay ? 1 : 0, tz(), d.recurrence ? rec.toRRule(d.recurrence) : null, calId === LOCAL_CAL ? 'local' : 'pending_create', now);
+    this.db.run(`INSERT INTO events(id,calendar_id,title,description,location,start_at,end_at,all_day,time_zone,rrule,sync_state,local_updated,color)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, eid, calId, d.title, d.description || '', d.location || '', new Date(d.start).toISOString(),
+    new Date(d.end).toISOString(), d.allDay ? 1 : 0, tz(), d.recurrence ? rec.toRRule(d.recurrence) : null, calId === LOCAL_CAL ? 'local' : 'pending_create', now, d.color && d.color !== 'auto' ? d.color : null);
     if (calId !== LOCAL_CAL) {
       try {
         const g = await this.google.insertEvent(calId, this.toGoogle(d));
@@ -188,8 +223,9 @@ class Calendar {
     if (d.start && !patch.end) d.end = new Date(Date.parse(d.start) + (Date.parse(r.end_at) - Date.parse(r.start_at))).toISOString();
     const cols = { title: d.title, description: d.description, location: d.location, start_at: d.start && new Date(d.start).toISOString(), end_at: d.end && new Date(d.end).toISOString(), all_day: d.allDay === undefined ? undefined : (d.allDay ? 1 : 0) };
     if (d.recurrence !== undefined) cols.rrule = d.recurrence ? rec.toRRule(d.recurrence) : null;
+    if (d.color !== undefined) cols.color = d.color && d.color !== 'auto' ? d.color : null;
     const sets = []; const vals = [];
-    for (const [k, v] of Object.entries(cols)) if (v !== undefined) { sets.push(`${k}=?`); vals.push(v); }
+    for (const [k, v] of Object.entries(cols)) if (v !== undefined || (k === 'color' && d.color !== undefined)) { sets.push(`${k}=?`); vals.push(v ?? null); }
     sets.push('local_updated=?'); vals.push(nowIso());
     if (r.calendar_id !== LOCAL_CAL) { sets.push("sync_state=CASE WHEN sync_state='pending_create' THEN 'pending_create' ELSE 'pending_update' END"); }
     this.db.run(`UPDATE events SET ${sets.join(',')} WHERE id=?`, ...vals, eventId);
@@ -199,6 +235,7 @@ class Calendar {
         const g = await this.google.patchEvent(r.calendar_id, r.google_id, this.toGoogle({
           title: full.title, description: full.description, location: full.location, start: full.start_at, end: full.end_at, allDay: !!full.all_day,
           ...(d.recurrence !== undefined ? { recurrence: d.recurrence } : {}),
+          ...(d.color !== undefined ? { color: d.color } : {}),
         }));
         this.db.run("UPDATE events SET etag=?, remote_updated=?, sync_state='synced', conflict_data=NULL WHERE id=?", g.etag, g.updated, eventId);
       } catch (e) { log.warn('Änderung wird später synchronisiert', e); }
@@ -266,7 +303,7 @@ class Calendar {
       // Push queue
       for (const r of this.db.all("SELECT * FROM events WHERE sync_state IN ('pending_create','pending_update','pending_delete') AND calendar_id<>'local' AND calendar_id NOT LIKE 'feed:%'")) {
         try {
-          const body = this.toGoogle({ title: r.title, description: r.description, location: r.location, start: r.start_at, end: r.end_at, allDay: !!r.all_day, recurrence: r.rrule ? rec.fromRRule(r.rrule) : undefined });
+          const body = this.toGoogle({ title: r.title, description: r.description, location: r.location, start: r.start_at, end: r.end_at, allDay: !!r.all_day, recurrence: r.rrule ? rec.fromRRule(r.rrule) : undefined, color: r.color || 'auto' });
           if (r.sync_state === 'pending_create') {
             const g = await this.google.insertEvent(r.calendar_id, body);
             this.db.run("UPDATE events SET google_id=?, etag=?, remote_updated=?, sync_state='synced' WHERE id=?", g.id, g.etag, g.updated, r.id);
@@ -352,4 +389,4 @@ function localDate(iso) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-module.exports = { Calendar, EVENT_SCHEMA, LOCAL_CAL };
+module.exports = { Calendar, EVENT_SCHEMA, LOCAL_CAL, COLORS, CATEGORIES, categorize };

@@ -38,11 +38,59 @@ export function Field({ label, children, wide, hint }) {
   );
 }
 
-export function Select({ value, onChange, options, style }) {
+/**
+ * Eigenes Dropdown statt nativem <select>: die nativen Auswahllisten öffnen
+ * sich in Electron als separates Systemfenster und funktionierten nicht
+ * zuverlässig (z. B. unter dem Overlay oder bei Skalierung). Dieses rendert im
+ * Fenster selbst, mit Tastatur (↑ ↓ Enter Esc) und ohne Abschneiden (position: fixed).
+ */
+export function Select({ value, onChange, options, style, placeholder = '–', class: cls = '' }) {
+  const opts = (options || []).map((o) => (typeof o === 'string' ? { value: o, label: o } : o));
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [pos, setPos] = useState(null);
+  const btn = useRef(); const list = useRef();
+  const cur = opts.find((o) => String(o.value) === String(value));
+  const place = () => {
+    const r = btn.current.getBoundingClientRect();
+    const h = Math.min(320, opts.length * 34 + 8);
+    const below = window.innerHeight - r.bottom > h + 8 || r.top < h + 8;
+    setPos({ left: r.left, width: Math.max(r.width, 160), top: below ? r.bottom + 4 : r.top - h - 4, maxHeight: h });
+  };
+  const toggle = () => { if (open) return setOpen(false); place(); setHi(Math.max(0, opts.findIndex((o) => String(o.value) === String(value)))); setOpen(true); };
+  const pick = (o) => { setOpen(false); if (String(o.value) !== String(value)) onChange(o.value); btn.current?.focus(); };
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (!btn.current?.contains(e.target) && !list.current?.contains(e.target)) setOpen(false); };
+    const close = (e) => { if (!list.current?.contains(e.target)) setOpen(false); };
+    window.addEventListener('mousedown', away, true); window.addEventListener('scroll', close, true); window.addEventListener('resize', close);
+    return () => { window.removeEventListener('mousedown', away, true); window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [open]);
+  useEffect(() => { if (open) list.current?.children[hi]?.scrollIntoView({ block: 'nearest' }); }, [hi, open]);
+  const key = (e) => {
+    if (!open && ['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) { e.preventDefault(); toggle(); return; }
+    if (!open) return;
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setHi((hi + 1) % opts.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((hi - 1 + opts.length) % opts.length); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (opts[hi]) pick(opts[hi]); }
+  };
   return (
-    <select class="sel" value={value} onChange={(e) => onChange(e.currentTarget.value)} style={style}>
-      {options.map((o) => (typeof o === 'string' ? <option value={o}>{o}</option> : <option value={o.value}>{o.label}</option>))}
-    </select>
+    <>
+      <button type="button" ref={btn} class={`sel dd ${open ? 'open' : ''} ${cls}`} style={style} onClick={toggle} onKeyDown={key} aria-haspopup="listbox" aria-expanded={open}>
+        <span class="ellipsis">{cur ? cur.label : placeholder}</span>
+      </button>
+      {open && pos && (
+        <div ref={list} class="dd-list panel glow" role="listbox" style={{ left: pos.left, top: pos.top, minWidth: pos.width, maxHeight: pos.maxHeight }}>
+          {opts.map((o, i) => (
+            <div role="option" aria-selected={String(o.value) === String(value)} class={`dd-opt ${i === hi ? 'hi' : ''} ${String(o.value) === String(value) ? 'cur' : ''}`}
+              onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(o); }}>
+              <span class="grow">{o.label}</span>{String(o.value) === String(value) && <Check size={14} />}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

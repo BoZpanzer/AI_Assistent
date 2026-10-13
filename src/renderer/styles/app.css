@@ -444,3 +444,24 @@ a:hover { text-decoration: underline; }
 @keyframes upd-pulse { 0%, 100% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.25); } 50% { box-shadow: 0 0 18px rgba(52, 211, 153, 0.55); } }
 .update-notes { max-height: 280px; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(3, 12, 22, 0.5); }
 @media (prefers-reduced-motion: reduce) { .update-btn { animation: none; } }
+
+/* Eigenes Dropdown (ersetzt native <select>) */
+.sel.dd { display: inline-flex; align-items: center; text-align: left; cursor: pointer; color: var(--text); font: inherit; min-width: 0; }
+.sel.dd.open { border-color: var(--line-strong); box-shadow: var(--glow-sm); }
+.dd-list { position: fixed; z-index: 1000; overflow: auto; padding: 4px; background: #071321; border-radius: 8px; }
+.dd-opt { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+.dd-opt.hi { background: var(--cyan-soft); }
+.dd-opt.cur { color: var(--cyan-2); }
+
+/* Termin-Dialog: Wiederholung + Farbauswahl */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.seg button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: rgba(3, 12, 22, 0.6); color: var(--text-2); cursor: pointer; font: inherit; font-size: 13px; }
+.seg button.active { border-color: var(--cyan); color: white; background: var(--cyan-soft); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.swatches .sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; outline: none; }
+.swatches .sw.on { border-color: white; box-shadow: 0 0 0 2px var(--cyan); }
+.swatches .sw.auto { width: auto; min-width: 22px; padding: 0 7px; border-radius: 11px; background: rgba(3, 12, 22, 0.6); border: 1px solid var(--line); color: var(--text-2); font-size: 11px; font-weight: 700; }
+.swatches .sw.auto.on { border-color: var(--cyan); color: white; }
+/* Kalender-Einträge in Kategorie-/Terminfarbe */
+.ev.colored { border-left-width: 3px; }
+.ev.allday { color: white; }

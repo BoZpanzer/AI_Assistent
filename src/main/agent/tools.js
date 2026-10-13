@@ -76,18 +76,26 @@ function buildTools(s) {
     run: (a) => ({ slots: s.calendar.freeSlots({ from: a.from, to: a.to, minutes: a.minutes, dayStart: a.dayStart || '08:00', dayEnd: a.dayEnd || '22:00' }).slice(0, 30) }) });
 
   const evSchema = { type: 'object', required: ['title', 'start'], properties: { title: { type: 'string' }, start: { type: 'string', description: 'ISO 8601 mit Offset' }, end: { type: 'string' },
-    allDay: { type: 'boolean' }, location: { type: 'string' }, description: { type: 'string' }, recurrence: REC } };
-  const evLines = (a) => [fmt(a.start) + (a.end ? ' – ' + new Date(a.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''), a.location ? 'Ort: ' + a.location : null, a.recurrence ? 'Wiederholt sich' : null,
+    allDay: { type: 'boolean', description: 'Ganztägig (z. B. Geburtstage, Urlaub). start = erster Tag, end = letzter Tag (inklusive) oder weglassen.' }, location: { type: 'string' }, description: { type: 'string' }, recurrence: REC,
+    color: { type: 'string', enum: ['auto', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'], description: 'Nur wenn der Nutzer eine Farbe nennt: 1 Lavendel, 2 Salbei (grün), 3 Traube (lila), 4 Flamingo (rosa), 5 Banane (gelb), 6 Mandarine (orange), 7 Pfau (hellblau), 8 Graphit (grau), 9 Heidelbeere (blau), 10 Basilikum (dunkelgrün), 11 Tomate (rot). Sonst weglassen – Geburtstage, Prüfungen usw. bekommen automatisch eigene Farben.' } } };
+  const evLines = (a) => [a.allDay ? new Date(a.start).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) + ' · ganztägig' : fmt(a.start) + (a.end ? ' – ' + new Date(a.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''), a.location ? 'Ort: ' + a.location : null, a.recurrence ? 'Wiederholt sich' : null,
     s.calendar.connected() ? 'Kalender: ' + (s.calendar.calendars().find((c) => c.id === s.calendar.defaultCalendarId())?.name || 'Google') : 'Nur lokal (Google nicht verbunden)'].filter(Boolean);
 
+  // Ganztägig: Das Modell nennt beim Ende den LETZTEN Tag (inklusive) – intern ist das Ende exklusiv.
+  const inclusiveEnd = (a) => {
+    if (!a.allDay || !a.end) return a;
+    const e = new Date(a.end); if (isNaN(e)) return a;
+    e.setHours(0, 0, 0, 0); e.setDate(e.getDate() + 1);
+    return { ...a, end: e.toISOString() };
+  };
   def({ name: 'create_event', mode: 'confirm', description: 'Kalendertermin anlegen (Google Kalender, falls verbunden). Erzeugt eine Bestätigungskarte.', schema: evSchema,
     summarize: (a) => { s.calendar.normalizeInput({ title: a.title, start: a.start, end: a.end, allDay: a.allDay }); return { summary: `Termin „${a.title}“ eintragen`, details: evLines(a) }; },
-    run: async (a) => { const e = await s.calendar.create(a); return { created: { id: e.id, title: e.title, start: e.start, end: e.end, calendar: e.calendarName, pending: e.pending || false } }; } });
+    run: async (a) => { const e = await s.calendar.create(inclusiveEnd(a)); return { created: { id: e.id, title: e.title, start: e.start, end: e.end, calendar: e.calendarName, pending: e.pending || false } }; } });
 
   def({ name: 'schedule_events', mode: 'confirm', description: 'Mehrere Termine auf einmal vorschlagen und nach EINER Bestätigung anlegen (z. B. Lerneinheiten).',
     schema: { type: 'object', required: ['events'], properties: { events: { type: 'array', maxItems: 20, items: evSchema }, reason: { type: 'string' } } },
     summarize: ({ events, reason }) => { events.forEach((e) => s.calendar.normalizeInput({ title: e.title, start: e.start, end: e.end })); return { summary: `${events.length} Termine eintragen${reason ? ' – ' + reason : ''}`, details: events.map((e) => `${e.title}: ${fmt(e.start)}`) }; },
-    run: async ({ events }) => { const out = []; for (const e of events) out.push(await s.calendar.create(e)); return { created: out.map((e) => ({ id: e.id, title: e.title, start: e.start })) }; } });
+    run: async ({ events }) => { const out = []; for (const e of events) out.push(await s.calendar.create(inclusiveEnd(e))); return { created: out.map((e) => ({ id: e.id, title: e.title, start: e.start })) }; } });
 
   def({ name: 'update_event', mode: 'confirm', description: 'Kalendertermin verschieben/ändern.', schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, title: { type: 'string' }, start: { type: 'string' }, end: { type: 'string' }, location: { type: 'string' }, description: { type: 'string' } } },
     summarize: ({ id, ...p }) => { const e = s.calendar.get(id); if (!e) throw new Error('Termin nicht gefunden'); return { summary: `Termin „${e.title}“ ändern`, details: [p.start ? `Neu: ${fmt(p.start)} (bisher ${fmt(e.start)})` : null, p.title ? 'Neuer Titel: ' + p.title : null, p.location ? 'Ort: ' + p.location : null].filter(Boolean) }; },

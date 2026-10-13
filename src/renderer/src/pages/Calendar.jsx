@@ -33,7 +33,7 @@ export function Calendar() {
       ...(tasks || []).filter((t) => t.dueAt && Date.parse(t.dueAt) >= a && Date.parse(t.dueAt) < b).map((t) => ({ id: t.id, title: t.title, start: t.dueAt, allDay: t.allDay, kind: 'task' })),
     ].sort((x, y) => (x.allDay === y.allDay ? x.start.localeCompare(y.start) : x.allDay ? -1 : 1));
   };
-  const openNew = (d) => { const s = new Date(d); if (s.getHours() === 0) s.setHours(10); setState({ quickEvent: { title: '', start: s } }); };
+  const openNew = (d, allDay = false) => { const s = new Date(d); if (s.getHours() === 0) s.setHours(10); setState({ quickEvent: { title: '', start: s, allDay } }); };
   return (
     <div class="page">
       <div class="page-body" style={{ display: 'grid', gridTemplateColumns: '1fr 250px', gap: 10 }}>
@@ -55,7 +55,7 @@ export function Calendar() {
                 const items = byDay(d);
                 const today = sod(d).getTime() === sod(new Date()).getTime();
                 return (
-                  <div class={`cal-cell ${d.getMonth() !== cursor.getMonth() ? 'other' : ''} ${today ? 'today' : ''}`} onDblClick={() => openNew(d)}>
+                  <div class={`cal-cell ${d.getMonth() !== cursor.getMonth() ? 'other' : ''} ${today ? 'today' : ''}`} onDblClick={() => openNew(d, true)}>
                     <div class="d">{d.getDate()}</div>
                     {items.slice(0, 4).map((e) => <EvChip e={e} />)}
                     {items.length > 4 && <div class="tiny muted">+{items.length - 4} weitere</div>}
@@ -64,7 +64,7 @@ export function Calendar() {
               })}
             </div>
           ) : <Week start={range[0]} byDay={byDay} onNew={openNew} />}
-          <div class="tiny muted">Doppelklick auf einen Tag/eine Stunde legt einen Termin an · gelb = Aufgaben mit Fälligkeit</div>
+          <div class="tiny muted">Doppelklick auf einen Tag (ganztägig) oder eine Stunde legt einen Termin an · gelb = Aufgaben · 🎂 Geburtstage · 🎉 Feiertage · 📝 Prüfungen · 📚 Lernen</div>
         </section>
         <div class="col scroll" style={{ minHeight: 0 }}>
           <Panel icon={google.connected ? Cloud : CloudOff} title="Google Kalender" sub={google.connected ? (status?.account || 'verbunden') : 'nicht verbunden'}>
@@ -99,9 +99,9 @@ export function Calendar() {
 function EvChip({ e }) {
   const cls = e.kind === 'task' ? 'task' : e.syncState?.startsWith('pending') ? 'pending' : e.syncState === 'conflict' ? 'conflict' : '';
   return (
-    <div class={`ev ${cls}`} style={e.kind === 'event' && e.color ? { borderLeftColor: e.color } : undefined} title={`${e.title}${e.location ? ' · ' + e.location : ''}`}
+    <div class={`ev ${cls} ${e.kind === 'event' ? 'colored' : ''} ${e.allDay ? 'allday' : ''}`} style={e.kind === 'event' && e.color ? { borderLeftColor: e.color, ...(e.allDay ? { background: hexA(e.color, 0.28) } : {}) } : undefined} title={`${e.title}${e.categoryLabel ? ' · ' + e.categoryLabel : ''}${e.location ? ' · ' + e.location : ''}`}
       onClick={(ev) => { ev.stopPropagation(); if (e.kind === 'task') setState({ page: 'tasks', focusTask: e.id }); else rpc('calendar.get', { id: e.instanceOf || e.id }).then((full) => setState({ quickEvent: { event: full || e } })); }}>
-      {!e.allDay && <b>{fmtTime(e.start)} </b>}{e.title}
+      {e.icon && <span>{e.icon} </span>}{!e.allDay && <b>{fmtTime(e.start)} </b>}{e.title}
     </div>
   );
 }
@@ -125,9 +125,9 @@ function Week({ start, byDay, onNew }) {
             {items.filter((e) => !e.allDay).map((e) => {
               const s = new Date(e.start); const en = e.end ? new Date(e.end) : new Date(s.getTime() + 1800000);
               const top = (s.getHours() + s.getMinutes() / 60) * H + 30; const h = Math.max(20, ((en - s) / 3600000) * H);
-              return <div class="wev" style={{ top, height: h, ...(e.kind === 'task' ? { background: 'rgba(250,204,21,0.15)', borderColor: 'rgba(250,204,21,0.5)' } : e.color ? { borderColor: e.color } : {}) }}
+              return <div class="wev" style={{ top, height: h, ...(e.kind === 'task' ? { background: 'rgba(250,204,21,0.15)', borderColor: 'rgba(250,204,21,0.5)' } : e.color ? { borderColor: e.color, background: hexA(e.color, 0.18) } : {}) }}
                 onClick={() => (e.kind === 'task' ? setState({ page: 'tasks', focusTask: e.id }) : rpc('calendar.get', { id: e.instanceOf || e.id }).then((full) => setState({ quickEvent: { event: full || e } })))}>
-                <b>{fmtTime(e.start)}</b> {e.title}
+                <b>{fmtTime(e.start)}</b> {e.icon ? e.icon + ' ' : ''}{e.title}
               </div>;
             })}
             {sod(d).getTime() === sod(now).getTime() && <div class="now" style={{ top: (now.getHours() + now.getMinutes() / 60) * H + 30 }} />}
@@ -153,5 +153,7 @@ function Conflicts({ events }) {
     </Panel>
   );
 }
+
+function hexA(hex, a) { const m = String(hex).match(/^#?([0-9a-f]{6})$/i); if (!m) return undefined; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
 
 function isoWeek(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y) / 86400000 + 1) / 7); }

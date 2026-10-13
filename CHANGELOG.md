@@ -2,6 +2,14 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.5.0 – Ganztägige Termine & Farben
+
+- **Ganztägige Termine** über den Schalter „Ganztägig“ im Termin-Dialog, auch mehrtägig (z. B. Urlaub „bis einschließlich“). Ein Doppelklick auf einen Tag in der Monatsansicht legt direkt einen ganztägigen Termin an.
+- **Geburtstage erkennt JARVIS automatisch:** Steht „Geburtstag“ im Titel, schlägt der Dialog „ganztägig“ und „jährlich“ vor.
+- **Farben:** Kategorien bekommen automatisch eigene Farben und Symbole: Geburtstage 🎂 rosa, Feiertage 🎉 grün, Prüfungen 📝 rot, Abgaben ⏰, Lernen 📚 lila, Urlaub 🌴 gelb, Arzt 🩺, Sport 🏃. Dazu kannst du pro Termin eine der 11 Google-Farben wählen. Sie wird mit Google Kalender synchronisiert, und Farben aus Google werden übernommen.
+- **Wiederholen** direkt im Dialog: täglich, wöchentlich, monatlich, jährlich.
+- **Neue Auswahllisten:** Alle Dropdowns sind jetzt eigene Auswahllisten statt der Windows-eigenen, die sich in JARVIS nicht zuverlässig öffnen ließen. Bedienbar auch per Tastatur.
+
 ## 3.4.0 – Studium aus Google Drive
 
 - **Google Drive als Quelle fürs Studium:** JARVIS gleicht deinen Drive-Ordner **„Goodnotes“** ab, nur lesend. Unterordner werden zu Fächern, Google-Docs und -Folien kommen als PDF. Neue und geänderte Dateien werden alle 20 Minuten übernommen, gelöschte verschwinden aus dem Index.
