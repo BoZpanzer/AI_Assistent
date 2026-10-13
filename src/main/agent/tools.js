@@ -261,6 +261,16 @@ function buildTools(s) {
           : sync?.skipped ? `Analyse aus den gespeicherten Matches (Stand: ${last ? new Date(last).toLocaleString('de-DE') : 'unbekannt'}). Neue Spiele kommen automatisch dazu, wenn der Client das nächste Mal läuft – den Nutzer NICHT bitten, den Client zu starten, sondern direkt analysieren.` : undefined,
       };
     } });
+  def({ name: 'league_deep_review', mode: 'read', description: 'LoL-Fehleranalyse aus den Timelines der letzten Ranked-Spiele: Tode (Minute, Ort auf der Karte, 1v1 oder in Unterzahl), Lane-Phase gegen den direkten Gegner (CS/Gold bei 10/15 Min.), Tode vor gegnerischen Objectives, Anwesenheit bei Drachen/Baron, Vision. Liefert erkannte Muster mit Belegen. Für „was mache ich falsch“, „analysiere meine Ranked-Spiele“, Trainingspläne. Nur diese Zahlen verwenden, nichts erfinden.',
+    schema: { type: 'object', properties: { games: { type: 'integer', description: 'Anzahl Spiele (Standard 20)' } } },
+    run: async ({ games = 20 }) => {
+      const L = s.gaming.league;
+      let sync = null;
+      try { await L.syncMatches(); } catch { /* Client zu → gespeicherte Daten */ }
+      try { sync = await L.deepSync({ limit: Math.min(40, games) }); } catch (e) { sync = { error: e.message }; }
+      const p = L.patterns(Math.min(40, games));
+      return { ...p, sync, note: p.games < 3 ? `Erst ${p.games} Spiele mit Timeline-Analyse – sobald der League-Client läuft, lädt JARVIS die Details der letzten Ranked-Spiele automatisch nach (dauert etwa eine Minute).` : 'Orte und Anwesenheit bei Objectives sind aus Minuten-Positionen geschätzt (ungefähr).' };
+    } });
   def({ name: 'league_live', mode: 'read', description: 'Aktuelles LoL-Match (Live Client Data API): Champion, KDA, CS, Gold, Lane-Gegner, Hinweise.', schema: { type: 'object', properties: {} },
     run: () => s.gaming.league.live() });
   def({ name: 'league_champion', mode: 'read', description: 'Championinfos (Data Dragon, aktueller Patch): Fähigkeiten, Tipps.', schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },

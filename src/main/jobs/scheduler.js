@@ -92,6 +92,7 @@ class Scheduler {
       const L = s.gaming.league;
       if (!(await L.lcuCreds())) return; // Client nicht offen → nichts tun
       await L.syncFromClient();
+      await L.deepSync({ limit: 20 }).catch(() => {}); // Timelines für die Fehleranalyse
     }, { heavy: true, initialDelayMs: 90_000 });
     // Client gerade gestartet → Matches gleich abgleichen (Spiele von unterwegs/anderen PCs)
     s.bus.on('game:client', ({ league }) => { if (league) setTimeout(() => this.runNow('lol-sync'), 25_000); });

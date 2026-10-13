@@ -125,13 +125,15 @@ class LolFlow {
       await sleep(delayMs);
     }
     try { await L.syncFromClient(); } catch { /* Client evtl. schon zu */ }
+    let deep = null;
+    if (m) { try { deep = await L.deepAnalyze(m.matchId, { me }); } catch (e) { log.debug('deep', e); } }
     this.s.bus.emit('game:data', { game: 'league' });
-    if (this.cfg().lolReview !== false) await this.review({ match: m || undefined });
+    if (this.cfg().lolReview !== false) await this.review({ match: m || undefined, deep });
     return m;
   }
 
   /** Post-game review of the newest game. */
-  async review({ force = false, match } = {}) {
+  async review({ force = false, match, deep } = {}) {
     const L = this.s.gaming.league;
     const m = match || await L.latestClientGame();
     if (!m) return null;
@@ -141,13 +143,21 @@ class LolFlow {
     const avg = L.stats(20).current;
     const tips = reviewTips(m, avg, L.goals());
     let summary = `**${m.win ? 'Sieg' : 'Niederlage'}** mit ${m.champion} · ${m.kills}/${m.deaths}/${m.assists} · ${m.csPerMin} CS/min${m.vision != null ? ` · Vision ${m.vision}` : ''} · ${Math.round(m.duration / 60)} min`;
+    deep = deep || L.getDeep(m.matchId);
+    if (deep?.hasTimeline) {
+      const facts = [];
+      if (deep.opponent?.champion && deep.csDiff10 != null) facts.push(`Lane gegen ${deep.opponent.champion}: ${deep.csDiff10 >= 0 ? '+' : ''}${deep.csDiff10} CS bei 10 Min.${deep.goldDiff15 != null ? `, ${deep.goldDiff15 >= 0 ? '+' : ''}${deep.goldDiff15} Gold bei 15 Min.` : ''}`);
+      if (deep.deathsDetail?.length) facts.push('Tode: ' + deep.deathsDetail.map((d) => `${d.min}. Min ${d.zone}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (gegen ${d.enemies})` : ''}`).join(', '));
+      if (deep.objectives?.lostWhileDead?.length) facts.push('Während du tot warst, hat der Gegner geholt: ' + deep.objectives.lostWhileDead.join(', '));
+      if (facts.length) summary += '\n\n' + facts.map((t) => '- ' + t).join('\n');
+    }
     if (tips.length) summary += '\n\n' + tips.map((t) => '- ' + t).join('\n');
     if (this.cfg().lolReviewAi !== false && this.s.gemini.hasKey()) {
       try {
         const ai = await this.s.gemini.generate({
           model: this.s.gemini.requireModel('fast'), temperature: 0.4,
           system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 3 Sätze. Nutze NUR die gelieferten Zahlen, erfinde nichts.',
-          contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\nMein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel.` }] }],
+          contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort, Lane-Differenzen, Objectives): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives })}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel.` }] }],
         });
         if (ai) summary += '\n\n' + ai.trim();
       } catch (e) { log.debug('ai review', e); }

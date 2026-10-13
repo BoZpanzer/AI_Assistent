@@ -2,6 +2,7 @@
 const https = require('node:https');
 const { id, nowIso } = require('../../core/util');
 const log = require('../../core/logger').scope('league');
+const { analyzeGame, patterns } = require('./lolanalysis');
 
 /**
  * League of Legends integration (read-only, Riot policy compliant):
@@ -218,6 +219,66 @@ class League {
     const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;
     const sum = summarizeLcuGame(g, me, champName);
     return sum ? { ...sum, playedAt: new Date(g.gameCreation).toISOString() } : null;
+  }
+
+  // ---------- Tiefenanalyse (Timeline: Tode, Lane-Phase, Objectives) ----------
+  deepKey(mid) { return 'lol:deep:' + mid; }
+  getDeep(mid) { const r = this.db.get('SELECT value FROM game_state WHERE key=?', this.deepKey(mid)); try { return r ? JSON.parse(r.value) : null; } catch { return null; } }
+  setDeep(mid, v) { this.db.run('INSERT INTO game_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at', this.deepKey(mid), JSON.stringify(v), nowIso()); }
+
+  /** Ein Spiel tief analysieren – über den Client (ohne Schlüssel) oder die Riot-API. */
+  async deepAnalyze(mid, { me } = {}) {
+    const champs = await this.champions().then((r) => r.value).catch(() => []);
+    const name = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || null;
+    let game = null; let tl = null; let puuid = null; let source = null;
+    const gameId = String(mid).split('_').pop();
+    if (await this.lcuCreds().catch(() => null)) {
+      me = me || await this.lcuGet('/lol-summoner/v1/current-summoner');
+      puuid = me.puuid;
+      game = await this.clientGame(gameId).catch(() => null);
+      tl = await this.lcuGet(`/lol-match-history/v1/game-timelines/${encodeURIComponent(gameId)}`).catch(() => null);
+      source = 'League-Client';
+    }
+    if ((!game || !tl) && this.hasKey()) {
+      const region = REGIONAL[this.settings.get('gaming').riotRegion] || 'europe';
+      const acct = await this.account();
+      puuid = acct.puuid;
+      game = await this.riot(region, `/lol/match/v5/matches/${mid}`);
+      tl = await this.riot(region, `/lol/match/v5/matches/${mid}/timeline`).catch(() => null);
+      source = 'Riot-API';
+    }
+    if (!game) return null;
+    const a = analyzeGame(game, tl, puuid);
+    if (!a) return null;
+    a.matchId = mid; a.champion = a.champion || name(a.championId); if (a.opponent) a.opponent.champion = a.opponent.champion || name(a.opponent.championId);
+    a.source = source; a.analyzedAt = nowIso();
+    const row = this.db.get('SELECT played_at FROM lol_matches WHERE match_id=?', mid);
+    a.playedAt = row?.played_at || null;
+    this.setDeep(mid, a);
+    return a;
+  }
+
+  /** Fehlende Tiefenanalysen der letzten Ranked-Spiele nachholen (Client offen oder Riot-Schlüssel). */
+  async deepSync({ limit = 20 } = {}) {
+    const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT ?', limit);
+    const todo = rows.filter((r) => !this.getDeep(r.match_id)?.hasTimeline).map((r) => r.match_id);
+    if (!todo.length) return { analyzed: 0, missing: 0 };
+    const canClient = !!(await this.lcuCreds().catch(() => null));
+    if (!canClient && !this.hasKey()) return { analyzed: 0, missing: todo.length, reason: 'Client geschlossen' };
+    const me = canClient ? await this.lcuGet('/lol-summoner/v1/current-summoner').catch(() => null) : null;
+    let analyzed = 0;
+    for (const mid of todo) {
+      try { if (await this.deepAnalyze(mid, { me })) analyzed++; } catch (e) { log.debug('Tiefenanalyse ' + mid, e); }
+    }
+    if (analyzed) this.bus.emit('game:data', { game: 'league' });
+    return { analyzed, missing: todo.length - analyzed };
+  }
+
+  /** Muster über die letzten N tief analysierten Ranked-Spiele. */
+  patterns(n = 20) {
+    const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT ?', n);
+    const list = rows.map((r) => this.getDeep(r.match_id)).filter(Boolean);
+    return { ...patterns(list), recent: list.slice(0, 5).map((g) => ({ matchId: g.matchId, playedAt: g.playedAt, champion: g.champion, vs: g.opponent?.champion || null, win: g.win, kda: `${g.kills}/${g.deaths}/${g.assists}`, earlyDeaths: g.earlyDeaths, csAt10: g.csAt10, csDiff10: g.csDiff10, goldDiff15: g.goldDiff15, deaths: (g.deathsDetail || []).map((d) => `${d.min}. Min ${d.zone}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (${d.enemies} Gegner)` : ''}`), objectives: g.objectives })), analyzedOf: rows.length };
   }
 
   saveRank(rank, source) {

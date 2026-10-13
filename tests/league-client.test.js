@@ -103,3 +103,70 @@ test('LoL: neue Spiele ohne Öffnen der Matchhistorie (PUUID-Abfrage + Spiel dir
   assert.ok(core.db.get("SELECT 1 x FROM lol_matches WHERE match_id='EUW1_4711'"), 'gespeichert');
   } finally { srv.close(); cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+/** Synthetisches 5v5-Spiel (LCU-Format) + Timeline. Ich (pid 4, Jinx BOTTOM) gegen pid 9 (BOTTOM). */
+function fullGame(gameId, { win = false, myCs10 = 60, oppCs10 = 75, deaths = [] } = {}) {
+  const roles = [['TOP', 'SOLO'], ['JUNGLE', 'NONE'], ['MIDDLE', 'SOLO'], ['BOTTOM', 'DUO_CARRY'], ['BOTTOM', 'DUO_SUPPORT']];
+  const participants = []; const ids = [];
+  for (let i = 1; i <= 10; i++) {
+    const [lane, role] = roles[(i - 1) % 5]; const team = i <= 5 ? 100 : 200;
+    participants.push({ participantId: i, teamId: team, championId: i === 4 ? 222 : 100 + i, spell1Id: lane === 'JUNGLE' ? 11 : 4, spell2Id: 14, timeline: { lane, role },
+      stats: { win: team === 100 ? win : !win, kills: i === 4 ? 3 : 2, deaths: i === 4 ? deaths.length : 2, assists: 4, totalMinionsKilled: i === 4 ? 180 : 150, neutralMinionsKilled: 0, visionScore: 20, wardsPlaced: 8, visionWardsBoughtInGame: i === 4 ? 0 : 2, totalDamageDealtToChampions: 15000, totalDamageTaken: 18000, goldEarned: 11000 } });
+    ids.push({ participantId: i, player: { puuid: i === 4 ? 'me' : 'p' + i } });
+  }
+  const pfAt = (min) => Object.fromEntries(participants.map((p) => [String(p.participantId), { participantId: p.participantId, position: p.participantId === 4 ? { x: 9800, y: 4400 } : { x: 7000, y: 7000 }, totalGold: 500 + min * 300 + (p.participantId === 4 ? -40 * min : 0), xp: min * 400, minionsKilled: p.participantId === 4 ? Math.round(myCs10 * min / 10) : p.participantId === 9 ? Math.round(oppCs10 * min / 10) : min * 6, jungleMinionsKilled: 0 }]));
+  const frames = []; for (let m = 0; m <= 30; m++) frames.push({ timestamp: m * 60000, participantFrames: pfAt(m), events: [] });
+  for (const d of deaths) frames[Math.floor(d.min)].events.push({ type: 'CHAMPION_KILL', timestamp: d.min * 60000, victimId: 4, killerId: 9, assistingParticipantIds: d.assists || [], position: d.pos });
+  // Gegner holt Drachen 30 s nach einem Tod in Minute 12
+  frames[12].events.push({ type: 'ELITE_MONSTER_KILL', timestamp: 12.5 * 60000, killerId: 7, killerTeamId: 200, monsterType: 'DRAGON', position: { x: 9866, y: 4414 } });
+  frames[20].events.push({ type: 'ELITE_MONSTER_KILL', timestamp: 20 * 60000, killerId: 2, killerTeamId: 100, monsterType: 'DRAGON', position: { x: 9866, y: 4414 } });
+  return { game: { gameId, platformId: 'EUW1', gameCreation: Date.now() - gameId * 1e6, gameDuration: 1800, queueId: 420, gameVersion: '16.20.1', participants, participantIdentities: ids }, timeline: { frames } };
+}
+
+test('LoL-Fehleranalyse: Tode mit Ort, Lane-Differenz, Tode vor Objectives, Muster über mehrere Spiele', async () => {
+  const { analyzeGame, patterns, zone } = require('../src/main/services/gaming/lolanalysis');
+  assert.equal(zone({ x: 7400, y: 7400 }, 100), 'Midlane');
+  assert.equal(zone({ x: 9000, y: 5800 }, 100), 'Fluss');
+  assert.equal(zone({ x: 11000, y: 6500 }, 100), 'gegnerischer Jungle');
+  const deaths = [{ min: 6, pos: { x: 9000, y: 5800 } }, { min: 12, pos: { x: 11000, y: 6500 }, assists: [7, 8] }, { min: 25, pos: { x: 7400, y: 7400 } }];
+  const { game, timeline } = fullGame(1, { deaths });
+  const a = analyzeGame(game, timeline, 'me');
+  assert.equal(a.role, 'BOTTOM'); assert.equal(a.opponent.championId, 109);
+  assert.equal(a.csAt10, 60); assert.equal(a.csDiff10, -15); assert.ok(a.goldDiff15 < 0);
+  assert.deepEqual(a.deathsDetail.map((d) => [d.min, d.zone, d.solo]), [[6, 'Fluss', true], [12, 'gegnerischer Jungle', false], [25, 'Midlane', true]]);
+  assert.equal(a.earlyDeaths, 2);
+  assert.equal(a.objectives.deathsBeforeEnemyObjective, 1); assert.match(a.objectives.lostWhileDead[0], /Drache/);
+  assert.equal(a.objectives.presentPct, 100, 'bei der Pit-Position → dabei');
+  const list = [1, 2, 3, 4, 5].map((i) => analyzeGame(...Object.values(fullGame(i, { win: i > 3, myCs10: i > 3 ? 80 : 55, deaths: i > 3 ? [] : deaths })), 'me'));
+  const p = patterns(list);
+  assert.equal(p.games, 5);
+  const ids = p.findings.map((f) => f.id);
+  for (const x of ['early-deaths', 'death-zones', 'obj-deaths', 'lane-loss', 'control-wards']) assert.ok(ids.includes(x), 'fehlt: ' + x + ' in ' + ids.join(','));
+  assert.equal(p.focus.length, 3);
+  assert.equal(patterns(list.slice(0, 2)).findings.length, 0, 'zu wenig Daten → keine Behauptungen');
+});
+
+test('LoL-Fehleranalyse über den Client: Timeline nachladen, Muster, Tool + Brain-Eintrag', { skip: !hasOpenssl && 'openssl fehlt' }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lcu-'));
+  const deaths = [{ min: 5, pos: { x: 9000, y: 5800 } }, { min: 9, pos: { x: 9100, y: 5700 } }, { min: 12, pos: { x: 11000, y: 6500 }, assists: [7, 8] }];
+  const games = [11, 12, 13, 14].map((i) => fullGame(i, { win: i === 14, deaths: i === 14 ? [] : deaths }));
+  const srv = await fakeClient(dir, () => Object.fromEntries(games.flatMap(({ game, timeline }) => [
+    [`/lol-match-history/v1/games/${game.gameId}`, game], [`/lol-match-history/v1/game-timelines/${game.gameId}`, timeline]])));
+  const ddragon = async (url) => {
+    if (url.endsWith('versions.json')) return new Response(JSON.stringify(['16.20.1']));
+    return new Response(JSON.stringify({ data: { Jinx: { id: 'Jinx', key: '222', name: 'Jinx', tags: [] }, Ashe: { id: 'Ashe', key: '109', name: 'Ashe', tags: [] } } }));
+  };
+  const { core, cleanup } = tempCore({ fetch: ddragon });
+  try {
+    core.settings.update({ gaming: { leagueDir: dir } });
+    for (const { game } of games) core.db.run('INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', 'EUW1_' + game.gameId, 'me', new Date(game.gameCreation).toISOString(), JSON.stringify({ matchId: 'EUW1_' + game.gameId, champion: 'Jinx', win: false, kills: 3, deaths: 3, assists: 4, csPerMin: 6, role: 'BOTTOM', duration: 1800 }));
+    const out = await core.orchestrator.execute('league_deep_review', { games: 10 }, { conversationId: 'x', channel: 'text' });
+    const r = out.response;
+    assert.equal(r.games, 4); assert.equal(r.sync.analyzed, 4);
+    assert.ok(r.findings.some((f) => f.id === 'early-deaths'));
+    assert.equal(r.recent[0].vs, 'Ashe'); assert.match(r.recent[0].deaths[0], /Min Fluss/);
+    const entry = core.gaming.brainSync.syncLeaguePatterns();
+    assert.match(entry.content, /Zu viele frühe Tode/); assert.equal(entry.domain, 'gaming');
+    assert.equal((await core.gaming.league.deepSync()).analyzed, 0, 'schon analysiert → nicht nochmal laden');
+  } finally { srv.close(); cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

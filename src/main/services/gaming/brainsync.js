@@ -13,7 +13,7 @@ class GameBrainSync {
   constructor(s) {
     this.s = s; this.timers = new Map();
     s.bus.on('game:progress', ({ game } = {}) => { if (game) this.later('progress:' + game, () => this.syncProgress(game)); });
-    s.bus.on('game:data', ({ game } = {}) => { if (game === 'league') this.later('lol-stats', () => this.syncLeagueStats(), 15000); });
+    s.bus.on('game:data', ({ game } = {}) => { if (game === 'league') { this.later('lol-stats', () => this.syncLeagueStats(), 15000); this.later('lol-patterns', () => this.syncLeaguePatterns(), 20000); } });
     s.bus.on('lol:review', (r) => { try { this.addReview(r); } catch (e) { log.warn('review', e); } });
   }
 
@@ -21,6 +21,7 @@ class GameBrainSync {
   syncAll() {
     for (const r of this.s.db.all('SELECT DISTINCT game FROM game_progress WHERE archived=0')) { try { this.syncProgress(r.game); } catch (e) { log.warn('progress', e); } }
     try { this.syncLeagueStats(); } catch (e) { log.warn('lol-stats', e); }
+    try { this.syncLeaguePatterns(); } catch (e) { log.warn('lol-patterns', e); }
   }
 
   later(key, fn, ms = 4000) {
@@ -72,6 +73,21 @@ class GameBrainSync {
       L.goals().length ? 'Trainingsziele: ' + L.goals().map((g) => g.text).join('; ') : null,
     ].filter(Boolean);
     return this.upsert('lol-stats', { title: 'League of Legends: Statistik & Rang', content: lines.join('\n'), game: 'league', tags: ['lol', 'statistik', 'rang'] });
+  }
+
+  /** Fehlermuster aus den Timeline-Analysen als eigener Brain-Eintrag. */
+  syncLeaguePatterns() {
+    const p = this.s.gaming.league.patterns(20);
+    if (p.games < 3) return null;
+    const A = p.averages;
+    const lines = [
+      `Fehleranalyse aus ${p.games} Ranked-Spielen mit Timeline (${p.wins} Siege), Stand ${new Date().toLocaleDateString('de-DE')}:`,
+      ...p.findings.map((f) => `- ${f.title}: ${f.text}`),
+      p.strengths.length ? 'Stärken: ' + p.strengths.map((f) => `${f.title} (${f.text})`).join(' ') : null,
+      `Durchschnitt: ${A.deaths ?? '–'} Tode (davon ${A.earlyDeaths ?? '–'} vor Min. 14), CS@10 ${A.csAt10 ?? '–'} (Diff ${A.csDiff10 ?? '–'}), Gold-Diff@15 ${A.goldDiff15 ?? '–'}, Vision/Min ${A.visionPerMin ?? '–'}, Kontrollwards ${A.controlWards ?? '–'}, bei Objectives ~${A.objectivePresence ?? '–'} %.`,
+      p.focus?.length ? 'Fokus: ' + p.focus.join(', ') : null,
+    ].filter(Boolean);
+    return this.upsert('lol-patterns', { title: 'League of Legends: Fehlermuster (Timeline-Analyse)', content: lines.join('\n'), game: 'league', tags: ['lol', 'analyse', 'fehler', 'coaching'] });
   }
 
   addReview(r) {

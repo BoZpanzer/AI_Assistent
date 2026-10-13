@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -524,8 +524,37 @@ function LolCoaching() {
       <div class="col" style={{ gap: 8 }}>
         {!stats?.insights?.length && <Empty>Insights erscheinen, sobald Matches geladen sind.</Empty>}
         {(stats?.insights || []).map((i) => { const I = ICON[i.kind] || Sparkles; return <div class="result-row" style={{ alignItems: 'flex-start' }}><I size={20} /><div class="grow"><b class="small">{i.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{i.text}</div></div></div>; })}
-        <button class="btn sm" onClick={() => setState({ page: 'chat', chatDraft: 'Analysiere meine LoL-Statistik (league_stats) und erstelle mir einen Trainingsplan mit 3 messbaren Zielen.' })}><Sparkles size={14} />Ausführliche Analyse mit JARVIS</button>
+        <button class="btn sm" onClick={() => setState({ page: 'chat', chatDraft: 'Analysiere meine LoL-Statistik und die Fehleranalyse meiner Ranked-Spiele und erstelle mir einen Trainingsplan mit 3 messbaren Zielen.' })}><Sparkles size={14} />Ausführliche Analyse mit JARVIS</button>
       </div>
+    </Panel>
+  );
+}
+
+/** Fehlermuster aus den Timelines der letzten Ranked-Spiele. */
+function LolMistakes() {
+  const [p, reload] = useRpc('lol.patterns', { games: 20 }, { events: ['game:data'] });
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => { setBusy(true); const r = await guard(() => rpc('lol.deepSync')); setBusy(false); reload(); if (r) toast(r.analyzed ? `${r.analyzed} Spiele analysiert` : r.reason ? 'Client geschlossen – Analyse mit gespeicherten Daten' : 'Alles aktuell'); };
+  const A = p?.averages || {};
+  return (
+    <Panel icon={Skull} title="Fehleranalyse" sub={p?.games ? `${p.games} Ranked-Spiele mit Timeline · ${p.wins} Siege` : 'Aus den Timelines deiner Ranked-Spiele'}
+      right={<button class="btn xs ghost" title="Fehlende Spiele analysieren (Client muss laufen)" onClick={refresh}>{busy ? <Spinner size={12} /> : <RefreshCw size={13} />}</button>}>
+      {(!p || p.games < 3) && <Empty>Noch zu wenig Daten. Läuft der League-Client, lädt JARVIS die Details (Tode, Lane-Phase, Objectives) deiner letzten Ranked-Spiele automatisch nach.</Empty>}
+      {p?.games >= 3 && <>
+        <div class="row wrap gap-s mb">
+          <span class="chip static" title="Tode vor Minute 14">Frühe Tode Ø {A.earlyDeaths ?? '–'}</span>
+          <span class="chip static" title="CS-Differenz zum Lane-Gegner bei 10 Min.">CS-Diff@10 {A.csDiff10 > 0 ? '+' : ''}{A.csDiff10 ?? '–'}</span>
+          <span class="chip static" title="Gold-Differenz zum Lane-Gegner bei 15 Min.">Gold@15 {A.goldDiff15 > 0 ? '+' : ''}{A.goldDiff15 ?? '–'}</span>
+          <span class="chip static" title="Bei Drachen/Baron deines Teams in der Nähe (geschätzt)">Objectives ~{A.objectivePresence ?? '–'} %</span>
+        </div>
+        <div class="col" style={{ gap: 8 }}>
+          {!p.findings.length && <div class="small muted">Keine auffälligen Fehlermuster – solide.</div>}
+          {p.findings.slice(0, 5).map((f) => <div class="result-row" style={{ alignItems: 'flex-start', cursor: 'default' }}><TriangleAlert size={18} style={{ color: 'var(--orange)' }} /><div class="grow"><b class="small">{f.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{f.text}</div></div></div>)}
+          {p.strengths.map((f) => <div class="result-row" style={{ alignItems: 'flex-start', cursor: 'default' }}><Trophy size={18} style={{ color: 'var(--cyan)' }} /><div class="grow"><b class="small">{f.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{f.text}</div></div></div>)}
+        </div>
+      </>}
+      <button class="btn sm mt" onClick={() => setState({ page: 'chat', chatDraft: 'Was mache ich in meinen Ranked-Spielen falsch? Nutze die Fehleranalyse (league_deep_review) und gib mir einen Trainingsplan mit 3 messbaren Zielen.' })}><Sparkles size={14} />Mit JARVIS durchgehen</button>
+      <div class="tiny muted mt">Orte und Anwesenheit bei Objectives sind aus Minuten-Positionen geschätzt.</div>
     </Panel>
   );
 }
@@ -737,7 +766,7 @@ export const WIDGETS = {
   map: MapWidget, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
-  'lol-champselect': LolChampSelect, 'lol-review': LolReview,
+  'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
 };
 export { nextScheduled };

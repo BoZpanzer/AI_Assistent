@@ -240,6 +240,8 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'lol.reviews': ({ limit } = {}) => s.gaming.lolflow.reviews(limit || 10),
     'lol.reviewNow': () => s.gaming.lolflow.review({ force: true }),
     'lol.champselect': () => s.gaming.lolflow.state(),
+    'lol.patterns': ({ games } = {}) => s.gaming.league.patterns(games || 20),
+    'lol.deepSync': async () => { const r = await s.gaming.league.deepSync({ limit: 30 }); return { ...r, patterns: s.gaming.league.patterns(20) }; },
     'steam.library': () => s.gaming.steam.library(),
     'steam.import': ({ minMinutes } = {}) => s.gaming.steam.importProfiles({ minMinutes: minMinutes ?? s.settings.get('gaming').steamMinMinutes ?? 1 }),
     'steam.updates': () => s.gaming.steam.updates(),

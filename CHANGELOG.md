@@ -2,6 +2,19 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.13.0 – LoL-Fehleranalyse aus deinen Ranked-Spielen
+
+- **JARVIS schaut sich deine Ranked-Spiele im Detail an**, über die Spiel-Timelines aus dem League-Client (ohne API-Schlüssel) oder optional die Riot-API. Pro Spiel wertet es aus:
+  - jeden Tod mit Minute und Ort auf der Karte (Fluss, gegnerischer Jungle, Lane …) und ob es ein 1-gegen-1 war oder du in Unterzahl warst
+  - die Lane-Phase gegen deinen direkten Gegner: CS, Gold und XP bei 10 und 15 Minuten
+  - Objectives: Warst du bei euren Drachen und Baronen dabei? Bist du gestorben, kurz bevor der Gegner einen geholt hat?
+  - Vision und Kontrollwards
+- **Fehlermuster über die letzten 20 Spiele**, z. B. „Zu viele frühe Tode“, „Tode im Fluss/gegnerischen Jungle“, „In Niederlagen schlechtere Lane-Phase (CS@10 72 gegen 58)“ oder „Tode kurz vor gegnerischen Objectives“. Jeder Befund steht mit Zahlen da, und es wird nur verglichen, was in deinen eigenen Spielen steckt. Unter 3 Spielen stellt JARVIS keine Behauptungen auf.
+- Neues Widget **„Fehleranalyse“** auf der LoL-Seite. Die Muster stehen außerdem als eigener Eintrag im Brain und werden automatisch aktualisiert.
+- Im Chat: „Was mache ich falsch?“ oder „Analysiere meine Ranked-Spiele“ nutzt diese Daten. Die Nachbesprechung nach jedem Spiel nennt jetzt auch deine Tode mit Ort, die Lane-Differenz und verlorene Objectives.
+- Läuft der Client, holt JARVIS die Details der letzten 20 Ranked-Spiele automatisch nach.
+- Orte und Anwesenheit bei Objectives stammen aus Positionen pro Minute und sind daher Schätzungen.
+
 ## 3.12.2 – LoL-Analyse auch ohne laufenden Client
 
 - „Analysiere meine letzten LoL-Games“ funktioniert jetzt auch, wenn der League-Client zu ist. JARVIS analysiert die gespeicherten Matches und nennt den Stand der letzten Synchronisierung. Neue Spiele kommen automatisch dazu, sobald der Client das nächste Mal läuft.
