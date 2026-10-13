@@ -16,6 +16,11 @@ const ORIGIN_LABEL = {
   task: 'Aufgaben',
   study: 'Studium',
   briefing: 'Tagesbriefing',
+  client: 'Spiel-Client (lokal)',
+  exam: 'Klausurplan',
+  github: 'GitHub',
+  telegram: 'Telegram',
+  tracker: 'TarkovTracker',
 };
 
 class Notifications {

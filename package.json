@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "JARVIS – Personal Intelligence System",
   "main": "src/main/index.js",
   "scripts": {
@@ -48,6 +48,7 @@
       "build/icon.png",
       "build/tray.png",
       "build/update-public-key.pem",
+      "build/update-config.json",
       "package.json",
       "!src/renderer/src/**",
       "!**/*.map",

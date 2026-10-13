@@ -32,7 +32,9 @@ class Orchestrator {
     const settings = this.s.settings.all();
     let progress = '';
     try { progress = this.s.gaming.progressContext(userText); } catch { /* never block a reply */ }
-    return systemPrompt({ settings, primer: this.s.brain.personalPrimer(), game: this.s.gaming.context.state(), progress, channel });
+    const extra = [];
+    for (const fn of this.s.contextProviders || []) { try { const t = fn(userText, channel); if (t) extra.push(t); } catch { /* ignore */ } }
+    return systemPrompt({ settings, primer: this.s.brain.personalPrimer(), game: this.s.gaming.context.state(), progress: [progress, ...extra].filter(Boolean).join('\n\n'), channel });
   }
 
   /**
@@ -74,7 +76,7 @@ class Orchestrator {
    * Text turn. Streams via bus events: chat:delta / chat:card / chat:done.
    * @returns final assistant message
    */
-  async chat({ conversationId, text, attachments = [], channel = 'text' }) {
+  async chat({ conversationId, text, attachments = [], images = [], channel = 'text' }) {
     const { conversations, gemini, bus } = this.s;
     const conv = conversationId ? conversations.get(conversationId) : conversations.current();
     if (!conv) throw new Error('Gespräch nicht gefunden');
@@ -85,6 +87,7 @@ class Orchestrator {
       attachInfo.push({ name: a.name, docId: a.docId });
       userText += `\n\n[Anhang: ${a.name}${a.docId ? ` (docId ${a.docId}, mit read_document lesbar)` : ''}]`;
     }
+    for (const im of images.slice(0, 3)) attachInfo.push({ name: im.name || 'Bild', image: true });
     conversations.add(cid, { role: 'user', content: userText, meta: attachInfo.length ? { attachments: attachInfo } : {}, channel });
     conversations.autoTitle(cid, text || attachInfo[0]?.name || 'Gespräch');
     const msg = conversations.add(cid, { role: 'assistant', content: '', meta: { streaming: true }, channel });
@@ -100,6 +103,10 @@ class Orchestrator {
     this.cancel(cid);
     this.active.set(cid, ac);
     const contents = conversations.history(cid, 14);
+    if (images.length) {
+      const lastUser = [...contents].reverse().find((c) => c.role === 'user');
+      if (lastUser) for (const im of images.slice(0, 3)) lastUser.parts.unshift({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } });
+    }
     const role = needsReasoning(text) ? 'reasoning' : 'fast';
     const model = gemini.model(role) || gemini.requireModel('fast');
     const cards = []; const sources = []; let full = '';

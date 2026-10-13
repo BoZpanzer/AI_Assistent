@@ -124,3 +124,20 @@ Matchhistorie (Ranked Solo/Duo) und Rang werden über die lokale Schnittstelle d
 | Mit deinem echten Client | **W** – das Antwortformat der Client-Schnittstelle ist nicht offiziell dokumentiert und kann sich mit Patches ändern; falls etwas fehlt, Protokoll unter Einstellungen → Sicherheit → Protokolle |
 
 Hinweis: Kill-Beteiligung wird nur angezeigt, wenn der Client Teamdaten liefert (sonst „–“ statt eines geschätzten Werts).
+
+---
+
+## Nachtrag 3.3.0 – Update-Button, Overlay, TarkovTracker, LoL-Coach (13. Oktober 2026)
+
+| Test | Ergebnis |
+|---|---|
+| Updater gegen ein nachgebautes GitHub-Release, öffentlich und privat: Signatur gültig/ungültig, falsche Prüfsumme, Sicherung vor dem Update, gleiche Version = aktuell, Token geht **nur** an `api.github.com` und nicht an den weitergeleiteten Download-Host | **bestanden** |
+| Signaturskript des Release-Workflows: `update.json` + Changelog-Auszug, Abbruch bei falschem Schlüssel | **bestanden** |
+| Mit OpenSSL (Git Bash) erzeugte Ed25519-Schlüssel funktionieren mit der App-Prüfung | **bestanden** |
+| NSIS-Installer mit `/S /RELAUNCH` (Neustart nach stillem Update, Desktop-Verknüpfung bleibt gelöscht, wenn du sie gelöscht hast) kompiliert | **bestanden** (kompiliert unter Linux; die Ausführung auf Windows prüft der Release-/Windows-Workflow) |
+| TarkovTracker (nachgebaute API): Token-Prüfung, Abgleich erledigt/fehlgeschlagen/Level, kein Zurückspiegeln beim Sync, Abhaken → `POST /progress/task/{id}` | **bestanden** |
+| LoL-Nachbesprechung: Hinweise nur aus echten Werten, messbare Trainingsziele | **bestanden** |
+| Stundenplan-Parser (ICS) in 4 Zeitzonen, inkl. Sommer-/Winterzeit, EXDATE, verschobener Einzeltermine | **bestanden** (Funktion selbst ist noch nicht freigeschaltet, kommt in 3.4) |
+| Gesamt | **39 / 39 Tests** (auch mit `TZ=UTC` wie in CI), E2E **15 / 15** (neu: Update-Button + Dialog, unsigniert → kein Button) |
+| Echter Release-Lauf auf GitHub (Windows-Runner, `gh release create`) | **N** – läuft erst, wenn du das Repo angelegt und den ersten Tag gepusht hast |
+| Overlay über einem echten Spiel, Bildschirmaufnahme unter Windows, Championauswahl mit echtem League-Client | **W** – implementiert, aber nur unter Linux/Xvfb und mit nachgebauten Daten getestet |

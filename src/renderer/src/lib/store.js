@@ -67,7 +67,7 @@ export async function bootstrap() {
   const confirmations = Object.fromEntries((b.confirmations || []).map((c) => [c.token, { ...c, status: 'pending' }]));
   setState({
     ready: true, settings: b.settings, secrets: b.secrets, version: b.version, game: b.game, counts: b.counts, unread: b.unread,
-    voice: b.voice, google: b.google, conversationId: conv.id, page: b.settings.startPage || 'dashboard', showSetup: !b.settings.setupComplete, confirmations,
+    voice: b.voice, google: b.google, update: b.update || null, conversationId: conv.id, page: b.settings.startPage || 'dashboard', showSetup: !b.settings.setupComplete, confirmations,
   });
   on('settings:changed', async () => setState({ settings: await rpc('settings.get') }));
   on('game:context', (g) => setState({ game: g }));
@@ -82,5 +82,6 @@ export async function bootstrap() {
   on('confirm:new', (c) => setState((s) => ({ confirmations: { ...s.confirmations, [c.token]: { ...c, status: 'pending' } } })));
   on('confirm:resolved', ({ token, approved, error }) => setState((s) => ({ confirmations: { ...s.confirmations, [token]: { ...(s.confirmations[token] || {}), status: error ? 'error' : approved ? 'done' : 'declined', error } } })));
   on('confirm:expired', ({ token }) => setState((s) => ({ confirmations: { ...s.confirmations, [token]: { ...(s.confirmations[token] || {}), status: 'expired' } } })));
+  on('update:state', (u) => setState({ update: u }));
   on('data:imported', (c) => toast(`Import abgeschlossen: ${c.tasks} Aufgaben, ${c.memories} Erinnerungen, ${c.messages} Nachrichten`));
 }

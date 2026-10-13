@@ -30,6 +30,7 @@ const SCHEMA = {
       file: { type: 'string', maxLength: 500 },
       volume: { type: 'number', minimum: 0, maximum: 1 } } },
     updateChannelUrl: { type: 'string', maxLength: 500 },
+    updateRepo: { type: 'string', maxLength: 140 },
     updateCheck: { type: 'boolean' },
     // AI
     models: { type: 'object', properties: {
@@ -57,12 +58,36 @@ const SCHEMA = {
       folder: { type: 'string', maxLength: 600 }, enabled: { type: 'boolean' },
       formats: { type: 'array', items: { type: 'string' } },
       visionForHandwriting: { type: 'string', enum: ['off', 'on-demand', 'auto'] },
-      visionDailyLimit: { type: 'number', minimum: 0, maximum: 500 } } },
+      visionDailyLimit: { type: 'number', minimum: 0, maximum: 500 },
+      preferredTime: { type: 'string', maxLength: 5 }, maxSessionsPerDay: { type: 'number', minimum: 1, maximum: 4 }, linkLectures: { type: 'boolean' } } },
     // Gaming
     gaming: { type: 'object', properties: {
       detection: { type: 'boolean' }, reduceWhileGaming: { type: 'boolean' },
       riotId: { type: 'string', maxLength: 60 }, leagueDir: { type: 'string', maxLength: 500 }, riotRegion: { type: 'string', enum: ['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1'] },
-      lolLiveCoach: { type: 'boolean' }, favorites: { type: 'array', items: { type: 'string' } } } },
+      lolLiveCoach: { type: 'boolean' }, favorites: { type: 'array', items: { type: 'string' } },
+      lolChampSelect: { type: 'boolean' }, lolReview: { type: 'boolean' }, lolReviewAi: { type: 'boolean' }, tarkovTrackerSync: { type: 'boolean' } } },
+    // Screen analysis & in-game overlay
+    screen: { type: 'object', properties: {
+      enabled: { type: 'boolean' }, hotkey: { type: 'string', maxLength: 40 }, defaultQuestion: { type: 'string', maxLength: 300 } } },
+    overlay: { type: 'object', properties: {
+      mode: { type: 'string', enum: ['auto', 'always', 'off'] }, hotkey: { type: 'string', maxLength: 40 }, interactHotkey: { type: 'string', maxLength: 40 },
+      position: { type: 'string', enum: ['left', 'right'] }, opacity: { type: 'number', minimum: 0.4, maximum: 1 }, scale: { type: 'number', minimum: 0.7, maximum: 1.5 },
+      showMap: { type: 'boolean' }, speakAnswers: { type: 'boolean' } } },
+    // Phone (Telegram bot)
+    telegram: { type: 'object', properties: {
+      enabled: { type: 'boolean' }, forwardMode: { type: 'string', enum: ['off', 'idle', 'always'] }, idleMinutes: { type: 'number', minimum: 1, maximum: 240 },
+      chats: { type: 'array', maxItems: 5, items: { type: 'object', properties: { id: { type: 'number' }, name: { type: 'string', maxLength: 80 } } } },
+      allowConfirm: { type: 'boolean' } } },
+    // PC control (fixed allowlist)
+    pc: { type: 'object', properties: {
+      enabled: { type: 'boolean' }, allowPower: { type: 'boolean' },
+      apps: { type: 'array', maxItems: 60, items: { type: 'object', properties: { name: { type: 'string', maxLength: 60 }, kind: { type: 'string', enum: ['exe', 'steam', 'uri', 'folder'] }, target: { type: 'string', maxLength: 500 } } } } } },
+    // Local offline model (Ollama)
+    ollama: { type: 'object', properties: {
+      enabled: { type: 'boolean' }, url: { type: 'string', maxLength: 100 }, model: { type: 'string', maxLength: 100 }, notWhileGaming: { type: 'boolean' } } },
+    // GitHub projects
+    github: { type: 'object', properties: {
+      enabled: { type: 'boolean' }, repos: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 140 } }, notifyFailures: { type: 'boolean' } } },
     // Proactive
     proactive: { type: 'object', properties: {
       dailyBriefing: { type: 'boolean' }, briefingTime: { type: 'string', maxLength: 5 },
@@ -77,18 +102,24 @@ const SCHEMA = {
 const DEFAULTS = {
   setupComplete: false, nickname: 'Chef', userName: '', theme: 'jarvis', startPage: 'dashboard', language: 'de-DE',
   autostart: false, startMinimized: false, closeToTray: true, notifications: true,
-  notifyCategories: { tasks: true, calendar: true, gaming: true, study: true, system: true, briefing: true },
+  notifyCategories: { tasks: true, calendar: true, gaming: true, study: true, system: true, briefing: true, projects: true },
   quietHours: { enabled: false, from: '23:00', to: '07:00' },
   animations: 'full', hudTransparency: 0.85, alwaysOnTop: false, globalHotkey: 'Control+Alt+J',
   startSound: { mode: 'off', delaySeconds: 0, file: '', volume: 0.6 },
-  updateChannelUrl: '', updateCheck: true,
+  updateChannelUrl: '', updateRepo: '', updateCheck: true,
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true,
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
-  study: { folder: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40 },
-  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [] },
+  study: { folder: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
+  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [], lolChampSelect: true, lolReview: true, lolReviewAi: true, tarkovTrackerSync: true },
+  screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.' },
+  overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false },
+  telegram: { enabled: false, forwardMode: 'idle', idleMinutes: 10, chats: [], allowConfirm: true },
+  pc: { enabled: true, allowPower: true, apps: [] },
+  ollama: { enabled: false, url: 'http://127.0.0.1:11434', model: '', notWhileGaming: true },
+  github: { enabled: false, repos: [], notifyFailures: true },
   proactive: { dailyBriefing: false, briefingTime: '08:00', overdueReminders: true },
   security: { localOnlyProcessing: false, restrictFileAccess: true, lockAfterMinutes: 0 },
 };

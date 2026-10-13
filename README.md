@@ -73,8 +73,12 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
   - *Alle anderen Spiele (ARK, Elden Ring, …):* universelle Oberfläche – Recherche mit Quellen, Wiki (wo eine öffentliche MediaWiki-API existiert), Notizen, Timer, gespeicherte Quellen.
   - „Andere Spiele – Benachrichtigungen“ mit Herkunft (eigener Timer = Zeitabschätzung).
   - **Mein Spielstand (ab 3.1):** JARVIS merkt sich deinen Fortschritt pro Spiel, sobald du davon erzählst („hab Operation Aquarius abgeschlossen“, „Sun Tzu ist jetzt Level 40“, „bin PMC-Level 34“). Gleiche Einträge werden aktualisiert (mit Verlauf und „Rückgängig“), Tarkov-Quests werden auf die offiziellen Namen abgebildet und in der Quest-Liste abgehakt. Der Stand des aktiven, des besprochenen und jedes im Satz erwähnten Spiels fließt automatisch in jede Antwort ein – andere Spiele nicht (spart Tokens). Bei einem Wipe wird der alte Stand archiviert.
+  - **In-Game-Overlay (ab 3.3):** transparentes, klick-durchlässiges HUD über dem Spiel (Timer, Spielstand, Mini-Karte, Sprachstatus, Antworten, LoL-Championauswahl/Nachbesprechung). Strg+Alt+O ein/aus, Strg+Alt+I kurz bedienen. Funktioniert im Modus „Randloses Fenster“.
+  - **„Was ist das?“ (Strg+Alt+W):** Screenshot nur auf ausdrücklichen Wunsch → Frage an Gemini → Antwort im Overlay. Bilder bleiben lokal (die letzten 20).
+  - **TarkovTracker-Sync (ab 3.3):** persönlicher API-Token → erledigte Quests/PMC-Level automatisch im Spielstand; Abhaken in JARVIS wird mit Schreibrecht zurückübertragen.
+  - **LoL Championauswahl & Nachbesprechung (ab 3.3):** Matchup-Tipps nur anhand der Champions (Riot-Richtlinie: keine Spielerdaten in der Lobby), Nachbesprechung nach jedem Spiel aus echten Zahlen.
 - **Proaktiv:** Tagesbriefing, Erinnerungen, Hinweis auf Überfälliges, Ruhezeiten, Kategorien abschaltbar.
-- **Desktop:** eigenes Fenster und Icon, Startmenü, optional Desktop-Verknüpfung, System-Tray (Schließen = weiterlaufen, „vollständig beenden“ im Tray-Menü), Autostart, Benachrichtigungen, Sicherung/Wiederherstellung, signierte Updates, Deinstallation (fragt, ob persönliche Daten gelöscht werden sollen; Standard: behalten).
+- **Desktop:** eigenes Fenster und Icon, Startmenü, optional Desktop-Verknüpfung, System-Tray (Schließen = weiterlaufen, „vollständig beenden“ im Tray-Menü), Autostart, Benachrichtigungen, Sicherung/Wiederherstellung, **Ein-Klick-Updates aus GitHub Releases** (Button „Aktualisieren“, signiert, mit Sicherung, stille Installation, Neustart – siehe [docs/UPDATES.md](docs/UPDATES.md)), Deinstallation (fragt, ob persönliche Daten gelöscht werden sollen; Standard: behalten).
 
 ## Einrichtung
 
@@ -104,7 +108,7 @@ npm run dist:win          # release/win-unpacked/JARVIS.exe + release/JARVIS_Set
 JARVIS.exe --smoke        # Selbsttest der gebauten/installierten App (Exit-Code 0 = OK)
 ```
 
-`dist:win` funktioniert auf Windows (NSIS installieren: `choco install nsis`) und als Cross-Build auf Linux (`apt install nsis`). Icon und Versionsinfo werden mit `resedit` ohne Wine eingebettet. Die GitHub-Action `.github/workflows/windows.yml` baut auf einem Windows-Runner, führt alle Tests und den Smoke-Test aus und prüft stille Installation, Start und Deinstallation.
+`dist:win` funktioniert auf Windows (NSIS installieren: `choco install nsis`) und als Cross-Build auf Linux (`apt install nsis`). Icon und Versionsinfo werden mit `resedit` ohne Wine eingebettet. GitHub-Actions: `tests.yml` (jeder Push, Linux, alle Tests), `windows.yml` (PR/manuell: Windows-Build, Smoke-Test, stille Installation/Start/Deinstallation), `release.yml` (Tag `v*`: Build, Signatur, GitHub-Release für den Update-Button).
 
 ## Bekannte Grenzen
 

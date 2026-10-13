@@ -1,9 +1,9 @@
 name: Windows Build & Test
 
+# Vollständiger Windows-Build inkl. Installations-/Deinstallationstest – manuell
+# startbar (Actions → „Windows Build & Test“ → Run workflow) und bei Pull Requests.
+# Releases baut release.yml (Tag v*), schnelle Tests laufen in tests.yml.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -56,4 +56,4 @@ jobs:
           path: |
             release/JARVIS_Setup.exe
             release/SHA256SUMS.txt
-            release/update-channel.example.json
+          retention-days: 7

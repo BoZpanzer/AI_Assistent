@@ -257,6 +257,12 @@ function buildTools(s) {
       return { source: r.source, results: r.results, article: page ? { title: page.title, url: page.url, text: page.text } : null };
     } });
 
+  // ---------- Bildschirm ----------
+  def({ name: 'look_at_screen', mode: 'read', description: 'Screenshot des aktuellen Bildschirms machen und analysieren – NUR wenn der Nutzer ausdrücklich darum bittet („schau mal“, „was ist das“, „was siehst du“, „lies den Timer ab“). Danach ggf. weitere Werkzeuge nutzen (z. B. tarkov_lookup für Preise, add_game_timer für abgelesene Bauzeiten).',
+    schema: { type: 'object', properties: { question: { type: 'string', description: 'Konkrete Frage zum Bild' } } },
+    run: async ({ question }) => { const r = await s.screen.ask(question); return { seen: r.answer, game: r.game || undefined }; },
+    card: () => ({ icon: 'link', title: 'Bildschirm angesehen', lines: ['Screenshot wurde lokal gespeichert und nur für diese Frage an Gemini gesendet.'] }) });
+
   // ---------- System / UI ----------
   def({ name: 'open_page', mode: 'write', description: 'Eine Seite der JARVIS-Oberfläche öffnen.', schema: { type: 'object', required: ['page'], properties: { page: { type: 'string', enum: ['dashboard', 'chat', 'tasks', 'calendar', 'study', 'gaming', 'brain', 'settings'] } } },
     run: ({ page }) => { s.bus.emit('ui:navigate', { page }); return { opened: page }; } });

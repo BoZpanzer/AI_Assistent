@@ -2,7 +2,8 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, safeStorage, shell, protocol, net, globalShortcut, session, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, safeStorage, shell, protocol, net, globalShortcut, session, powerMonitor, desktopCapturer, screen } = require('electron');
+const { Overlay } = require('./overlay');
 const { createCore } = require('./app-core');
 const { registerIpc } = require('./ipc');
 const logger = require('./core/logger');
@@ -30,7 +31,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-let win = null; let tray = null; let core = null; let quitting = false;
+let win = null; let tray = null; let core = null; let quitting = false; let overlay = null;
 const startHidden = process.argv.includes('--hidden');
 
 function cipher() {
@@ -43,6 +44,11 @@ function cipher() {
 
 function loadUpdateKey() {
   try { const p = path.join(__dirname, '..', '..', 'build', 'update-public-key.pem'); return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null; } catch { return null; }
+}
+
+/** Baked in by the release workflow: { repo: "owner/name" } */
+function loadUpdateRepo() {
+  try { const p = path.join(__dirname, '..', '..', 'build', 'update-config.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).repo || null : null; } catch { return null; }
 }
 
 function createWindow() {
@@ -72,7 +78,28 @@ function createWindow() {
   win.webContents.on('render-process-gone', (_e, d) => logger.scope('main').error('Renderer beendet: ' + d.reason));
 }
 
-function send(type, data) { if (win && !win.isDestroyed()) win.webContents.send('evt', { type, data }); }
+// Overlay gets everything except high-rate streams it does not need.
+const OVERLAY_SKIP = new Set(['voice:audio', 'chat:delta', 'message:update', 'study:progress']);
+function send(type, data) {
+  if (win && !win.isDestroyed()) win.webContents.send('evt', { type, data });
+  if (overlay?.visible && !OVERLAY_SKIP.has(type)) overlay.send(type, data);
+}
+
+/** Screenshot of the display under the mouse cursor (only on explicit request). */
+async function captureScreen() {
+  const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const f = Math.min(1, 1920 / (disp.size.width * disp.scaleFactor));
+  const size = { width: Math.round(disp.size.width * disp.scaleFactor * f), height: Math.round(disp.size.height * disp.scaleFactor * f) };
+  const ov = overlay?.win && !overlay.win.isDestroyed() && overlay.visible ? overlay.win : null;
+  if (ov) { ov.setOpacity(0); await new Promise((r) => setTimeout(r, 60)); }
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size });
+    const src = sources.find((x) => String(x.display_id) === String(disp.id)) || sources[0];
+    if (!src || src.thumbnail.isEmpty()) throw new Error('Kein Bildschirmbild erhalten');
+    const img = src.thumbnail;
+    return { data: img.toJPEG(85), ...img.getSize() };
+  } finally { if (ov) overlay.applyBounds(); }
+}
 
 function showWindow(page) {
   if (!win) return;
@@ -90,17 +117,25 @@ function buildTray() {
     { label: core.voice.isOpen() ? 'Sprachmodus beenden' : 'Sprachmodus starten', click: () => (core.voice.isOpen() ? core.voice.stop() : send('voice:toggle', {})) },
     { label: 'Wake-Word „Hey Jarvis“', type: 'checkbox', checked: !!core.settings.get('voice').wakeWord, click: (i) => core.settings.update({ voice: { wakeWord: i.checked } }) },
     { type: 'separator' },
+    { label: overlay?.visible ? 'In-Game-Overlay ausblenden' : 'In-Game-Overlay einblenden', click: () => overlay?.toggle() },
+    { label: 'Bildschirm fragen („Was ist das?“)', click: () => core.screen.hotkeyQuestion().catch((e) => toast('JARVIS', e.message)) },
+    { type: 'separator' },
     { label: 'Aufgaben', click: () => showWindow('tasks') },
     { label: 'Kalender', click: () => showWindow('calendar') },
     { label: 'Einstellungen', click: () => showWindow('settings') },
     { type: 'separator' },
+    ...(core.updater.state.state === 'available' && core.updater.state.signed ? [{ label: `Auf ${core.updater.state.version} aktualisieren`, click: () => showWindow('settings') }, { type: 'separator' }] : []),
     { label: 'JARVIS vollständig beenden', click: () => { quitting = true; app.quit(); } },
   ]);
   tray.setContextMenu(menu());
   tray.on('click', () => (win.isVisible() && win.isFocused() ? win.hide() : showWindow()));
   core.bus.on('settings:changed', () => tray.setContextMenu(menu()));
   core.bus.on('voice:state', () => tray.setContextMenu(menu()));
+  core.bus.on('overlay:visible', () => tray.setContextMenu(menu()));
+  core.bus.on('update:state', (u) => { if (['available', 'current', 'error'].includes(u.state)) tray.setContextMenu(menu()); });
 }
+
+function toast(title, body) { if (Notification.isSupported()) { const n = new Notification({ title, body, icon: ICON, silent: false }); n.on('click', () => showWindow()); n.show(); } }
 
 function applyDesktopSettings() {
   const s = core.settings.all();
@@ -113,13 +148,18 @@ function applyDesktopSettings() {
   if (hk) { try { globalShortcut.register(hk, () => { showWindow(); send('ui:focus-input', {}); }); } catch { /* invalid accelerator */ } }
   const ptt = s.voice?.pushToTalkKey;
   if (ptt) { try { globalShortcut.register(ptt, () => send('voice:toggle', {})); } catch { /* ignore */ } }
+  const reg = (acc, fn) => { if (acc) { try { globalShortcut.register(acc, fn); } catch { /* invalid accelerator */ } } };
+  if (s.screen?.enabled !== false) reg(s.screen?.hotkey, () => core.screen.hotkeyQuestion().catch((e) => { toast('JARVIS – Bildschirm', e.message); core.bus.emit('overlay:answer', { question: '', answer: '⚠️ ' + e.message, cards: [] }); }));
+  reg(s.overlay?.hotkey, () => overlay?.toggle());
+  reg(s.overlay?.interactHotkey, () => overlay?.toggleInteractive());
 }
 
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
     'game:context', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio',
-    'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported'];
+    'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported',
+    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }
 
@@ -129,10 +169,12 @@ app.whenReady().then(async () => {
     cipher: isE2E && !safeStorage.isEncryptionAvailable() ? require('./core/secrets').memoryCipher : cipher(),
     fetch: (url, init) => net.fetch(url, init),
     platform: {
-      toast: (title, body) => { if (Notification.isSupported()) { const n = new Notification({ title, body, icon: ICON, silent: false }); n.on('click', () => showWindow()); n.show(); } },
+      toast,
+      captureScreen,
+      idleSeconds: () => powerMonitor.getSystemIdleTime(),
       openExternal: (url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); },
     },
-    updatePublicKey: loadUpdateKey(),
+    updatePublicKey: loadUpdateKey(), updateRepo: loadUpdateRepo(),
     genaiSdk: isE2E && process.env.JARVIS_FAKE_GEMINI === '1' ? require('../../tests/e2e/fake-genai.js') : undefined,
   });
   if (isSmoke && process.env.JARVIS_SMOKE_ANIM) core.settings.update({ animations: process.env.JARVIS_SMOKE_ANIM, setupComplete: true });
@@ -175,15 +217,17 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => cb(['media', 'notifications', 'clipboard-sanitized-write'].includes(perm) && String(details.requestingUrl || '').startsWith('app://jarvis/')));
   session.defaultSession.setPermissionCheckHandler((wc, perm, origin) => ['media', 'notifications', 'clipboard-sanitized-write'].includes(perm) && String(origin || '').startsWith('app://jarvis'));
 
-  registerIpc({ core, getWin: () => win, app, showWindow, quit: () => { quitting = true; app.quit(); }, relaunch: () => { quitting = true; app.relaunch(); app.quit(); } });
+  registerIpc({ core, getWin: () => win, app, showWindow, overlay: () => overlay, quit: () => { quitting = true; app.quit(); }, relaunch: () => { quitting = true; app.relaunch(); app.quit(); } });
   forwardEvents();
   createWindow();
-  if (isE2E) global.__jarvis = { win, core };
+  if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
+  if (isE2E) global.__jarvis = { win, core, overlay: () => overlay };
   if (isSmoke) runSmoke();
   buildTray();
   applyDesktopSettings();
-  core.bus.on('settings:changed', ({ keys }) => { if (keys.some((k) => ['autostart', 'alwaysOnTop', 'globalHotkey', 'voice'].includes(k))) applyDesktopSettings(); });
+  core.bus.on('settings:changed', ({ keys }) => { if (keys.some((k) => ['autostart', 'alwaysOnTop', 'globalHotkey', 'voice', 'screen', 'overlay'].includes(k))) applyDesktopSettings(); });
   core.start();
+  overlay?.refresh();
   powerMonitor.on('resume', () => { core.scheduler.runNow('calendar-sync'); });
   powerMonitor.on('lock-screen', () => { if (core.voice.isOpen()) core.voice.stop({ standby: true }); });
 });
@@ -224,7 +268,7 @@ async function runSmoke() {
 
 app.on('second-instance', (_e, argv) => { showWindow(); });
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); try { core?.stop(); } catch { /* ignore */ } });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); try { core?.stop(); } catch { /* ignore */ } });
 app.on('window-all-closed', () => { /* tray keeps running */ });
 process.on('uncaughtException', (e) => logger.scope('main').error('Unerwarteter Fehler', e));
 process.on('unhandledRejection', (e) => logger.scope('main').error('Unbehandelte Ablehnung', e));

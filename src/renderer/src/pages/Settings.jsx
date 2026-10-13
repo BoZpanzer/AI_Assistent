@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { Settings as Gear, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket } from 'lucide-preact';
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
-import { ChatBar } from '../components/Shell.jsx';
+import { ChatBar, UpdateModal } from '../components/Shell.jsx';
 import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask } from '../components/ui.jsx';
 import { audio, playStartSound } from '../lib/audio.js';
 import { ago } from '../lib/format.js';
@@ -26,6 +26,7 @@ export function Settings() {
           <Google s={s} />
           <StudyCard s={s} />
           <GamingCard s={s} secrets={secrets} />
+          <OverlayCard s={s} />
           <Desktop s={s} />
           <Security s={s} />
           <Proactive s={s} />
@@ -187,6 +188,51 @@ function GamingCard({ s, secrets }) {
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['riot.api_key'] ? '••••••••' : 'RGAPI-…'} value={riotKey} onInput={(e) => setRiotKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'riot.api_key', value: riotKey }), 'Gespeichert'); setRiotKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
       </Field>
       <Field label="LoL Live-Coach (Hinweise im Match)"><Toggle checked={g.lolLiveCoach} onChange={(v) => upd({ gaming: { lolLiveCoach: v } })} /></Field>
+      <Field label="LoL Championauswahl: Matchup-Tipps" hint="Nur Champions, keine Spielerdaten"><Toggle checked={g.lolChampSelect !== false} onChange={(v) => upd({ gaming: { lolChampSelect: v } })} /></Field>
+      <Field label="LoL Nachbesprechung nach jedem Spiel"><Toggle checked={g.lolReview !== false} onChange={(v) => upd({ gaming: { lolReview: v } })} /></Field>
+      {g.lolReview !== false && <Field label="… mit KI-Zusammenfassung (Gemini)"><Toggle checked={g.lolReviewAi !== false} onChange={(v) => upd({ gaming: { lolReviewAi: v } })} /></Field>}
+      <div class="hr" />
+      <TarkovTrackerField />
+    </Panel>
+  );
+}
+
+function TarkovTrackerField() {
+  const [st, reload] = useRpc('tracker.status', {}, { events: ['tarkovtracker:status'] });
+  const [tok, setTok] = useState('');
+  const [busy, setBusy] = useState(false);
+  const connect = async () => { setBusy(true); const r = await guard(() => rpc('tracker.connect', { token: tok.trim() })); setBusy(false); if (r) { toast(`TarkovTracker verbunden${r.canWrite ? ' (mit Schreibrecht)' : ' (nur lesen)'}`); setTok(''); reload(); } };
+  return (
+    <>
+      <Field label="TarkovTracker-Token (optional)" hint="tarkovtracker.org → Einstellungen → API-Token. Erledigte Quests landen automatisch in „Mein Spielstand“; mit Schreibrecht wird dein Abhaken zurückübertragen." wide>
+        <div class="row gap-s" style={{ width: '100%' }}>
+          <input class="inp" type="password" value={tok} placeholder={st?.configured ? '•••••••• (verbunden)' : 'PVP_… oder Token'} onInput={(e) => setTok(e.currentTarget.value)} />
+          <button class="btn xs" disabled={!tok.trim() || busy} onClick={connect}>{busy ? <Spinner /> : 'Verbinden'}</button>
+          {st?.configured && <button class="btn xs ghost" onClick={async () => { await rpc('tracker.disconnect'); reload(); }}>Trennen</button>}
+        </div>
+      </Field>
+      {st?.configured && <div class="tiny muted">{st.error ? 'Fehler: ' + st.error : st.lastSync ? `Zuletzt abgeglichen ${ago(st.lastSync)}${st.counts ? ` · ${st.counts.done} Quests erledigt` : ''}` : 'Noch nicht abgeglichen'}{st.gameMode ? ` · Modus ${st.gameMode.toUpperCase()}` : ''}</div>}
+    </>
+  );
+}
+
+function OverlayCard({ s }) {
+  const o = s.overlay || {}; const sc = s.screen || {};
+  return (
+    <Panel icon={Monitor} title="In-Game-Overlay & Bildschirm" sub="HUD über dem Spiel und „Was ist das?“-Hotkey">
+      <Field label="Overlay"><Select value={o.mode} onChange={(v) => upd({ overlay: { mode: v } })} options={[{ value: 'auto', label: 'Automatisch beim Spielen' }, { value: 'always', label: 'Immer' }, { value: 'off', label: 'Aus' }]} /></Field>
+      <Field label="Position"><Select value={o.position} onChange={(v) => upd({ overlay: { position: v } })} options={[{ value: 'right', label: 'Rechts' }, { value: 'left', label: 'Links' }]} /></Field>
+      <Field label={`Deckkraft · ${Math.round((o.opacity ?? 0.92) * 100)}%`}><input class="range" type="range" min="0.4" max="1" step="0.05" value={o.opacity ?? 0.92} onChange={(e) => upd({ overlay: { opacity: Number(e.currentTarget.value) } })} /></Field>
+      <Field label={`Größe · ${Math.round((o.scale ?? 1) * 100)}%`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={o.scale ?? 1} onChange={(e) => upd({ overlay: { scale: Number(e.currentTarget.value) } })} /></Field>
+      <Field label="Mini-Karte anzeigen"><Toggle checked={o.showMap !== false} onChange={(v) => upd({ overlay: { showMap: v } })} /></Field>
+      <Field label="Overlay ein/aus (Hotkey)"><input class="inp" value={o.hotkey} onChange={(e) => upd({ overlay: { hotkey: e.currentTarget.value } })} /></Field>
+      <Field label="Overlay bedienen (Hotkey)" hint="Macht es 20 s lang klickbar"><input class="inp" value={o.interactHotkey} onChange={(e) => upd({ overlay: { interactHotkey: e.currentTarget.value } })} /></Field>
+      <div class="hr" />
+      <Field label="„Was ist das?“ – Bildschirm fragen" hint="Screenshot nur auf Tastendruck/Befehl; bleibt lokal, nur dieses Bild geht an Gemini"><Toggle checked={sc.enabled !== false} onChange={(v) => upd({ screen: { enabled: v } })} /></Field>
+      <Field label="Hotkey"><input class="inp" value={sc.hotkey} onChange={(e) => upd({ screen: { hotkey: e.currentTarget.value } })} /></Field>
+      <Field label="Standardfrage" wide><input class="inp" value={sc.defaultQuestion} onChange={(e) => upd({ screen: { defaultQuestion: e.currentTarget.value } })} /></Field>
+      <Field label="Antworten vorlesen"><Toggle checked={!!o.speakAnswers} onChange={(v) => upd({ overlay: { speakAnswers: v } })} /></Field>
+      <div class="tiny muted">Tipp: Spiele im Modus „Randloses Fenster“ – über exklusivem Vollbild kann Windows kein Overlay anzeigen.</div>
     </Panel>
   );
 }
@@ -243,7 +289,6 @@ function Proactive({ s }) {
 function Data() {
   const [info] = useRpc('app.info', {}, {});
   const [backups, reload] = useRpc('system.backups', {}, { initial: [] });
-  const [upd2, setUpd] = useState(null);
   const s = useStore((x) => x.settings);
   return (
     <Panel icon={Database} title="Daten, Sicherung & Updates" sub={`JARVIS ${info?.version || ''} · Electron ${info?.electron || ''}`}>
@@ -254,14 +299,37 @@ function Data() {
       </div>
       <div class="tiny muted mt">Automatische Tagessicherungen (7 Tage): {backups.filter((b) => b.auto).length} · zuletzt {backups[0] ? ago(backups[0].at) : '—'} · vor jeder Schema-Migration wird zusätzlich gesichert.</div>
       <div class="hr" />
-      <Field label="Update-Kanal (URL, optional)" wide><input class="inp" value={s.updateChannelUrl} onChange={(e) => upd({ updateChannelUrl: e.currentTarget.value.trim() })} placeholder="https://…/update-channel.json" /></Field>
-      <Field label="Täglich nach Updates suchen"><Toggle checked={s.updateCheck} onChange={(v) => upd({ updateCheck: v })} /></Field>
-      <div class="row gap-s">
-        <button class="btn xs" onClick={async () => setUpd(await guard(() => rpc('system.checkUpdates')))}><RefreshCw size={12} />Jetzt prüfen</button>
-        {upd2?.state === 'available' && <button class="btn xs primary" disabled={!upd2.signed} title={upd2.signed ? '' : 'Nur signierte Updates werden automatisch installiert'} onClick={() => guard(() => rpc('system.installUpdate'))}><Rocket size={12} />Update {upd2.version} installieren</button>}
-      </div>
-      {upd2 && <div class="tiny muted mt">{{ 'not-configured': 'Kein Update-Kanal eingerichtet.', current: `Aktuell (${upd2.version}).`, available: `Version ${upd2.version} verfügbar – ${upd2.signed ? 'Signatur gültig' : 'NICHT signiert'}.`, error: 'Fehler: ' + upd2.error }[upd2.state]}</div>}
+      <UpdateSection s={s} />
     </Panel>
+  );
+}
+
+function UpdateSection({ s }) {
+  const u = useStore((x) => x.update) || {};
+  const secrets = useStore((x) => x.secrets);
+  const [open, setOpen] = useState(false);
+  const [tok, setTok] = useState('');
+  const check = async () => { const r = await guard(() => rpc('update.check')); if (r?.state === 'available') setOpen(true); else if (r?.state === 'current') toast(`JARVIS ist aktuell (${r.version}).`); };
+  const label = { 'not-configured': 'Keine Update-Quelle eingerichtet.', checking: 'Suche …', current: `Aktuell – neueste Version ist ${u.version}.`, available: `Version ${u.version} verfügbar${u.signed ? ' (Signatur gültig)' : ' – NICHT gültig signiert'}.`, downloading: 'Lädt herunter …', ready: 'Bereit zur Installation.', installing: 'Installiert …', error: 'Fehler: ' + u.error }[u.state] || '';
+  return (
+    <>
+      <Field label="Update-Quelle (GitHub-Repo)" hint={u.repo && !s.updateRepo ? 'Im Release eingebaut' : 'z. B. boz/jarvis'} wide><input class="inp" value={s.updateRepo || u.repo || ''} onChange={(e) => upd({ updateRepo: e.currentTarget.value.trim() })} placeholder="benutzername/jarvis" /></Field>
+      <Field label="GitHub-Token (nur für privates Repo)" hint="Fein-granular, nur dieses Repo, „Contents: Read-only“ – wird mit DPAPI verschlüsselt" wide>
+        <div class="row gap-s" style={{ width: '100%' }}>
+          <input class="inp" type="password" value={tok} placeholder={secrets['github.token'] ? '•••••••• (hinterlegt)' : 'github_pat_…'} onInput={(e) => setTok(e.currentTarget.value)} />
+          <button class="btn xs" disabled={!tok.trim()} onClick={async () => { const r = await guard(() => rpc('secrets.set', { key: 'github.token', value: tok.trim() }), 'Token gespeichert'); if (r) { setState({ secrets: r }); setTok(''); } }}>Speichern</button>
+          {secrets['github.token'] && <button class="btn xs ghost" onClick={async () => setState({ secrets: await rpc('secrets.set', { key: 'github.token', value: '' }) })}>Entfernen</button>}
+        </div>
+      </Field>
+      <Field label="Automatisch nach Updates suchen" hint="Alle 6 h, nie während eines Spiels; installiert wird nur auf Klick"><Toggle checked={s.updateCheck} onChange={(v) => upd({ updateCheck: v })} /></Field>
+      <div class="row gap-s">
+        <button class="btn xs" disabled={u.state === 'checking'} onClick={check}><RefreshCw size={12} />Jetzt nach Updates suchen</button>
+        {['available', 'ready'].includes(u.state) && <button class="btn xs primary" disabled={!u.signed} onClick={() => setOpen(true)}><Rocket size={12} />Auf {u.version} aktualisieren</button>}
+        {u.releaseUrl && <button class="btn xs ghost" onClick={() => rpc('shell.openExternal', { url: u.releaseUrl })}>Release ansehen</button>}
+      </div>
+      <div class="tiny muted mt">{label}{u.checkedAt ? ` · geprüft ${ago(u.checkedAt)}` : ''}{!u.keyInstalled ? ' · Hinweis: Diese Version enthält keinen Update-Schlüssel – Updates werden angezeigt, aber nicht automatisch installiert.' : ''}</div>
+      {open && <UpdateModal onClose={() => setOpen(false)} />}
+    </>
   );
 }
 

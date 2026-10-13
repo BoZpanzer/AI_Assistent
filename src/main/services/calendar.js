@@ -57,7 +57,7 @@ class Calendar {
       id: r.id, calendarId: r.calendar_id, calendarName: cal?.name || r.calendar_id, color: cal?.color || '#22d3ee',
       title: r.title, description: r.description, location: r.location, start: r.start_at, end: r.end_at, allDay: !!r.all_day,
       recurrence: r.rrule ? rec.fromRRule(r.rrule) : null, recurring: !!(r.rrule || r.recurring_event_id),
-      source: r.calendar_id === LOCAL_CAL ? 'local' : 'google', syncState: r.sync_state,
+      source: r.calendar_id === LOCAL_CAL ? 'local' : String(r.calendar_id).startsWith('feed:') ? 'feed' : 'google', syncState: r.sync_state, readOnly: String(r.calendar_id).startsWith('feed:'),
       conflict: r.sync_state === 'conflict' ? JSON.parse(r.conflict_data || 'null') : null,
     };
   }
@@ -183,6 +183,7 @@ class Calendar {
   async update(eventId, patch) {
     const r = this.db.get('SELECT * FROM events WHERE id=?', eventId);
     if (!r) throw new Error('Termin nicht gefunden');
+    if (String(r.calendar_id).startsWith('feed:')) throw new Error('Termine aus einem abonnierten Stundenplan sind schreibgeschützt');
     const d = this.normalizeInput(patch, true);
     if (d.start && !patch.end) d.end = new Date(Date.parse(d.start) + (Date.parse(r.end_at) - Date.parse(r.start_at))).toISOString();
     const cols = { title: d.title, description: d.description, location: d.location, start_at: d.start && new Date(d.start).toISOString(), end_at: d.end && new Date(d.end).toISOString(), all_day: d.allDay === undefined ? undefined : (d.allDay ? 1 : 0) };
@@ -209,6 +210,7 @@ class Calendar {
   async remove(eventId) {
     const r = this.db.get('SELECT * FROM events WHERE id=?', eventId);
     if (!r) throw new Error('Termin nicht gefunden');
+    if (String(r.calendar_id).startsWith('feed:')) throw new Error('Termine aus einem abonnierten Stundenplan sind schreibgeschützt'); 
     if (r.calendar_id === LOCAL_CAL || !r.google_id) {
       this.db.run('DELETE FROM events WHERE id=?', eventId);
     } else {
@@ -258,11 +260,11 @@ class Calendar {
           ON CONFLICT(id) DO UPDATE SET name=excluded.name, color=excluded.color, is_primary=excluded.is_primary, writable=excluded.writable`,
         c.id, c.summaryOverride || c.summary || c.id, c.backgroundColor || '#38bdf8', c.primary ? 1 : 0, c.primary ? 1 : (c.selected ? 1 : 0), writable);
       }
-      for (const c of this.db.all("SELECT id FROM calendars WHERE id<>'local'")) {
+      for (const c of this.db.all("SELECT id FROM calendars WHERE id<>'local' AND id NOT LIKE 'feed:%'")) {
         if (!ids.has(c.id)) { this.db.run('DELETE FROM events WHERE calendar_id=?', c.id); this.db.run('DELETE FROM calendars WHERE id=?', c.id); }
       }
       // Push queue
-      for (const r of this.db.all("SELECT * FROM events WHERE sync_state IN ('pending_create','pending_update','pending_delete') AND calendar_id<>'local'")) {
+      for (const r of this.db.all("SELECT * FROM events WHERE sync_state IN ('pending_create','pending_update','pending_delete') AND calendar_id<>'local' AND calendar_id NOT LIKE 'feed:%'")) {
         try {
           const body = this.toGoogle({ title: r.title, description: r.description, location: r.location, start: r.start_at, end: r.end_at, allDay: !!r.all_day, recurrence: r.rrule ? rec.fromRRule(r.rrule) : undefined });
           if (r.sync_state === 'pending_create') {
@@ -285,7 +287,7 @@ class Calendar {
       // Pull window
       const timeMin = new Date(Date.now() - 30 * 86400000).toISOString();
       const timeMax = new Date(Date.now() + 180 * 86400000).toISOString();
-      for (const c of this.db.all("SELECT id FROM calendars WHERE id<>'local' AND selected=1")) {
+      for (const c of this.db.all("SELECT id FROM calendars WHERE id<>'local' AND id NOT LIKE 'feed:%' AND selected=1")) {
         const items = await this.google.listEvents(c.id, { timeMin, timeMax });
         const seen = new Set();
         this.db.tx(() => {

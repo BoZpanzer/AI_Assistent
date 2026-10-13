@@ -37,6 +37,10 @@ VIAddVersionKey /LANG=1031 "LegalCopyright" "© 2026 ${COMPANY}"
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!include "LogicLib.nsh"
+!include "Sections.nsh"
+
+Var Relaunch
 
 !define MUI_ICON "icon.ico"
 !define MUI_UNICON "icon.ico"
@@ -55,11 +59,6 @@ VIAddVersionKey /LANG=1031 "LegalCopyright" "© 2026 ${COMPANY}"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "German"
 
-Function .onInit
-  ; Close a running instance so files can be replaced (update case).
-  nsExec::Exec 'taskkill /IM JARVIS.exe /F'
-  Sleep 800
-FunctionEnd
 
 Section "JARVIS (erforderlich)" SecMain
   SectionIn RO
@@ -92,6 +91,30 @@ SectionEnd
 Section "Desktop-Verknüpfung" SecDesktop
   CreateShortcut "$DESKTOP\JARVIS.lnk" "$INSTDIR\JARVIS.exe" "" "$INSTDIR\JARVIS.exe" 0
 SectionEnd
+
+Function .onInit
+  ; Update aus der App: "JARVIS_Setup.exe /S /RELAUNCH" → danach JARVIS neu starten
+  ${GetParameters} $R0
+  StrCpy $Relaunch "0"
+  ClearErrors
+  ${GetOptions} $R0 "/RELAUNCH" $R1
+  ${IfNot} ${Errors}
+    StrCpy $Relaunch "1"
+    ; Beim Update keine Desktop-Verknüpfung neu anlegen, wenn der Nutzer sie gelöscht hat
+    ${IfNot} ${FileExists} "$DESKTOP\JARVIS.lnk"
+      !insertmacro UnselectSection ${SecDesktop}
+    ${EndIf}
+  ${EndIf}
+  ; Close a running instance so files can be replaced (update case).
+  nsExec::Exec 'taskkill /IM JARVIS.exe /F'
+  Sleep 1200
+FunctionEnd
+
+Function .onInstSuccess
+  ${If} $Relaunch == "1"
+    Exec '"$INSTDIR\JARVIS.exe" --updated'
+  ${EndIf}
+FunctionEnd
 
 LangString DESC_Main ${LANG_GERMAN} "Die JARVIS-Anwendung."
 LangString DESC_Desktop ${LANG_GERMAN} "Verknüpfung auf dem Desktop anlegen."

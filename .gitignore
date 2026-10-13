@@ -6,3 +6,10 @@ tests/e2e/screens/
 tests/e2e/e2e-report.json
 *.log
 .DS_Store
+
+# Release-Signatur: privater Schlüssel NIE einchecken (gehört ins GitHub-Secret UPDATE_PRIVATE_KEY)
+*.pem
+!build/update-public-key.pem
+# wird vom Release-Workflow erzeugt
+build/update-config.json
+.env

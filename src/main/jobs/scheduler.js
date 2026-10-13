@@ -65,12 +65,19 @@ class Scheduler {
       }
     });
     this.add('housekeeping', 24 * 3600_000, async () => { s.notifications.prune(); s.system.autoBackup(); }, { initialDelayMs: 5 * 60_000 });
-    this.add('update-check', 24 * 3600_000, () => s.system.checkUpdates({ silent: true }), { initialDelayMs: 3 * 60_000 });
+    // Alle 6 h nach Updates schauen – nie während eines Spiels (heavy), installiert wird nur auf Klick.
+    this.add('update-check', 6 * 3600_000, async () => { if (s.settings.get('updateCheck') !== false) await s.updater.check({ silent: true }); }, { heavy: true, initialDelayMs: 2 * 60_000 });
     this.add('lol-sync', 10 * 60_000, async () => {
       const L = s.gaming.league;
       if (!(await L.lcuCreds())) return; // Client nicht offen → nichts tun
       await L.syncFromClient();
     }, { heavy: true, initialDelayMs: 90_000 });
+    this.add('tarkovtracker', 30 * 60_000, async () => {
+      if (!s.gaming.tracker.configured() || s.settings.get('gaming').tarkovTrackerSync === false) return;
+      await s.gaming.tracker.sync();
+    }, { initialDelayMs: 45_000 });
+    // Nach einer Tarkov-Session sofort abgleichen
+    s.bus.on('game:running', ({ stopped = [] }) => { if (stopped.includes('eft')) setTimeout(() => this.runNow('tarkovtracker'), 30_000); });
     this.add('lol-live', 5_000, async () => {
       if (!s.settings.get('gaming').lolLiveCoach) return;
       const st = s.gaming.context.state();

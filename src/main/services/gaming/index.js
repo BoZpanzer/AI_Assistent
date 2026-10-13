@@ -35,12 +35,14 @@ const WIDGETS = {
   'lol-champion': { title: 'Championinfo', params: { champion: { type: 'string', maxLength: 40 } } },
   'lol-goals': { title: 'Trainingsziele', params: {} },
   'rok-planner': { title: 'Entwicklungsplanung', params: {} },
+  'lol-champselect': { title: 'Championauswahl', params: {} },
+  'lol-review': { title: 'Nachbesprechung', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
 };
 
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
-  league: [{ type: 'lol-overview' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'progress' }, { type: 'other-games' }],
+  league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'progress' }, { type: 'other-games' }],
   rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
   generic: [{ type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
 };
@@ -171,6 +173,14 @@ class Gaming {
     this.bus.emit('game:markers', { game: gid, map });
     return { points };
   }
+  /** Last map the user looked at (for the overlay mini map). */
+  lastMap(gid) {
+    const st = safeJson(this.context.getState('lastmap:' + gid), null);
+    const name = st?.map || this.db.get('SELECT map FROM game_markers WHERE game=? ORDER BY updated_at DESC LIMIT 1', gid)?.map || null;
+    if (!name) return { map: null, hasImage: false, markers: [] };
+    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name) };
+  }
+  setLastMap(gid, map) { if (gid && map) { this.context.setState('lastmap:' + gid, { map: String(map).slice(0, 80) }); this.bus.emit('game:markers', { game: gid, map }); } return true; }
   markers(gid, map) {
     return this.db.all('SELECT * FROM game_markers WHERE game=? AND map=? ORDER BY created_at', gid, map).map((m) => ({ id: m.id, x: m.x, y: m.y, category: m.category, label: m.label, note: m.note, createdAt: m.created_at, updatedAt: m.updated_at }));
   }

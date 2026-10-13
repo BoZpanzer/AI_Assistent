@@ -176,6 +176,21 @@ app.whenReady().then(async () => {
     if (!global.__fakeLive.closed) throw new Error('Live-Sitzung nicht geschlossen');
   });
   await step('Einstellungen', async () => { await nav('settings'); await shot('80-settings'); });
+  await step('Update-Button: erscheint bei signiertem Update, Dialog mit Changelog', async () => {
+    core.updater.set({ state: 'available', version: '9.9.9', signed: true, notes: '## Neu\n- Testfeature', size: 110 * 1048576, publishedAt: new Date().toISOString() });
+    await waitFor(() => js('!!document.querySelector(".update-btn")'), 5000);
+    const label = await js('document.querySelector(".update-btn").textContent');
+    if (!/9\.9\.9/.test(label)) throw new Error('Beschriftung: ' + label);
+    await js('document.querySelector(".update-btn").click()');
+    await waitFor(() => js('!!document.querySelector(".update-notes")'), 3000);
+    if (!(await js('/Testfeature/.test(document.querySelector(".update-notes").textContent)'))) throw new Error('Changelog fehlt');
+    await shot('85-update');
+    await js('[...document.querySelectorAll(".modal button")].find((b) => b.textContent.includes("Später")).click()');
+    core.updater.set({ state: 'available', signed: false });
+    await sleep(300);
+    if (await js('!!document.querySelector(".update-btn")')) throw new Error('Unsigniertes Update darf keinen Button zeigen');
+    core.updater.set({ state: 'current' });
+  });
   await step('Renderer ohne Fehler', async () => { const real = errors.filter((e) => !/Autofill|Electron Security Warning|ddragon|ERR_|net::|Failed to load resource|tarkov|DevTools/i.test(e)); if (real.length) throw new Error(real.slice(0, 5).join(' | ')); });
 
   const report = { at: new Date().toISOString(), results, consoleErrors: errors };

@@ -53,12 +53,14 @@ class GameProgress {
       this.db.run('INSERT INTO game_progress_history(progress_id,value,status,at) VALUES(?,?,?,?)', prev.id, prev.value, prev.status, prev.updated_at);
       this.db.run('UPDATE game_progress SET name=?, value=?, status=?, note=?, source=?, updated_at=? WHERE id=?', d.name.trim(), next.value, next.status, next.note, d.source || 'chat', now, prev.id);
       this.changed(game);
+      this.bus?.emit('game:progress-item', { game, category: d.category, name: d.name.trim(), status: next.status, source: d.source || 'chat', action: 'updated' });
       return { item: this.get(prev.id), action: 'updated', previous: { value: prev.value, status: prev.status, note: prev.note } };
     }
     const pid = id('gp');
     this.db.run(`INSERT INTO game_progress(id,game,category,name,key,value,status,note,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
       pid, game, d.category, d.name.trim(), normText(d.name), d.value || '', d.status ?? null, d.note || '', d.source || 'chat', now, now);
     this.changed(game);
+    this.bus?.emit('game:progress-item', { game, category: d.category, name: d.name.trim(), status: d.status ?? null, source: d.source || 'chat', action: 'created' });
     return { item: this.get(pid), action: 'created', previous: null };
   }
 
@@ -84,12 +86,13 @@ class GameProgress {
 
   history(pid) { return this.db.all('SELECT value, status, at FROM game_progress_history WHERE progress_id=? ORDER BY id DESC LIMIT 20', pid); }
 
-  remove(pid) {
-    const r = this.db.get('SELECT game FROM game_progress WHERE id=?', pid);
+  remove(pid, { source = 'manual' } = {}) {
+    const r = this.db.get('SELECT game, category, name, status FROM game_progress WHERE id=?', pid);
     if (!r) return null;
     this.db.run('DELETE FROM game_progress WHERE id=?', pid);
     this.db.run('DELETE FROM game_progress_history WHERE progress_id=?', pid);
     this.changed(r.game);
+    this.bus?.emit('game:progress-item', { game: r.game, category: r.category, name: r.name, status: null, previousStatus: r.status, source, action: 'removed' });
     return true;
   }
 

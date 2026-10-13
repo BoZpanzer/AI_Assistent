@@ -171,54 +171,12 @@ class System {
     return { imported: counts };
   }
 
-  // ---------- Updates (signed manifest) ----------
-  async checkUpdates({ silent = false } = {}) {
-    const url = this.s.settings.get('updateChannelUrl');
-    if (!url || !this.s.settings.get('updateCheck')) return (this.update = { state: 'not-configured' });
-    try {
-      const r = await this.s.fetch(url, { headers: { Accept: 'application/json' } });
-      if (!r.ok) throw new Error('Update-Server antwortet mit ' + r.status);
-      const m = await r.json();
-      if (!m.version || !m.url || !/^[0-9a-f]{64}$/i.test(m.sha256 || '')) throw new Error('Ungültiges Update-Manifest');
-      if (!/^https:\/\//.test(m.url)) throw new Error('Update-URL muss https sein');
-      const newer = cmpVersion(m.version, this.s.version) > 0;
-      const verified = this.verifySignature(m);
-      this.update = { state: newer ? 'available' : 'current', version: m.version, notes: m.notes || '', url: m.url, sha256: m.sha256, signed: verified, checkedAt: nowIso() };
-      if (newer && !silent) this.s.notifications.push({ category: 'system', origin: 'system', title: `Update ${m.version} verfügbar`, body: verified ? 'Signatur geprüft. Installation über Einstellungen → Desktop.' : 'Achtung: nicht signiert – nur manuell installieren.', dedupeKey: 'update:' + m.version });
-      return this.update;
-    } catch (e) {
-      this.update = { state: 'error', error: e.message, checkedAt: nowIso() };
-      return this.update;
-    }
-  }
-
-  verifySignature(m) {
-    const pub = this.s.updatePublicKey;
-    if (!pub || !m.signature) return false;
-    try { return crypto.verify(null, Buffer.from(`${m.version}\n${m.sha256.toLowerCase()}\n${m.url}`), pub, Buffer.from(m.signature, 'base64')); } catch { return false; }
-  }
-
-  /** Download + verify hash (and signature if configured). Returns installer path. */
-  async downloadUpdate() {
-    const u = this.update;
-    if (!u || u.state !== 'available') throw new Error('Kein Update verfügbar');
-    if (!u.signed) throw new Error('Update ist nicht signiert – automatische Installation gesperrt. Bitte manuell herunterladen.');
-    const r = await this.s.fetch(u.url);
-    if (!r.ok) throw new Error('Download fehlgeschlagen: ' + r.status);
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (sha256(buf) !== u.sha256.toLowerCase()) throw new Error('Prüfsumme stimmt nicht – Update verworfen.');
-    const file = path.join(os.tmpdir(), `JARVIS_Setup_${u.version}.exe`);
-    fs.writeFileSync(file, buf);
-    this.createBackup(path.join(this.backupDir(), `vor-update-${u.version}.zip`));
-    return file;
-  }
+  // ---------- Updates → services/updater.js (GitHub Releases, signiert) ----------
+  checkUpdates(opts) { return this.s.updater.check(opts); }
+  downloadUpdate() { return this.s.updater.download(); }
 }
 
-function cmpVersion(a, b) {
-  const pa = String(a).split(/[.-]/).map((x) => parseInt(x, 10) || 0), pb = String(b).split(/[.-]/).map((x) => parseInt(x, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
-  return 0;
-}
+const { cmpVersion } = require('./updater');
 
 /** Compact local daily briefing (no AI call needed). */
 function briefing(s) {

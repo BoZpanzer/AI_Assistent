@@ -434,3 +434,13 @@ a:hover { text-decoration: underline; }
 .drop-hint { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(2, 10, 18, 0.7); border: 2px dashed var(--cyan); font-size: 20px; color: var(--cyan-2); pointer-events: none; }
 .page-body.content { display: grid; grid-template-columns: minmax(0, 1fr) 272px; }
 .result-row { flex-shrink: 0; }
+
+/* Update-Button in der Titelleiste */
+.update-btn { -webkit-app-region: no-drag; position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px;
+  border-radius: 8px; border: 1px solid rgba(52, 211, 153, 0.6); background: rgba(16, 60, 48, 0.55); color: #a7f3d0; font-family: var(--font-hud); font-weight: 700; letter-spacing: .5px; font-size: 13px;
+  cursor: pointer; box-shadow: 0 0 14px rgba(52, 211, 153, 0.35); animation: upd-pulse 2.4s ease-in-out infinite; white-space: nowrap; }
+.update-btn:hover { background: rgba(16, 80, 60, 0.75); }
+.update-btn i { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--green); transition: width .2s linear; }
+@keyframes upd-pulse { 0%, 100% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.25); } 50% { box-shadow: 0 0 18px rgba(52, 211, 153, 0.55); } }
+.update-notes { max-height: 280px; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(3, 12, 22, 0.5); }
+@media (prefers-reduced-motion: reduce) { .update-btn { animation: none; } }

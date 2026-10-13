@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-4', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6',
   timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -35,6 +35,7 @@ function MapWidget({ game, params }) {
   }, [eftMaps, userMaps]);
   const [map, setMap] = useState(params.map || (isEft ? 'customs' : 'Hauptkarte'));
   useEffect(() => { if (params.map) setMap(params.map); }, [params.map]);
+  useEffect(() => { rpc('game.setLastMap', { game: game.id, map }).catch(() => {}); }, [game.id, map]);
   const [markers, reloadMarkers] = useRpc('game.markers', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [apiMap] = useRpc('tarkov.map', { map }, { enabled: isEft, deps: [map] });
@@ -516,6 +517,54 @@ function LolChampion({ params }) {
   );
 }
 
+function LolChampSelect() {
+  const [cs, setCs] = useState(null);
+  useEffect(() => { rpc('lol.champselect').then(setCs).catch(() => {}); }, []);
+  useEvent('lol:champselect', setCs);
+  return (
+    <Panel icon={Swords} title="Championauswahl" sub="Nur Champions, keine Spielerdaten (Riot-Richtlinie) · lokaler Client">
+      {!cs?.active ? <div class="notice small">Sobald du im League-Client in der Championauswahl bist, erscheinen hier (und im Overlay) Matchup-Hinweise zu den gegnerischen Champions.</div> : <>
+        <div class="row wrap gap-s"><b style={{ fontSize: 16 }}>{cs.myChampion || 'Noch kein Pick'}</b>{cs.role && <span class="chip static">{cs.role}</span>}{cs.myChampion && !cs.locked && <span class="chip static">Vorauswahl</span>}</div>
+        <div class="small muted mt">Gegner: {cs.enemies?.length ? cs.enemies.join(', ') : 'noch verdeckt'}</div>
+        {cs.advice ? <div class="md small mt" dangerouslySetInnerHTML={{ __html: renderMarkdown(cs.advice) }} /> : cs.myChampion && cs.enemies?.length ? <div class="row small mt"><Spinner /> JARVIS denkt über das Matchup nach …</div> : null}
+        {cs.tips?.length > 0 && <div class="col mt" style={{ gap: 3 }}><b class="small">Tipps gegen die Gegner (Data Dragon)</b>{cs.tips.map((t) => <div class="small muted">• {t}</div>)}</div>}
+      </>}
+    </Panel>
+  );
+}
+
+function LolReview() {
+  const [list, reload] = useRpc('lol.reviews', { limit: 5 }, { events: ['game:data'], initial: [] });
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(0);
+  const now = async () => { setBusy(true); await guard(() => rpc('lol.reviewNow')); setBusy(false); reload(); };
+  return (
+    <Panel icon={GraduationCap} title="Nachbesprechung" sub="Nach jedem Spiel automatisch (League-Client)" right={<button class="btn xs" disabled={busy} onClick={now}>{busy ? <Spinner /> : <RefreshCw size={12} />}Letztes Spiel</button>}>
+      {!list.length && <Empty>Nach deinem nächsten Spiel erscheint hier eine Nachbesprechung – mit deinen Werten im Vergleich zu deinem Schnitt und deinen Trainingszielen.</Empty>}
+      {list.map((r, i) => (
+        <div class="mb">
+          <div class="row small" style={{ cursor: 'pointer' }} onClick={() => setOpen(open === i ? -1 : i)}><b class="grow">{r.title}</b><span class="tiny muted">{ago(r.createdAt)}</span></div>
+          {open === i && <div class="md small" dangerouslySetInnerHTML={{ __html: renderMarkdown(r.summary) }} />}
+        </div>
+      ))}
+    </Panel>
+  );
+}
+
+function TrackerStrip() {
+  const [st, reload] = useRpc('tracker.status', {}, { events: ['tarkovtracker:status'] });
+  const [busy, setBusy] = useState(false);
+  if (!st) return null;
+  if (!st.configured) return <div class="tiny muted mb">Tipp: Mit einem <a href="#" onClick={(e) => { e.preventDefault(); setState({ page: 'settings' }); }}>TarkovTracker-Token</a> werden erledigte Quests automatisch übernommen.</div>;
+  const sync = async () => { setBusy(true); await guard(() => rpc('tracker.sync'), 'Mit TarkovTracker abgeglichen'); setBusy(false); reload(); };
+  return (
+    <div class="row small mb gap-s" style={{ color: st.error ? 'var(--red)' : 'var(--text-2)' }}>
+      <LinkIcon size={13} /><span class="grow ellipsis">TarkovTracker{st.displayName ? ' · ' + st.displayName : ''}{st.level ? ' · Level ' + st.level : ''} · {st.error ? st.error : st.lastSync ? 'abgeglichen ' + ago(st.lastSync) : 'noch nicht abgeglichen'}{st.canWrite ? ' · Abhaken wird übertragen' : ''}</span>
+      <button class="btn xs ghost" disabled={busy} onClick={sync}>{busy ? <Spinner /> : <RefreshCw size={12} />}</button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Spielstand
 const PROGRESS_HINT = {
   eft: '„Jarvis, ich hab Debut abgeschlossen“ · „bin jetzt PMC-Level 34“',
@@ -547,6 +596,7 @@ function Progress({ game, params }) {
   return (
     <Panel icon={Trophy} title="Mein Spielstand" sub="JARVIS kennt diesen Stand bei jeder Frage zum Spiel"
       right={(data?.items || []).length > 0 && <button class="btn xs ghost" title="Z. B. nach einem Wipe" onClick={async () => { if (await ask(`Spielstand ${game.name} zurücksetzen? Der alte Stand wird archiviert.`, '', { confirmOnly: true, danger: true, okLabel: 'Zurücksetzen' })) guard(() => rpc('game.progressWipe', { game: game.id }), 'Spielstand archiviert – neuer Stand beginnt'); }}>Wipe / Neustart</button>}>
+      {game.id === 'eft' && <TrackerStrip />}
       {used.length > 1 && <div class="row wrap gap-s mb"><span class={`chip ${!cat ? 'active' : ''}`} onClick={() => setCat('')}>Alle</span>{used.map((c) => <span class={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{cats[c] || c}</span>)}</div>}
       <div class="col" style={{ gap: 4, maxHeight: 250, overflow: 'auto' }}>
         {!items.length && <div class="notice small">Noch nichts gespeichert. Erzähl JARVIS einfach von deinem Fortschritt, z. B. {PROGRESS_HINT[game.id] || '„Jarvis, ich bin jetzt Level 30“'} – oder trag es unten ein.</div>}
@@ -604,5 +654,6 @@ export const WIDGETS = {
   map: MapWidget, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
+  'lol-champselect': LolChampSelect, 'lol-review': LolReview,
   'rok-planner': RokPlanner, progress: Progress,
 };

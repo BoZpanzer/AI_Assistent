@@ -6,13 +6,13 @@ const logger = require('./core/logger');
 const { friendlyError } = require('./providers/gemini');
 const log = logger.scope('ipc');
 
-const ALLOWED_SECRETS = ['gemini.api_key', 'riot.api_key', 'google.client_secret'];
+const ALLOWED_SECRETS = ['gemini.api_key', 'riot.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
 
 /**
  * Single RPC entry point. Only our own app:// frame may call; every method
  * is explicit (no generic service access from the renderer).
  */
-function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch }) {
+function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay }) {
   const pick = async (opts) => {
     const r = await dialog.showOpenDialog(getWin(), opts);
     return r.canceled ? null : r.filePaths;
@@ -23,7 +23,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch }) {
     'app.info': () => ({ version: s.version, electron: process.versions.electron, chrome: process.versions.chrome, platform: process.platform, dataDir: s.paths.data, packaged: app.isPackaged }),
     'app.bootstrap': () => ({
       settings: s.settings.all(), secrets: s.secrets.status(), secureStorage: s.secrets.available(), version: s.version,
-      game: s.gaming.context.state(), counts: s.tasks.counts(), unread: s.notifications.unreadCount(), voice: s.voice.state, google: s.calendar.status(),
+      game: s.gaming.context.state(), counts: s.tasks.counts(), update: s.updater.public(), unread: s.notifications.unreadCount(), voice: s.voice.state, google: s.calendar.status(),
       confirmations: s.confirmations.list(),
     }),
     'window.minimize': () => getWin()?.minimize(),
@@ -203,6 +203,15 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch }) {
     },
     'game.calibrate': ({ game, map, points }) => s.gaming.setCalibration(game, map, points),
     'game.markers': ({ game, map }) => s.gaming.markers(game, map),
+    'tracker.status': () => ({ ...s.gaming.tracker.status, configured: s.gaming.tracker.configured(), canWrite: s.gaming.tracker.canWrite() }),
+    'tracker.connect': async ({ token }) => { const r = await s.gaming.tracker.test(token); s.gaming.tracker.sync().catch(() => {}); return r; },
+    'tracker.sync': () => s.gaming.tracker.sync(),
+    'tracker.disconnect': () => s.gaming.tracker.disconnect(),
+    'lol.reviews': ({ limit } = {}) => s.gaming.lolflow.reviews(limit || 10),
+    'lol.reviewNow': () => s.gaming.lolflow.review({ force: true }),
+    'lol.champselect': () => s.gaming.lolflow.champ || { active: false },
+    'game.lastMap': ({ game }) => (game ? s.gaming.lastMap(game) : { map: null, hasImage: false, markers: [] }),
+    'game.setLastMap': ({ game, map }) => s.gaming.setLastMap(game, map),
     'game.addMarker': ({ game, map, marker }) => s.gaming.addMarker(game, map, marker),
     'game.updateMarker': ({ id, patch }) => s.gaming.updateMarker(id, patch),
     'game.removeMarker': ({ id }) => s.gaming.removeMarker(id),
@@ -277,14 +286,27 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch }) {
       if (!s.system.legacyCandidates().some((c) => c.file === file)) throw new Error('Unbekannte Altdatei');
       return s.system.importLegacy(file);
     },
-    'system.checkUpdates': () => s.system.checkUpdates(),
-    'system.installUpdate': async () => {
-      const file = await s.system.downloadUpdate();
-      shell.openPath(file);
-      setTimeout(() => quit(), 1500);
+    'system.checkUpdates': () => s.updater.check(),
+    'update.state': () => s.updater.public(),
+    'update.check': () => s.updater.check(),
+    'update.download': () => s.updater.download().then(() => s.updater.public()),
+    'update.install': async () => {
+      if (!s.updater.downloaded) await s.updater.download();
+      const { file } = s.updater.downloaded;
+      s.updater.set({ state: 'installing' });
+      // Stiller Installer: ersetzt die Programmdateien (Daten bleiben) und startet JARVIS danach neu.
+      require('node:child_process').spawn(file, ['/S', '/RELAUNCH'], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      setTimeout(() => quit(), 700);
       return { started: true };
     },
+    'system.installUpdate': () => M['update.install'](),
     'system.selfTest': async () => selfTest(s),
+
+    // --- overlay & screen ---
+    'screen.ask': async ({ question }) => { const r = await s.screen.hotkeyQuestion(String(question || '').slice(0, 500)); return { content: r?.content || '' }; },
+    'screen.recent': () => s.db.all('SELECT id, question, answer, game, created_at AS createdAt FROM screenshots ORDER BY created_at DESC LIMIT 10'),
+    'overlay.toggle': () => overlay?.()?.toggle(),
+    'overlay.interactive': ({ on }) => overlay?.()?.setInteractive(!!on),
   };
 
   ipcMain.handle('rpc', async (e, { method, params }) => {

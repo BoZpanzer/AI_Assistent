@@ -162,4 +162,24 @@ module.exports = [
     CREATE TABLE game_progress_history(id INTEGER PRIMARY KEY AUTOINCREMENT, progress_id TEXT NOT NULL, value TEXT, status TEXT, at TEXT NOT NULL);
     CREATE INDEX ix_game_progress_hist ON game_progress_history(progress_id);
   `),
+  // v3 — Klausuren, Stundenplan-Abos, Spiel-Nachbesprechungen, Telegram
+  (db) => db.exec(`
+    CREATE TABLE exams(
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, subject TEXT NOT NULL DEFAULT '', date TEXT NOT NULL,
+      target_hours REAL NOT NULL DEFAULT 10, session_minutes INTEGER NOT NULL DEFAULT 90, notes TEXT NOT NULL DEFAULT '',
+      archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE exam_sessions(
+      id TEXT PRIMARY KEY, exam_id TEXT NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
+      start_at TEXT NOT NULL, end_at TEXT NOT NULL, topic TEXT NOT NULL DEFAULT '', event_id TEXT,
+      status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned','done','missed','skipped')),
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE INDEX ix_exam_sessions ON exam_sessions(exam_id, start_at);
+    CREATE TABLE calendar_feeds(
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT, kind TEXT NOT NULL DEFAULT 'url', color TEXT NOT NULL DEFAULT '#a78bfa',
+      lecture INTEGER NOT NULL DEFAULT 1, etag TEXT, content_hash TEXT, last_fetch TEXT, last_error TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE game_reviews(
+      id TEXT PRIMARY KEY, game TEXT NOT NULL, ref TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL,
+      tips TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(game, ref));
+    CREATE TABLE screenshots(id TEXT PRIMARY KEY, file TEXT NOT NULL, question TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '', game TEXT, created_at TEXT NOT NULL);
+  `),
 ];

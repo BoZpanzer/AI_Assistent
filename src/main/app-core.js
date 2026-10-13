@@ -22,13 +22,17 @@ const { System, briefing } = require('./services/system');
 const { Orchestrator } = require('./agent/orchestrator');
 const { LiveVoice } = require('./voice/live');
 const { Scheduler } = require('./jobs/scheduler');
+const { ScreenVision } = require('./services/screen');
+const { Updater } = require('./services/updater');
+const { TarkovTracker } = require('./services/gaming/tarkovtracker');
+const { LolFlow } = require('./services/gaming/lolflow');
 
 /**
  * Composition root. Pure Node (no Electron imports) so the complete service
  * layer runs in automated tests. Platform specifics are injected.
  *
  * @param {{dataDir:string, version:string, cipher?:object, fetch?:Function,
- *          platform?:{toast?,openExternal?}, genaiSdk?:object, updatePublicKey?:any}} opts
+ *          platform?:{toast?,openExternal?}, genaiSdk?:object, updatePublicKey?:any, updateRepo?:string}} opts
  */
 function createCore(opts) {
   const data = opts.dataDir;
@@ -38,7 +42,7 @@ function createCore(opts) {
 
   const bus = new EventEmitter();
   bus.setMaxListeners(100);
-  const s = { bus, version: opts.version, paths: { data }, platform: opts.platform || {}, fetch: opts.fetch || globalThis.fetch, updatePublicKey: opts.updatePublicKey || null };
+  const s = { bus, version: opts.version, paths: { data }, platform: opts.platform || {}, fetch: opts.fetch || globalThis.fetch, updatePublicKey: opts.updatePublicKey || null, updateRepo: opts.updateRepo || null };
   s.db = new Database(opts.dbFile || path.join(data, 'jarvis.sqlite3'), { backupDir: path.join(data, 'backups') });
   s.settings = new Settings(s.db, bus);
   s.secrets = new Secrets(path.join(data, 'secrets.json'), opts.cipher || memoryCipher);
@@ -54,8 +58,13 @@ function createCore(opts) {
   s.web = new Web(s);
   s.conversations = new Conversations(s);
   s.gaming = new Gaming(s);
+  s.gaming.tracker = new TarkovTracker(s);
+  s.gaming.lolflow = new LolFlow(s);
   s.system = new System(s);
+  s.updater = new Updater(s);
   s.briefing = () => briefing(s);
+  s.contextProviders = [];
+  s.screen = new ScreenVision(s);
   s.orchestrator = new Orchestrator(s);
   s.voice = new LiveVoice(s);
   s.scheduler = new Scheduler(s);
@@ -71,7 +80,7 @@ function createCore(opts) {
     });
   };
   s.stop = () => {
-    try { s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

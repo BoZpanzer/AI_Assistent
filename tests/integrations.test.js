@@ -109,22 +109,138 @@ test('Altdaten-Import aus JARVIS 2.0 (Aufgaben, Erinnerungen, Verlauf, Termine) 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('Update-Prüfung: nur signierte Manifeste, Versionsvergleich', async () => {
+test('Updates über GitHub Releases: Signatur, Prüfsumme, privater Token, Versionsvergleich', async () => {
   const crypto = require('node:crypto');
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-  const m = { version: '3.1.0', url: 'https://example.com/JARVIS_Setup.exe', sha256: 'a'.repeat(64) };
-  m.signature = crypto.sign(null, Buffer.from(`${m.version}\n${m.sha256}\n${m.url}`), privateKey).toString('base64');
-  const { core, cleanup } = tempCore({ fetch: async () => json(m) });
+  const setup = Buffer.from('MZ fake installer ' + 'x'.repeat(5000));
+  const sha = crypto.createHash('sha256').update(setup).digest('hex');
+  const { signedMessage } = require('../src/main/services/updater');
+  const man = { version: '9.0.0', file: 'JARVIS_Setup.exe', sha256: sha, size: setup.length, notes: '- Neues Feature' };
+  man.signature = crypto.sign(null, signedMessage(man), privateKey).toString('base64');
+  const calls = [];
+  let manifest = man;
+  const fetch = async (url, init = {}) => {
+    calls.push({ url, auth: init.headers?.Authorization || null });
+    if (url.endsWith('/repos/boz/jarvis/releases/latest')) return json({ tag_name: 'v9.0.0', html_url: 'https://github.com/boz/jarvis/releases/tag/v9.0.0', published_at: '2026-10-13T08:00:00Z', body: 'x',
+      assets: [{ name: 'update.json', url: 'https://api.github.com/repos/boz/jarvis/releases/assets/1', browser_download_url: 'https://github.com/dl/update.json', size: 300 },
+        { name: 'JARVIS_Setup.exe', url: 'https://api.github.com/repos/boz/jarvis/releases/assets/2', browser_download_url: 'https://github.com/dl/JARVIS_Setup.exe', size: setup.length }] });
+    if (url === 'https://api.github.com/repos/boz/jarvis/releases/assets/1') return new Response(null, { status: 302, headers: { location: 'https://objects.githubusercontent.com/m' } });
+    if (url === 'https://api.github.com/repos/boz/jarvis/releases/assets/2') return new Response(null, { status: 302, headers: { location: 'https://objects.githubusercontent.com/s' } });
+    if (url === 'https://objects.githubusercontent.com/m' || url === 'https://github.com/dl/update.json') return json(manifest);
+    if (url === 'https://objects.githubusercontent.com/s' || url === 'https://github.com/dl/JARVIS_Setup.exe') return new Response(setup, { headers: { 'content-length': String(setup.length) } });
+    return new Response('nope', { status: 404 });
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  assert.equal((await core.updater.check()).state, 'not-configured');
+  core.updateRepo = 'boz/jarvis'; // wie vom Release-Workflow eingebaut
   core.updatePublicKey = publicKey.export({ type: 'spki', format: 'pem' });
-  core.settings.update({ updateChannelUrl: 'https://example.com/channel.json' });
-  let u = await core.system.checkUpdates({ silent: true });
-  assert.equal(u.state, 'available'); assert.equal(u.signed, true);
-  m.version = '3.2.0'; // signature no longer matches
-  u = await core.system.checkUpdates({ silent: true });
+  // öffentliches Repo: ohne Token, direkte Download-URLs
+  let u = await core.updater.check();
+  assert.equal(u.state, 'available'); assert.equal(u.signed, true); assert.equal(u.version, '9.0.0');
+  assert.ok(core.notifications.list().some((n) => /9\.0\.0/.test(n.title)));
+  const file = await core.updater.download();
+  assert.equal(require('node:fs').readFileSync(file).length, setup.length);
+  assert.equal(core.updater.public().state, 'ready');
+  assert.ok(require('node:fs').readdirSync(core.system.backupDir()).some((f) => f.startsWith('vor-update-9.0.0')), 'Sicherung vor Update');
+  // privates Repo: Token nur an api.github.com, NICHT an den Speicher-Link
+  core.secrets.set('github.token', 'github_pat_test123');
+  calls.length = 0;
+  u = await core.updater.check(); await core.updater.download();
+  assert.ok(calls.filter((c) => c.url.startsWith('https://api.github.com')).every((c) => c.auth === 'Bearer github_pat_test123'));
+  assert.ok(calls.filter((c) => c.url.startsWith('https://objects.githubusercontent.com')).every((c) => !c.auth), 'Token darf nicht an Fremd-Host gehen');
+  // manipuliertes Manifest → nicht signiert → Installation gesperrt
+  manifest = { ...man, version: '9.0.1' };
+  u = await core.updater.check();
   assert.equal(u.signed, false);
-  await assert.rejects(core.system.downloadUpdate(), /nicht signiert/);
-  const { cmpVersion } = require('../src/main/services/system');
-  assert.ok(cmpVersion('3.10.0', '3.9.9') > 0);
+  await assert.rejects(core.updater.download(), /nicht gültig signiert/);
+  // falsche Prüfsumme → verworfen
+  manifest = { ...man, sha256: 'b'.repeat(64) }; manifest.signature = crypto.sign(null, signedMessage(manifest), privateKey).toString('base64');
+  await core.updater.check();
+  await assert.rejects(core.updater.download(), /Prüfsumme/);
+  // gleiche Version → aktuell
+  manifest = { ...man, version: core.version }; manifest.signature = crypto.sign(null, signedMessage(manifest), privateKey).toString('base64');
+  assert.equal((await core.updater.check()).state, 'current');
+  const { cmpVersion } = require('../src/main/services/updater');
+  assert.ok(cmpVersion('3.10.0', '3.9.9') > 0); assert.ok(cmpVersion('v3.3.0', '3.3.0') === 0);
+  cleanup();
+});
+
+test('Release-Signaturskript: update.json passt zum eingebauten Schlüssel', () => {
+  const crypto = require('node:crypto'); const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { execFileSync } = require('node:child_process');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-sign-'));
+  fs.mkdirSync(path.join(tmp, 'scripts')); fs.mkdirSync(path.join(tmp, 'build')); fs.mkdirSync(path.join(tmp, 'release'));
+  fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'sign-update.mjs'), path.join(tmp, 'scripts', 'sign-update.mjs'));
+  fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ version: '3.3.1' }));
+  fs.writeFileSync(path.join(tmp, 'CHANGELOG.md'), '# Changelog\n\n## 3.3.1 – Test\n- Fix A\n\n## 3.3.0\n- Alt\n');
+  fs.writeFileSync(path.join(tmp, 'release', 'JARVIS_Setup.exe'), 'installer');
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  fs.writeFileSync(path.join(tmp, 'build', 'update-public-key.pem'), publicKey.export({ type: 'spki', format: 'pem' }));
+  execFileSync(process.execPath, [path.join(tmp, 'scripts', 'sign-update.mjs')], { env: { ...process.env, UPDATE_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }) } });
+  const m = JSON.parse(fs.readFileSync(path.join(tmp, 'release', 'update.json'), 'utf8'));
+  const { signedMessage } = require('../src/main/services/updater');
+  assert.equal(m.version, '3.3.1'); assert.equal(m.notes, '- Fix A');
+  assert.ok(crypto.verify(null, signedMessage(m), publicKey, Buffer.from(m.signature, 'base64')));
+  // falscher Schlüssel → Abbruch
+  const other = crypto.generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' });
+  assert.throws(() => execFileSync(process.execPath, [path.join(tmp, 'scripts', 'sign-update.mjs')], { env: { ...process.env, UPDATE_PRIVATE_KEY: other }, stdio: 'pipe' }));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('Stundenplan (ICS): Zeitzonen, Wiederholung, EXDATE, verschobene Termine', () => {
+  const { parseIcs, expand, courseName } = require('../src/main/services/ics');
+  const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:a', 'SUMMARY:V Mathematik II (CS24-1)', 'DTSTART;TZID=Europe/Berlin:20261012T081500', 'DTEND;TZID=Europe/Berlin:20261012T094500',
+    'RRULE:FREQ=WEEKLY;COUNT=5', 'EXDATE;TZID=Europe/Berlin:20261019T081500', 'END:VEVENT', 'BEGIN:VEVENT', 'UID:a', 'RECURRENCE-ID;TZID=Europe/Berlin:20261102T081500', 'SUMMARY:V Mathematik II',
+    'DTSTART;TZID=Europe/Berlin:20261102T100000', 'DTEND;TZID=Europe/Berlin:20261102T113000', 'END:VEVENT', 'BEGIN:VEVENT', 'UID:b', 'SUMMARY:Programmierung\\, Übung', 'DTSTART:20261013T120000Z', 'DURATION:PT1H30M', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const p = parseIcs(ics);
+  const ev = expand(p.events, new Date('2026-10-01T00:00:00Z'), new Date('2026-12-01T00:00:00Z'));
+  const math = ev.filter((e) => e.uid === 'a').map((e) => e.start);
+  assert.deepEqual(math, ['2026-10-12T06:15:00.000Z', '2026-10-26T07:15:00.000Z', '2026-11-02T09:00:00.000Z', '2026-11-09T07:15:00.000Z']); // Sommer→Winterzeit korrekt, 19.10. entfällt, 02.11. verschoben
+  assert.equal(ev.find((e) => e.uid === 'b').end, '2026-10-13T13:30:00.000Z');
+  assert.equal(courseName('V Mathematik II (CS24-1)'), 'Mathematik II');
+  assert.equal(courseName('Programmierung, Übung'), 'Programmierung');
+});
+
+test('LoL-Nachbesprechung: Hinweise nur aus echten Zahlen + Trainingsziele', () => {
+  const { reviewTips } = require('../src/main/services/gaming/lolflow');
+  const { parseGoal } = require('../src/main/services/gaming/league');
+  const m = { csPerMin: 5.1, deaths: 9, vision: 10, killParticipation: 30, controlWards: 0, duration: 1800 };
+  const avg = { csPerMin: 6.5, avgD: 5, vision: 22, kp: 52 };
+  const t = reviewTips(m, avg, [{ text: '7 CS/min', ...parseGoal('7 CS/min') }]);
+  assert.ok(t.some((x) => /5\.1 vs\. Ø 6\.5/.test(x)));
+  assert.ok(t.some((x) => /9 Tode/.test(x)));
+  assert.ok(t.some((x) => /Control Ward/.test(x)));
+  assert.ok(t.some((x) => /Ziel CS\/min 7: verfehlt/.test(x)));
+  assert.deepEqual(parseGoal('max. 5 Tode'), { metric: 'deaths', target: 5 });
+});
+
+test('TarkovTracker: Abgleich in „Mein Spielstand“ und Rückübertragung beim Abhaken', async () => {
+  const posted = [];
+  const fetch = async (url, init = {}) => {
+    if (url.includes('api.tarkov.dev')) return json({ data: { tasks: [{ id: 't1', name: 'Debüt', normalizedName: 'debut' }, { id: 't2', name: 'Shortage' }, { id: 't3', name: 'Sanitäter' }] } });
+    if (url.endsWith('/token')) return json({ success: true, permissions: ['GP', 'WP'], token: 'x', gameMode: 'pvp' });
+    if (url.endsWith('/progress') && (init.method || 'GET') === 'GET') return json({ data: { tasksProgress: [{ id: 't1', complete: true }, { id: 't3', failed: true }], playerLevel: 23, displayName: 'BoZ', pmcFaction: 'usec' } });
+    if (url.includes('/progress/task/')) { posted.push({ url, body: JSON.parse(init.body) }); return json({ success: true }); }
+    return json({}, 404);
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  const tt = core.gaming.tracker;
+  const r = await tt.test('PVP_0123456789abcdef01');
+  assert.equal(r.canWrite, true);
+  assert.ok(tt.status.connected);
+  const s = await tt.sync();
+  assert.equal(s.done, 1); assert.equal(s.level, 23);
+  const items = core.gaming.progress.list('eft');
+  assert.ok(items.some((x) => x.name === 'Debüt' && x.status === 'done' && x.source === 'api'));
+  assert.ok(items.some((x) => x.name === 'Sanitäter' && x.status === 'failed'));
+  assert.ok(items.some((x) => x.name === 'PMC-Level' && x.value === '23'));
+  assert.equal(posted.length, 0, 'Sync spiegelt nichts zurück');
+  core.gaming.progress.upsert('eft', { category: 'quest', name: 'Shortage', status: 'done', source: 'chat' });
+  await new Promise((res) => setTimeout(res, 50));
+  assert.equal(posted.length, 1); assert.match(posted[0].url, /\/progress\/task\/t2$/); assert.equal(posted[0].body.state, 'completed');
+  const { baseUrl } = require('../src/main/services/gaming/tarkovtracker');
+  assert.equal(baseUrl('PVP_0123456789abcdef01'), 'https://api.tarkovtracker.org');
+  assert.equal(baseUrl('abcdefghijklmnopqrstuv'), 'https://tarkovtracker.io/api/v2');
   cleanup();
 });
 

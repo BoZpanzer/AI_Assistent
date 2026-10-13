@@ -161,23 +161,8 @@ class League {
       if (queues.length && !queues.includes(g.queueId)) continue;
       const mid = `${g.platformId || 'LCU'}_${g.gameId}`;
       if (this.db.get('SELECT 1 x FROM lol_matches WHERE match_id=?', mid)) continue;
-      const ident = (g.participantIdentities || []).find((x) => x.player?.puuid === me.puuid);
-      const p = (g.participants || []).find((x) => x.participantId === ident?.participantId) || (g.participants || [])[0];
-      if (!p?.stats || !g.gameDuration) continue;
-      const st = p.stats; const mins = g.gameDuration / 60;
-      const team = (g.participants || []).filter((x) => x.teamId === p.teamId);
-      const teamKills = team.length >= 5 ? team.reduce((a, x) => a + (x.stats?.kills || 0), 0) : null;
-      const lane = String(p.timeline?.lane || '').toUpperCase(); const role = String(p.timeline?.role || '').toUpperCase();
-      const pos = lane === 'BOTTOM' || lane === 'BOT' ? (role.includes('SUPPORT') ? 'UTILITY' : 'BOTTOM') : lane === 'MID' ? 'MIDDLE' : lane || 'UNKNOWN';
-      const cs = (st.totalMinionsKilled || 0) + (st.neutralMinionsKilled || 0);
-      const summary = {
-        matchId: mid, champion: champName(p.championId), win: !!st.win, kills: st.kills, deaths: st.deaths, assists: st.assists,
-        cs, csPerMin: +(cs / mins).toFixed(1), vision: st.visionScore ?? null, goldPerMin: Math.round((st.goldEarned || 0) / mins),
-        damagePerMin: Math.round((st.totalDamageDealtToChampions || 0) / mins),
-        killParticipation: teamKills ? Math.round(((st.kills + st.assists) / Math.max(1, teamKills)) * 100) : null,
-        role: pos, duration: g.gameDuration, queue: g.queueId, patch: String(g.gameVersion || '').split('.').slice(0, 2).join('.'),
-        items: [st.item0, st.item1, st.item2, st.item3, st.item4, st.item5].filter(Boolean), source: 'client',
-      };
+      const summary = summarizeLcuGame(g, me, champName);
+      if (!summary) continue;
       this.db.run('INSERT OR REPLACE INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', mid, me.puuid, new Date(g.gameCreation).toISOString(), JSON.stringify(summary));
       added++;
     }
@@ -190,6 +175,18 @@ class League {
     this.cache.set('lol:lastsync', { at: new Date().toISOString(), source: 'client' }, 'League-Client', 365 * 86400000);
     this.bus.emit('game:data', { game: 'league' });
     return { added, total: games.length, source: 'client' };
+  }
+
+  /** Newest game of any queue from the client (for the post-game review). */
+  async latestClientGame() {
+    const me = await this.lcuGet('/lol-summoner/v1/current-summoner');
+    const hist = await this.lcuGet('/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex=4');
+    const g = (hist?.games?.games || []).sort((a, b) => b.gameCreation - a.gameCreation)[0];
+    if (!g) return null;
+    const champs = await this.champions().then((r) => r.value).catch(() => []);
+    const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;
+    const sum = summarizeLcuGame(g, me, champName);
+    return sum ? { ...sum, playedAt: new Date(g.gameCreation).toISOString() } : null;
   }
 
   saveRank(rank, source) {
@@ -321,8 +318,42 @@ class League {
   championIcon(nameOrId, v) { return `${DD}/cdn/${v}/img/champion/${String(nameOrId).replace(/[^A-Za-z]/g, '')}.png`; }
 
   goals() { return this.db.all('SELECT * FROM lol_goals WHERE active=1 ORDER BY created_at DESC').map((g) => ({ id: g.id, text: g.text, metric: g.metric, target: g.target })); }
-  addGoal({ text, metric, target }) { const gid = id('g'); this.db.run('INSERT INTO lol_goals(id,text,metric,target,created_at) VALUES(?,?,?,?,?)', gid, String(text).slice(0, 200), metric || null, target ?? null, nowIso()); this.bus.emit('game:data', { game: 'league' }); return gid; }
+  addGoal({ text, metric, target }) {
+    if (!metric) { const g = parseGoal(text); if (g) { metric = g.metric; target = g.target; } }
+    const gid = id('g'); this.db.run('INSERT INTO lol_goals(id,text,metric,target,created_at) VALUES(?,?,?,?,?)', gid, String(text).slice(0, 200), metric || null, target ?? null, nowIso()); this.bus.emit('game:data', { game: 'league' }); return gid; }
   removeGoal(gid) { this.db.run('UPDATE lol_goals SET active=0 WHERE id=?', gid); this.bus.emit('game:data', { game: 'league' }); }
 }
 
-module.exports = { League, REGIONAL };
+/** „7 CS/min“, „max. 5 Tode“, „Vision 25“ → messbares Ziel. */
+function parseGoal(text) {
+  const t = String(text || '').toLowerCase().replace(',', '.');
+  let m = t.match(/(\d+(?:\.\d+)?)\s*cs/); if (m) return { metric: 'csPerMin', target: Number(m[1]) };
+  m = t.match(/(\d+)\s*(?:tode|deaths|tod)/) || t.match(/(?:tode|deaths)\D{0,12}(\d+)/); if (m) return { metric: 'deaths', target: Number(m[1]) };
+  m = t.match(/vision\D{0,12}(\d+)/) || t.match(/(\d+)\s*vision/); if (m) return { metric: 'vision', target: Number(m[1]) };
+  return null;
+}
+
+/** LCU match-history game → compact summary (same shape as API matches). */
+function summarizeLcuGame(g, me, champName) {
+  const mid = `${g.platformId || 'LCU'}_${g.gameId}`;
+  const ident = (g.participantIdentities || []).find((x) => x.player?.puuid === me.puuid);
+  const p = (g.participants || []).find((x) => x.participantId === ident?.participantId) || (g.participants || [])[0];
+  if (!p?.stats || !g.gameDuration) return null;
+  const st = p.stats; const mins = g.gameDuration / 60;
+  const team = (g.participants || []).filter((x) => x.teamId === p.teamId);
+  const teamKills = team.length >= 5 ? team.reduce((a, x) => a + (x.stats?.kills || 0), 0) : null;
+  const lane = String(p.timeline?.lane || '').toUpperCase(); const role = String(p.timeline?.role || '').toUpperCase();
+  const pos = lane === 'BOTTOM' || lane === 'BOT' ? (role.includes('SUPPORT') ? 'UTILITY' : 'BOTTOM') : lane === 'MID' ? 'MIDDLE' : lane || 'UNKNOWN';
+  const cs = (st.totalMinionsKilled || 0) + (st.neutralMinionsKilled || 0);
+  return {
+    matchId: mid, champion: champName(p.championId), win: !!st.win, kills: st.kills, deaths: st.deaths, assists: st.assists,
+    cs, csPerMin: +(cs / mins).toFixed(1), vision: st.visionScore ?? null, goldPerMin: Math.round((st.goldEarned || 0) / mins),
+    damagePerMin: Math.round((st.totalDamageDealtToChampions || 0) / mins),
+    killParticipation: teamKills ? Math.round(((st.kills + st.assists) / Math.max(1, teamKills)) * 100) : null,
+    role: pos, duration: g.gameDuration, queue: g.queueId, patch: String(g.gameVersion || '').split('.').slice(0, 2).join('.'),
+    items: [st.item0, st.item1, st.item2, st.item3, st.item4, st.item5].filter(Boolean), source: 'client',
+    wardsPlaced: st.wardsPlaced ?? null, controlWards: st.visionWardsBoughtInGame ?? null, firstBlood: !!(st.firstBloodKill || st.firstBloodAssist),
+  };
+}
+
+module.exports = { League, REGIONAL, summarizeLcuGame, parseGoal };

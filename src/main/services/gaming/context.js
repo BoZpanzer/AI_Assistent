@@ -15,6 +15,7 @@ class GameContext {
     this.db = ctx.db; this.bus = ctx.bus; this.settings = ctx.settings;
     this.platform = process.platform;
     this.running = []; // detected game ids
+    this.leagueClient = false;
     this.timer = null;
   }
 
@@ -107,9 +108,14 @@ class GameContext {
 
   async poll(processList) {
     const procs = new Set((processList || await this.listProcesses()).map((p) => p.toLowerCase()));
+    // Launcher/Client-Prozesse (kein Spiel, aber für Champion-Auswahl etc. relevant)
+    const lc = procs.has('leagueclientux.exe');
+    if (lc !== this.leagueClient) { this.leagueClient = lc; this.bus.emit('game:client', { league: lc }); }
     const found = this.profiles().filter((p) => (p.processes || []).some((x) => procs.has(x.toLowerCase())) && !p.processRequiresTitle).map((p) => p.id);
-    const changed = found.join(',') !== this.running.join(',');
+    const prev = this.running;
+    const changed = found.join(',') !== prev.join(',');
     this.running = found;
+    if (changed) this.bus.emit('game:running', { running: this.running, started: found.filter((x) => !prev.includes(x)), stopped: prev.filter((x) => !found.includes(x)) });
     const st = safeJson(this.getState('active'), null);
     const explicit = st && ['explicit', 'manual'].includes(st.source);
     if (found.length) {
@@ -126,7 +132,7 @@ class GameContext {
       this.emit();
       return;
     }
-    if (changed) { this.emit(); this.bus.emit('game:running', { running: this.running }); }
+    if (changed) this.emit();
   }
 
   /** On startup: restore an explicit choice made in the last 6 hours. */

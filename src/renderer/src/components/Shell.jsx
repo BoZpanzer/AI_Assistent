@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { MicOff, LayoutGrid, MessageCircle, SquareCheckBig, CalendarDays, BookOpen, Gamepad2, Orbit, Settings, Search, Paperclip, SendHorizontal, Mic, Minus, Square, X, ChevronRight, Bell, FileText, Brain, Upload, Globe, Calendar as CalIcon, CircleStop } from 'lucide-preact';
+import { MicOff, LayoutGrid, MessageCircle, SquareCheckBig, CalendarDays, BookOpen, Gamepad2, Orbit, Settings, Search, Paperclip, SendHorizontal, Mic, Minus, Square, X, ChevronRight, Bell, FileText, Brain, Upload, Globe, Calendar as CalIcon, CircleStop, Download, Rocket, RefreshCw } from 'lucide-preact';
 import { useStore, navigate, setState, toast, guard, getState } from '../lib/store.js';
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { audio } from '../lib/audio.js';
@@ -117,6 +117,7 @@ export function Header() {
           </div>
         )}
       </div>
+      <UpdateButton />
       <div class="profile" onClick={() => navigate('settings')} title="Profil & Einstellungen">
         <div class="avatar">{(settings?.userName || settings?.nickname || 'C').slice(0, 1).toUpperCase()}</div>
         <span class="tiny muted">Profil</span>
@@ -129,6 +130,48 @@ export function Header() {
     </header>
   );
 }
+
+/** Leuchtender „Aktualisieren“-Button, sobald ein signiertes Update bereitsteht. */
+function UpdateButton() {
+  const u = useStore((s) => s.update);
+  const [open, setOpen] = useState(false);
+  if (!u || !['available', 'downloading', 'ready', 'installing'].includes(u.state) || (u.state === 'available' && !u.signed)) return open ? <UpdateModal onClose={() => setOpen(false)} /> : null;
+  const label = u.state === 'downloading' ? `Lädt ${u.progress != null ? Math.round(u.progress * 100) + ' %' : '…'}` : u.state === 'installing' ? 'Installiert …' : `Aktualisieren auf ${u.version}`;
+  return (
+    <>
+      <button class="update-btn" onClick={() => setOpen(true)} title="Neue JARVIS-Version verfügbar">
+        {u.state === 'downloading' || u.state === 'installing' ? <RefreshCw size={15} class="spin" /> : <Download size={15} />}{label}
+        {u.state === 'downloading' && u.progress != null && <i style={{ width: `${Math.round(u.progress * 100)}%` }} />}
+      </button>
+      {open && <UpdateModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+export function UpdateModal({ onClose }) {
+  const u = useStore((s) => s.update) || {};
+  const game = useStore((s) => s.game);
+  const busy = ['checking', 'downloading', 'installing'].includes(u.state);
+  const install = async () => { await guard(() => rpc('update.install')); };
+  const mb = (n) => (n ? (n / 1048576).toFixed(0) + ' MB' : '');
+  return (
+    <Modal title={u.state === 'available' || u.state === 'ready' || u.state === 'downloading' ? `JARVIS ${u.version} ist da` : 'JARVIS aktualisieren'} onClose={busy ? undefined : onClose} width={580}>
+      <div class="small muted">Installiert: {u.current}{u.version && u.version !== u.current ? ` → neu: ${u.version}` : ''}{u.size ? ` · ${mb(u.size)}` : ''}{u.publishedAt ? ` · veröffentlicht ${new Date(u.publishedAt).toLocaleDateString('de-DE')}` : ''}</div>
+      {u.notes && <div class="md small mt update-notes" dangerouslySetInnerHTML={{ __html: renderNotes(u.notes) }} />}
+      {u.state === 'available' && !u.signed && <div class="notice warn mt">Dieses Update ist nicht gültig signiert und wird deshalb nicht automatisch installiert.</div>}
+      {game?.gaming && <div class="notice mt">Du bist gerade im Spiel – JARVIS startet beim Aktualisieren kurz neu. Lieber nach der Runde.</div>}
+      {u.error && <div class="notice warn mt">{u.error}</div>}
+      {u.state === 'downloading' && <div class="meter mt" style={{ width: '100%' }}><i style={{ width: `${Math.round((u.progress || 0) * 100)}%` }} /></div>}
+      <div class="tiny muted mt">Ablauf: Download → Prüfsumme & Signatur prüfen → automatische Datensicherung → stille Installation → JARVIS startet neu. Deine Daten in %APPDATA%\JARVIS bleiben erhalten.</div>
+      <div class="row gap-s mt" style={{ justifyContent: 'flex-end' }}>
+        {!busy && <button class="btn sm ghost" onClick={onClose}>Später</button>}
+        {(u.state === 'available' || u.state === 'ready') && u.signed && <button class="btn sm primary" onClick={install}><Rocket size={14} />Jetzt aktualisieren</button>}
+        {busy && <span class="row small"><RefreshCw size={14} class="spin" />{u.state === 'installing' ? 'Installiere – JARVIS startet gleich neu …' : u.state === 'checking' ? 'Suche …' : 'Lade herunter …'}</span>}
+      </div>
+    </Modal>
+  );
+}
+function renderNotes(t) { return String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]).replace(/^### (.*)$/gm, '<b>$1</b>').replace(/^## (.*)$/gm, '<b>$1</b>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '• $1').replace(/\n/g, '<br>'); }
 
 function RCard({ icon: Icon, title, sub, items, onClick, empty }) {
   return (

@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { id, nowIso, sha256, dayKey } = require('../core/util');
+const { id, nowIso, sha256, dayKey, normText } = require('../core/util');
 const { extract, chunkPages, SUPPORTED } = require('./extract');
 const log = require('../core/logger').scope('study');
 
@@ -283,6 +283,32 @@ class Study {
     }
     return out.slice(0, maxChars);
   }
+  /**
+   * Notes/scripts that probably belong to a lecture title: subject-folder
+   * match first, then full-text hits. Purely local, no AI.
+   */
+  relatedNotes(title, { limit = 3 } = {}) {
+    const { courseName } = require('./ics');
+    const course = courseName(title);
+    const STOP = new Set(['und', 'der', 'die', 'das', 'in', 'im', 'fur', 'mit', 'von', 'zu', 'ii', 'iii', 'iv', 'i', 'grundlagen', 'einfuhrung', 'teil', 'vorlesung', 'ubung', 'seminar']);
+    const words = normText(course).split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w));
+    if (!words.length) return [];
+    const out = new Map();
+    const subjects = this.subjects().map((x) => x.subject);
+    const abbr = course.split(/\s+/).filter((w) => /^[A-ZÄÖÜ]/.test(w)).map((w) => w[0]).join('').toLowerCase();
+    const subj = subjects.find((sub) => { const n = normText(sub); return words.some((w) => n.includes(w)) || (abbr.length >= 2 && n.replace(/\s+/g, '') === abbr); });
+    if (subj) for (const d of this.documents({ subject: subj, limit })) out.set(d.id, { id: d.id, title: d.title, subject: d.subject, reason: 'Fach „' + subj + '“' });
+    if (out.size < limit) {
+      try {
+        const q = words.slice(0, 4).map((w) => '"' + w.replace(/"/g, '') + '"').join(' OR ');
+        const rows = this.db.all(`SELECT c.doc_id, d.title, d.subject, MIN(bm25(chunks_fts)) score FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.rowid JOIN documents d ON d.id=c.doc_id
+          WHERE chunks_fts MATCH ? AND d.source<>'web' GROUP BY c.doc_id ORDER BY score LIMIT ?`, q, limit * 2);
+        for (const r of rows) if (!out.has(r.doc_id) && out.size < limit) out.set(r.doc_id, { id: r.doc_id, title: r.title, subject: r.subject, reason: 'Inhalt passt' });
+      } catch { /* FTS syntax edge cases */ }
+    }
+    return [...out.values()].slice(0, limit);
+  }
+
   status() {
     const s = this.settings.get('study');
     return {
