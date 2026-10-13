@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'preact/hooks';
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, CirclePlus, Sparkles, Upload, TriangleAlert, Cloud, CloudOff } from 'lucide-preact';
+import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, CirclePlus, Sparkles, Upload, TriangleAlert, Cloud, CloudOff, Link2, Trash2 } from 'lucide-preact';
 import { rpc, useRpc } from '../lib/api.js';
-import { useStore, setState, guard } from '../lib/store.js';
+import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
-import { Panel, Toggle, Spinner } from '../components/ui.jsx';
+import { Panel, Toggle, Spinner, ask } from '../components/ui.jsx';
 import { fmtTime, ago } from '../lib/format.js';
 
 const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -84,6 +84,7 @@ export function Calendar() {
               </div>
             ))}
           </Panel>
+          <Feeds onChange={reloadCals} />
           <Conflicts events={events} />
         </div>
       </div>
@@ -135,6 +136,38 @@ function Week({ start, byDay, onNew }) {
         );
       })}
     </div>
+  );
+}
+
+/** Kalender-Abos (.ics), z. B. der Campus-Dual-Stundenplan – nur lesend, alle 15 Minuten aktualisiert. */
+function Feeds({ onChange }) {
+  const [feeds, reload] = useRpc('feeds.list', {}, { events: ['feeds:changed'], initial: [] });
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    if (!url.trim()) return;
+    setBusy(true);
+    const r = await guard(() => rpc('feeds.add', { url: url.trim(), name: name.trim() || (/campus-dual/i.test(url) ? 'Stundenplan (Campus Dual)' : 'Kalender-Abo') }));
+    setBusy(false);
+    if (r) { if (r.error) toast('Abo angelegt, aber Abruf fehlgeschlagen: ' + r.error, 'error', 8000); else toast(r.existed ? `Abo aktualisiert: ${r.events ?? 'keine Änderung'}` : `Abo hinzugefügt: ${r.events ?? 0} Termine`); setUrl(''); setName(''); reload(); onChange?.(); }
+  };
+  return (
+    <Panel icon={Link2} title="Abos & Stundenplan" sub="ICS-Links, z. B. Campus Dual · alle 15 Min. aktualisiert">
+      {feeds.map((f) => (
+        <div class="col" style={{ gap: 2, padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
+          <div class="row gap-s"><span class="status-dot" style={{ background: f.color }} /><b class="small grow ellipsis">{f.name}</b>
+            <button class="btn icon xs ghost" title="Jetzt aktualisieren" onClick={() => guard(() => rpc('feeds.refresh', { id: f.id }), 'Aktualisiert').then(reload)}><RefreshCw size={12} /></button>
+            <button class="btn icon xs ghost" title="Abo entfernen" onClick={async () => { if (await ask(`Abo „${f.name}“ entfernen? Die Termine daraus verschwinden aus JARVIS (nicht aus der Quelle).`, '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) { await rpc('feeds.remove', { id: f.id }); reload(); onChange?.(); } }}><Trash2 size={12} /></button>
+          </div>
+          <div class="tiny" style={{ color: f.error ? 'var(--red)' : 'var(--text-3, #7fa3b5)' }}>{f.error ? 'Fehler: ' + f.error : `${f.events} Termine · aktualisiert ${f.lastFetch ? ago(f.lastFetch) : '—'}`}</div>
+        </div>
+      ))}
+      {!feeds.length && <div class="tiny muted">Noch keine Abos. Füge z. B. deinen Campus-Dual-Stundenplan hinzu (ICS-Link aus Campus Dual → Stundenplan → Export).</div>}
+      <input class="inp mt" placeholder="https://…/…ics oder webcal://…" value={url} onInput={(e) => setUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+      <div class="row gap-s mt"><input class="inp grow" placeholder="Name (optional)" value={name} onInput={(e) => setName(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn sm primary" disabled={busy || !url.trim()} onClick={add}>{busy ? <Spinner /> : <CirclePlus size={14} />}Abonnieren</button></div>
+      <button class="btn xs ghost mt" onClick={() => guard(() => rpc('feeds.addFile', {})).then((r) => { if (r) { reload(); onChange?.(); } })}><Upload size={12} />.ics-Datei einmalig importieren</button>
+    </Panel>
   );
 }
 

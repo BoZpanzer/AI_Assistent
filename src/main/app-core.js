@@ -25,6 +25,7 @@ const { Scheduler } = require('./jobs/scheduler');
 const { ScreenVision } = require('./services/screen');
 const { Updater } = require('./services/updater');
 const { Drive } = require('./services/drive');
+const { Feeds } = require('./services/ics');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 
@@ -53,6 +54,7 @@ function createCore(opts) {
   s.notifications = new Notifications(s);
   s.tasks = new Tasks(s);
   s.calendar = new Calendar(s);
+  s.feeds = new Feeds(s);
   s.vectors = new VectorIndex(s);
   s.brain = new Brain(s);
   s.study = new Study(s);

@@ -166,13 +166,15 @@ class Feeds {
 
   list() {
     return this.db.all('SELECT * FROM calendar_feeds ORDER BY created_at').map((f) => ({
-      id: f.id, name: f.name, url: f.url ? f.url.replace(/([?&](?:token|key|auth|hash)=)[^&]+/gi, '$1…') : null, kind: f.kind, color: f.color, lecture: !!f.lecture,
+      id: f.id, name: f.name, url: f.url ? f.url.replace(/([?&](?:token|key|auth|hash)=)[^&]+/gi, '$1…').replace(/guid'([0-9a-f-]{6})[0-9a-f-]+'/i, "guid'$1…'") : null, kind: f.kind, color: f.color, lecture: !!f.lecture,
       lastFetch: f.last_fetch, error: f.last_error, events: this.db.get('SELECT COUNT(*) c FROM events WHERE calendar_id=?', 'feed:' + f.id).c,
     }));
   }
 
   async add({ name, url, file, color = '#a78bfa', lecture = true }) {
     let kind = 'url'; let clean = null;
+    const exists = url && this.db.get('SELECT id FROM calendar_feeds WHERE url=?', String(url).trim().replace(/^webcals?:\/\//i, 'https://'));
+    if (exists) { const r = await this.refresh(exists.id).catch((e) => ({ error: e.message })); return { id: exists.id, existed: true, ...r }; }
     if (file) { kind = 'file'; if (!/\.ics$/i.test(file) || !fs.existsSync(file)) throw new Error('Bitte eine .ics-Datei wählen'); clean = file; }
     else {
       clean = String(url || '').trim().replace(/^webcals?:\/\//i, 'https://');

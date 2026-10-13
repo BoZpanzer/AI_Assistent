@@ -38,6 +38,8 @@ class Scheduler {
       this.lastRun['calendar-sync:real'] = Date.now();
       await s.calendar.sync();
     }, { initialDelayMs: 8_000 });
+    // Kalender-Abos (z. B. Campus-Dual-Stundenplan): alle 15 Minuten, ersetzt Einträge komplett → entfernte Termine verschwinden
+    this.add('calendar-feeds', 15 * 60_000, async () => { if (s.db.get('SELECT COUNT(*) c FROM calendar_feeds').c) await s.feeds.refreshAll(); }, { initialDelayMs: 20_000 });
     this.add('drive-sync', 20 * 60_000, async () => { if (s.drive.active() && s.drive.granted() && s.settings.get('study').enabled) await s.drive.sync(); }, { heavy: true, initialDelayMs: 40_000 });
     this.add('study-scan', 6 * 3600_000, () => s.study.scan(), { heavy: true, initialDelayMs: 25_000 });
     this.add('embeddings', 5 * 60_000, () => s.vectors.backfill({ maxItems: 150 }), { heavy: true, initialDelayMs: 60_000 });

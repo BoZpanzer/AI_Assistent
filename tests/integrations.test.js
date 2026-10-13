@@ -381,3 +381,35 @@ test('Google Drive „Goodnotes“: Unterordner = Fächer, nur Geändertes laden
   assert.equal(core.study.root(), core.drive.root());
   cleanup();
 });
+
+test('Kalender-Abo (ICS): Termine erscheinen, Aktualisierung entfernt Altes, schreibgeschützt, alle 15 Min.', async () => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
+  const { core, cleanup } = tempCore();
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ics-')), 'stundenplan.ics');
+  const d = (days, h) => { const x = new Date(); x.setDate(x.getDate() + days); x.setUTCHours(h, 15, 0, 0); return x.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''); };
+  const ics = (evs) => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SAP//Campus Dual//DE', ...evs.flatMap(([uid, t, day, h]) => ['BEGIN:VEVENT', 'UID:' + uid, 'SUMMARY:' + t, 'DTSTART:' + d(day, h), 'DTEND:' + d(day, h + 1), 'LOCATION:Raum 2.14', 'END:VEVENT']), 'END:VCALENDAR'].join('\r\n');
+  fs.writeFileSync(f, ics([['a', 'Mathematik II', 1, 7], ['b', 'Programmierung', 2, 9], ['c', 'Datenbanken', 3, 11]]));
+  const r = await core.feeds.add({ name: 'Stundenplan', file: f });
+  assert.equal(r.events, 3);
+  const range = [new Date(Date.now() - 86400000), new Date(Date.now() + 10 * 86400000)];
+  let ev = core.calendar.list(...range).filter((e) => e.calendarId.startsWith('feed:'));
+  assert.equal(ev.length, 3); assert.equal(ev[0].readOnly, true); assert.equal(ev[0].source, 'feed');
+  await assert.rejects(core.calendar.update(ev[0].id, { title: 'x' }), /schreibgeschützt/);
+  // Quelle ändert sich: Datenbanken fällt weg, Statistik kommt dazu
+  fs.writeFileSync(f, ics([['a', 'Mathematik II', 1, 7], ['b', 'Programmierung', 2, 9], ['d', 'Statistik', 4, 8]]));
+  await core.feeds.refreshAll();
+  ev = core.calendar.list(...range).filter((e) => e.calendarId.startsWith('feed:')).map((e) => e.title);
+  assert.deepEqual(ev.sort(), ['Mathematik II', 'Programmierung', 'Statistik']);
+  // unverändert → kein Neuschreiben
+  const again = await core.feeds.refresh(r.id);
+  assert.equal(again.unchanged, true);
+  assert.ok(core.scheduler.jobs === undefined || true);
+  const { Scheduler } = require('../src/main/jobs/scheduler');
+  const sch = new Scheduler(core); sch.add = function (name, every) { (this.list = this.list || []).push([name, every]); };
+  sch.start(); sch.stop();
+  assert.deepEqual(sch.list.find((x) => x[0] === 'calendar-feeds'), ['calendar-feeds', 15 * 60_000]);
+  assert.match(core.feeds.list()[0].name, /Stundenplan/);
+  core.feeds.remove(r.id);
+  assert.equal(core.calendar.list(...range).filter((e) => e.calendarId.startsWith('feed:')).length, 0);
+  cleanup();
+});

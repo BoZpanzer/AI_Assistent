@@ -127,6 +127,12 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
         return { ...r, calendars: s.calendar.calendars() };
       } finally { showWindow(); } // JARVIS nach der Browser-Anmeldung wieder nach vorne holen – auch bei Fehlern
     },
+    'feeds.list': () => s.feeds.list(),
+    'feeds.add': ({ name, url, color, lecture }) => s.feeds.add({ name, url, color, lecture }),
+    'feeds.addFile': async ({ name }) => { const f = (await pick({ properties: ['openFile'], filters: [{ name: 'Kalender (.ics)', extensions: ['ics'] }] }))?.[0]; return f ? s.feeds.add({ name: name || path.basename(f, '.ics'), file: f }) : null; },
+    'feeds.refresh': async ({ id }) => (id ? s.feeds.refresh(id) : s.feeds.refreshAll()),
+    'feeds.update': ({ id, patch }) => s.feeds.update(id, patch || {}),
+    'feeds.remove': ({ id }) => s.feeds.remove(id),
     'drive.status': () => s.drive.publicStatus(),
     'drive.connect': async () => {
       try { await s.google.connect({ drive: true }); } finally { showWindow(); }

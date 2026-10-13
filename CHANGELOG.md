@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.6.0 – Stundenplan-Abo (Campus Dual)
+
+- **Kalender-Abos:** Unter Kalender → „Abos & Stundenplan“ einen ICS-Link einfügen (z. B. deinen Campus-Dual-Stundenplan) → „Abonnieren“.
+- Das Abo wird **alle 15 Minuten** aktualisiert. Termine, die in der Quelle verschwunden sind, verschwinden auch in JARVIS. Ist die Quelle mal nicht erreichbar, bleiben die letzten Termine stehen.
+- Abo-Termine sind schreibgeschützt und haben eine eigene Farbe. Wiederholungen, Ausfälle (EXDATE) und verschobene Einzeltermine werden korrekt übernommen, mit Sommer- und Winterzeit.
+- Die Termine kennt auch JARVIS im Chat („Was hab ich morgen in der Uni?“).
+
 ## 3.5.0 – Ganztägige Termine & Farben
 
 - **Ganztägige Termine** über den Schalter „Ganztägig“ im Termin-Dialog, auch mehrtägig (z. B. Urlaub „bis einschließlich“). Ein Doppelklick auf einen Tag in der Monatsansicht legt direkt einen ganztägigen Termin an.
