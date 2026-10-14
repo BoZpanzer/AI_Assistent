@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const log = require('../../core/logger').scope('eftlogs');
+const { parseEntries } = require('./eftraid');
 
 // Tarkov-Karten-IDs aus dem Spiel-Log → tarkov.dev-Namen
 const LOCATION = { bigmap: 'customs', factory4_day: 'factory', factory4_night: 'factory', interchange: 'interchange', laboratory: 'the-lab', lighthouse: 'lighthouse', rezervbase: 'reserve', shoreline: 'shoreline', tarkovstreets: 'streets-of-tarkov', woods: 'woods', sandbox: 'ground-zero', sandbox_high: 'ground-zero', labyrinth: 'the-labyrinth', terminal: 'terminal' };
@@ -18,8 +19,9 @@ function parseLocation(text) {
  * → x, y, z (Spielkoordinaten) und Blickrichtung (Vorwärtsvektor fx/fz aus der Rotation).
  */
 function parseScreenshotName(name) {
-  const n = '(-?\\d+(?:\\.\\d+)?)';
-  const m = String(name).match(new RegExp(`_${n}, ${n}, ${n}_${n}, ${n}, ${n}, ${n}_`));
+  // wie TarkovMonitor: Unterstriche zwischen Zeitstempel, Position und Rotation sind optional
+  const n = '(-?\\d+\\.\\d+)';
+  const m = String(name).match(new RegExp(`\\]_?${n}, ${n}, ${n}_?${n}, ${n}, ${n}, ${n}`));
   if (!m) return null;
   const [x, y, z, qx, qy, qz, qw] = m.slice(1, 8).map(Number);
   if (![x, y, z, qx, qy, qz, qw].every(Number.isFinite)) return null;
@@ -63,7 +65,7 @@ function parseNotifications(text) {
 }
 
 class EftLogs {
-  constructor(s) { this.s = s; this.timer = null; this.offsets = new Map(); this.dir = undefined; this.lastError = null; this.location = null; this.shotsSeen = null; this.pendingMove = new Map(); }
+  constructor(s) { this.s = s; this.timer = null; this.offsets = new Map(); this.dir = undefined; this.lastError = null; this.location = null; this.shotsSeen = null; this.pendingMove = new Map(); this.liveFiles = new Set(); this.preexisting = new Set(); }
   cfg() { return this.s.settings.get('gaming') || {}; }
   enabled() { return this.cfg().eftLogWatch !== false; }
 
@@ -116,6 +118,9 @@ class EftLogs {
         let text = buf.toString('utf8');
         const cut = text.lastIndexOf('\n'); if (cut >= 0 && from + len === size) text = text.slice(0, cut + 1);
         this.offsets.set(f, from + Buffer.byteLength(text, 'utf8'));
+        // Raid-Begleiter: erstes Lesen einer Datei (Spiel lief schon) nur als Zustand, ohne Meldungen
+        try { this.s.gaming.eftRaid?.onEntries(parseEntries(text), { initial: from === 0 && this.preexisting.has(f) && !this.liveFiles.has(f) }); } catch (e) { log.debug('raid', e); }
+        this.liveFiles.add(f);
         if (/application/i.test(path.basename(f))) {
           const loc = parseLocation(text);
           if (loc && loc.id !== this.location?.id) { this.location = { ...loc, at: new Date().toISOString() }; if (loc.map) this.s.gaming.setLastMap('eft', loc.map); log.info('Raid-Karte: ' + loc.id); }
@@ -227,11 +232,14 @@ class EftLogs {
     if (!(await this.gameDir())) { this.lastError = 'Tarkov-Ordner nicht gefunden – unter Einstellungen → Gaming eintragen.'; log.info(this.lastError); return; }
     this.lastError = null;
     this.shotsSeen = null; this.location = null;
+    // Dateien, die beim Start schon da sind (Spiel lief bereits): deren Inhalt nur als Zustand übernehmen
+    this.preexisting = new Set(await this.currentFiles()); this.liveFiles = new Set();
     let n = 0;
     // Screenshots alle 2 s (Position soll schnell erscheinen), Logs alle 6 s
     const tick = () => {
       try { this.pollShots(); } catch (e) { log.debug('shots', e); }
       if (n % 900 === 0) try { this.cleanupShots(); } catch { /* ignore */ }
+      try { this.s.gaming.eftRaid?.tick(); } catch { /* ignore */ }
       if (n++ % 3 === 0) this.poll().catch((e) => { this.lastError = e.message; log.debug('poll', e); });
     };
     tick();

@@ -71,13 +71,13 @@ class Tarkov {
   async taskNeeds(gameMode = 'regular') {
     return this.cache.wrap('eft:taskneeds:' + gameMode, SOURCE, 2 * DAY, async () => {
       const base = 'id type description optional maps { normalizedName name }';
-      const full = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired trader { name } map { normalizedName name } taskRequirements { task { id } status }
+      const full = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired lightkeeperRequired trader { name } map { normalizedName name } taskRequirements { task { id } status }
         objectives { ${base}
           ... on TaskObjectiveItem { items { name shortName } count foundInRaid }
           ... on TaskObjectiveMark { markerItem { name shortName } }
           ... on TaskObjectiveQuestItem { questItem { name shortName } count }
           ... on TaskObjectiveBasic { requiredKeys { name shortName } } } } }`;
-      const lite = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired trader { name } map { normalizedName name } taskRequirements { task { id } status } objectives { ${base} } } }`;
+      const lite = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired lightkeeperRequired trader { name } map { normalizedName name } taskRequirements { task { id } status } objectives { ${base} } } }`;
       let d; let detailed = true;
       try { d = await this.gql(full, { gm: gameMode }); } catch (e) { detailed = false; d = await this.gql(lite, { gm: gameMode }); }
       return { detailed, tasks: d.tasks };
@@ -124,6 +124,90 @@ class Tarkov {
     }
     out.map = map; out.tasks = sel; out.bring = { items: [...items.values()], keys: [...keys.values()] };
     return out;
+  }
+
+  /** Hideout-Stationen mit Stufen, Bau-Anforderungen (Items, andere Stationen) und Boni. */
+  async hideoutStations(gameMode = 'regular') {
+    return this.cache.wrap('eft:hideout:' + gameMode, SOURCE, 3 * DAY, async () => {
+      const lv = 'id level constructionTime itemRequirements { item { id name shortName } count } stationLevelRequirements { station { id name } level }';
+      try {
+        return (await this.gql(`query($gm: GameMode){ hideoutStations(lang: de, gameMode: $gm) { id name normalizedName levels { ${lv} bonuses { type value } } } }`, { gm: gameMode })).hideoutStations;
+      } catch {
+        return (await this.gql(`query($gm: GameMode){ hideoutStations(lang: de, gameMode: $gm) { id name normalizedName levels { ${lv} } } }`, { gm: gameMode })).hideoutStations;
+      }
+    });
+  }
+
+  /**
+   * Benötigte Items: aus allen NICHT erledigten Quests (Abgeben, mit „Found in Raid“) und den noch nicht gebauten
+   * Hideout-Stufen. Dazu Kappa- und Lightkeeper-Fortschritt.
+   */
+  async neededItems({ done = new Set(), built = new Set(), gameMode, kappaOnly = false } = {}) {
+    const [tn, hs] = await Promise.all([this.taskNeeds(gameMode), this.hideoutStations(gameMode).catch(() => ({ value: [] }))]);
+    const items = new Map();
+    const add = (it, n, src, fir) => {
+      if (!it?.name || !(n > 0)) return;
+      const x = items.get(it.name) || { id: it.id || null, name: it.name, short: it.shortName || it.name, quest: 0, questFir: 0, hideout: 0, tasks: [], stations: [] };
+      if (src.task) { x.quest += n; if (fir) x.questFir += n; if (!x.tasks.includes(src.task)) x.tasks.push(src.task); }
+      if (src.station) { x.hideout += n; if (!x.stations.includes(src.station)) x.stations.push(src.station); }
+      items.set(it.name, x);
+    };
+    const tasks = tn.value.tasks || [];
+    for (const t of tasks) {
+      if (done.has(t.name) || (kappaOnly && !t.kappaRequired)) continue;
+      for (const o of t.objectives || []) if (/giveItem/i.test(o.type) && Array.isArray(o.items) && o.items[0]) add(o.items[0], o.count || 1, { task: t.name }, !!o.foundInRaid);
+    }
+    for (const st of hs.value || []) for (const l of st.levels || []) {
+      if (built.has(l.id)) continue;
+      for (const r of l.itemRequirements || []) add(r.item, r.count || 1, { station: `${st.name} ${l.level}` });
+    }
+    const list = [...items.values()].map((x) => ({ ...x, total: x.quest + x.hideout })).sort((a, b) => b.total - a.total);
+    const prog = (flag) => { const all = tasks.filter((t) => t[flag]); return { done: all.filter((t) => done.has(t.name)).length, total: all.length }; };
+    return { items: list, kappa: prog('kappaRequired'), lightkeeper: prog('lightkeeperRequired'), detailed: tn.value.detailed, source: tn.source, fetchedAt: tn.fetchedAt, offline: tn.offline };
+  }
+
+  /** Letzte Goon-Sichtungen der Community (tarkov.dev), neueste zuerst. */
+  async goonReports(gameMode = 'regular') {
+    return this.cache.wrap('eft:goons:' + gameMode, SOURCE, 5 * 60000, async () => {
+      const d = await this.gql('query($gm: GameMode){ goonReports(lang: de, gameMode: $gm, limit: 25) { map { name normalizedName nameId } timestamp } }', { gm: gameMode });
+      return (d.goonReports || []).map((g) => ({ map: g.map?.normalizedName, mapName: g.map?.name, at: new Date(Number(g.timestamp)).toISOString() })).sort((a, b) => b.at.localeCompare(a.at));
+    });
+  }
+
+  /** Eigene Goon-Sichtung an tarkov.dev melden (wie TarkovMonitor). */
+  async reportGoons({ mapNameId, accountId, gameMode = 'regular' }) {
+    if (!/^[A-Za-z0-9_]+$/.test(String(mapNameId || ''))) throw new Error('Unbekannte Karte – erst einen Raid starten');
+    if (!/^\d+$/.test(String(accountId || ''))) throw new Error('Account-ID unbekannt (steht erst nach dem Spielstart im Tarkov-Log)');
+    const r = await this.fetch('https://manager.tarkov.dev/api/goons', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ map: mapNameId, gameMode: gameMode === 'pve' ? 'pve' : 'regular', timestamp: Date.now(), accountId: Number(accountId) }) });
+    if (!r.ok) throw new Error('tarkov.dev hat die Meldung abgelehnt (' + r.status + ')');
+    this.cache.db?.run?.("DELETE FROM game_cache WHERE key LIKE 'eft:goons:%'");
+    return { ok: true };
+  }
+
+  /** Itemname zu einer Item-ID (z. B. aus Flohmarkt-Meldungen). */
+  async itemNameById(id) {
+    if (!/^[0-9a-f]{24}$/i.test(String(id || ''))) return null;
+    const r = await this.cache.wrap('eft:itemname:' + id, SOURCE, 30 * DAY, async () => (await this.gql('query($ids: [ID]){ items(ids: $ids, lang: de) { name } }', { ids: [id] })).items?.[0]?.name || null);
+    return r.value;
+  }
+
+  /** Item-Preise für den Scanner: Flohmarkt, beste Händler, Wert pro Slot. */
+  async itemPrices(name, gameMode = 'regular') {
+    const q = String(name || '').trim();
+    if (q.length < 2) return null;
+    const r = await this.cache.wrap(`eft:price:${gameMode}:${q.toLowerCase()}`, SOURCE, 30 * 60000, async () => {
+      const d = await this.gql(`query($n: String, $gm: GameMode){ items(name: $n, lang: de, gameMode: $gm, limit: 8) { id name shortName width height basePrice avg24hPrice lastLowPrice low24hPrice wikiLink iconLink sellFor { vendor { name } priceRUB } } }`, { n: q, gm: gameMode });
+      return d.items || [];
+    });
+    const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const nq = norm(q);
+    const best = r.value.find((i) => norm(i.name) === nq || norm(i.shortName) === nq) || r.value[0];
+    if (!best) return null;
+    const slots = Math.max(1, (best.width || 1) * (best.height || 1));
+    const traders = (best.sellFor || []).filter((x) => x.vendor?.name && !/flohmarkt|flea/i.test(x.vendor.name)).sort((a, b) => b.priceRUB - a.priceRUB);
+    const flea = best.avg24hPrice || best.lastLowPrice || null;
+    return { id: best.id, name: best.name, short: best.shortName, slots, flea, fleaLow: best.lastLowPrice || null, trader: traders[0] ? { name: traders[0].vendor.name, price: traders[0].priceRUB } : null,
+      perSlot: Math.round(Math.max(flea || 0, traders[0]?.priceRUB || 0) / slots), wiki: best.wikiLink, icon: best.iconLink, alternatives: r.value.filter((i) => i !== best).slice(0, 3).map((i) => i.name), source: r.source, fetchedAt: r.fetchedAt };
   }
 
   /** Questziele auf einer Karte – ohne erledigte Quests (Spielstand/TarkovTracker), optional bis zum eigenen Level. */

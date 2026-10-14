@@ -1186,3 +1186,86 @@ test('Tarkov Eck-Karte: Exits nach PMC/Scav, Flare/Co-op/Auto erkannt, Transits,
     assert.ok(Math.abs(d.position.nx - 0.5) < 1e-6);
   } finally { cleanup(); }
 });
+
+test('Tarkov Raid-Begleiter: Match gefunden → Raid → Ende (Scav-Abklingzeit mit Hideout-Bonus), Runthrough, Flohmarkt, kein Melden beim Nachlesen', async () => {
+  const { parseEntries } = require('../src/main/services/gaming/eftraid');
+  const L = (t, msg) => `2026-10-14 ${t}.000 +02:00|0.16.0.1.36000|Info|application|${msg}\n`;
+  const N = (t, msg, json) => `2026-10-14 ${t}.000 +02:00|0.16.0.1.36000|Info|push-notifications|${msg}\n${json ? JSON.stringify(json, null, 2) + '\n' : ''}`;
+  const hs = { data: { hideoutStations: [{ id: 'intel', name: 'Nachrichtenzentrale', normalizedName: 'intelligence-center', levels: [{ id: 'intel1', level: 1, itemRequirements: [], stationLevelRequirements: [], bonuses: [{ type: 'ScavCooldownTimer', value: -20 }] }] }] } };
+  const { core, cleanup } = tempCore({ fetch: async (_u, init) => new Response(JSON.stringify(/hideoutStations/.test(String(init?.body)) ? hs : /items\(ids/.test(String(init?.body)) ? { data: { items: [{ name: 'Graphikkarte' }] } } : { data: {} }), { headers: { 'Content-Type': 'application/json' } }) });
+  try {
+    const R = core.gaming.eftRaid;
+    const notes = () => core.notifications.list({ limit: 20 }).map((n) => n.title);
+    // Nachlesen (Spiel lief schon): Zustand ja, Meldungen nein
+    R.onEntries(parseEntries(L('17:00:00', 'SelectProfile ProfileId:abc AccountId:1234567') + L('17:01:00', 'LocationLoaded:1.2 real:3.4') + L('17:02:00', "TRACE-NetworkGameCreate profileStatus: 'Profileid: abc, Status: Busy, RaidMode: Online, Ip: 1.2.3.4, Port: 17000, Location: bigmap, Sid: x, GameMode: deathmatch, shortId: AB12CD'")), { initial: true });
+    assert.equal(R.st.phase, 'found'); assert.equal(R.st.map, 'customs'); assert.equal(R.accountId, '1234567');
+    assert.ok(!notes().some((t) => /Match gefunden/.test(t)));
+    // Live: neuer Raid als Scav (GameStarted direkt nach GameStarting)
+    R.onEntries(parseEntries(L('18:00:00', 'LocationLoaded:1.2 real:3.4') + L('18:01:00', "TRACE-NetworkGameCreate profileStatus: 'Profileid: abc, Status: Busy, RaidMode: Online, Location: Woods, shortId: ZZ99YY'") + L('18:01:30', 'GameStarting') + L('18:01:31', 'GameStarted')));
+    assert.ok(notes().some((t) => t === 'Match gefunden: Wald'));
+    assert.equal(R.st.phase, 'inraid'); assert.equal(R.st.type, 'scav'); assert.equal(R.stats().plays.woods, 1);
+    // Runthrough nach 7:10
+    R.tick(Date.parse(R.st.startedAt) + 431000);
+    assert.ok(notes().some((t) => /Runthrough-Zeit vorbei/.test(t)));
+    // Raid vorbei → Scav-Abklingzeit 25 min − 20 % Hideout-Bonus = 20 min
+    core.gaming.setEftHideout('intel1', true);
+    R.onEntries(parseEntries(N('18:20:00', 'Got notification | UserMatchOver', { location: 'Woods', shortId: 'ZZ99YY' })));
+    await new Promise((r) => setTimeout(r, 30));
+    const ready = R.state().scavReadyAt;
+    assert.equal((Date.parse(ready) - Date.parse('2026-10-14T18:20:00')) / 60000, 20);
+    // Flohmarkt-Verkauf (einmal gezählt, auch wenn er doppelt im Log steht)
+    const sold = { type: 'new_message', message: { _id: 'm1', type: 4, templateId: '5bdabfb886f7743e152e867e 0', systemData: { buyerNickname: 'Rat', soldItem: '57347ca924597744596b4e71', itemCount: 1 }, items: { data: [{ _tpl: '5449016a4bdc2d6f028b456f', upd: { StackObjectsCount: 250000 } }] } } };
+    R.onEntries(parseEntries(N('18:30:00', 'Got notification | ChatMessageReceived', sold) + N('18:30:01', 'Got notification | ChatMessageReceived', sold)));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(R.stats().flea.count, 1); assert.equal(R.stats().flea.rub, 250000);
+    assert.ok(core.notifications.list({ limit: 20 }).some((n) => /Flohmarkt/.test(n.title) && /Graphikkarte an Rat für 250\.000 ₽/.test(n.body)));
+  } finally { cleanup(); }
+});
+
+test('Tarkov benötigte Items + Hideout: offene Quests (FIR) und nicht gebaute Stufen, Kappa-Fortschritt; Goons melden nur mit Karte und Account', async () => {
+  const tasks = { data: { tasks: [
+    { id: 'a'.repeat(24), name: 'Gunsmith 1', minPlayerLevel: 1, kappaRequired: true, lightkeeperRequired: false, trader: { name: 'Mechanic' }, map: null, taskRequirements: [], objectives: [{ id: 'o1', type: 'giveItem', description: 'Gib 2 Graphikkarten ab', maps: [], items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU' }], count: 2, foundInRaid: true }] },
+    { id: 'b'.repeat(24), name: 'Erledigt', minPlayerLevel: 1, kappaRequired: true, lightkeeperRequired: true, trader: { name: 'Prapor' }, map: null, taskRequirements: [], objectives: [{ id: 'o2', type: 'giveItem', description: 'x', maps: [], items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU' }], count: 5, foundInRaid: true }] },
+  ] } };
+  const hs = { data: { hideoutStations: [{ id: 'gen', name: 'Generator', normalizedName: 'generator', levels: [
+    { id: 'gen1', level: 1, itemRequirements: [{ item: { id: 'gpu', name: 'Graphikkarte', shortName: 'GPU' }, count: 1 }], stationLevelRequirements: [], bonuses: [] },
+    { id: 'gen2', level: 2, itemRequirements: [{ item: { id: 'w', name: 'Kabel', shortName: 'Wires' }, count: 3 }], stationLevelRequirements: [{ station: { id: 'gen', name: 'Generator' }, level: 1 }], bonuses: [] }] }] } };
+  const posted = [];
+  const { core, cleanup } = tempCore({ fetch: async (url, init) => {
+    if (/manager\.tarkov\.dev/.test(url)) { posted.push(JSON.parse(init.body)); return new Response('{"status":"ok"}'); }
+    return new Response(JSON.stringify(/hideoutStations/.test(String(init?.body)) ? hs : tasks), { headers: { 'Content-Type': 'application/json' } });
+  } });
+  try {
+    core.gaming.progress.upsert('eft', { category: 'quest', name: 'Erledigt', status: 'done', source: 'manual' });
+    core.gaming.setEftHideout('gen1', true);
+    const c = core.gaming.eftProgress();
+    const n = await core.gaming.tarkov.neededItems({ done: c.done, built: core.gaming.eftHideoutBuilt() });
+    const gpu = n.items.find((x) => x.name === 'Graphikkarte');
+    assert.deepEqual([gpu.quest, gpu.questFir, gpu.hideout], [2, 2, 0], 'erledigte Quest und gebaute Stufe zählen nicht');
+    assert.equal(n.items.find((x) => x.name === 'Kabel').hideout, 3);
+    assert.deepEqual(n.kappa, { done: 1, total: 2 }); assert.deepEqual(n.lightkeeper, { done: 1, total: 1 });
+    const h = await core.gaming.eftHideout();
+    assert.equal(h.stations[0].level, 1); assert.equal(h.stations[0].next.level, 2); assert.equal(h.stations[0].next.ready, true);
+    // Goons: ohne Raid/Account abgelehnt, sonst wie TarkovMonitor gemeldet
+    await assert.rejects(core.gaming.eftReportGoons(), /Karte/);
+    core.gaming.eftRaid.st.mapId = 'bigmap'; core.gaming.eftRaid.accountId = '1234567';
+    await core.gaming.eftReportGoons();
+    assert.equal(posted[0].map, 'bigmap'); assert.equal(posted[0].accountId, 1234567); assert.equal(posted[0].gameMode, 'regular');
+  } finally { cleanup(); }
+});
+
+test('Tarkov Item-Scanner: Ausschnitt → Gemini erkennt Item → Preise, Wert pro Slot, gebraucht für Quests', async () => {
+  const items = { data: { items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU', width: 2, height: 1, basePrice: 1, avg24hPrice: 400000, lastLowPrice: 390000, low24hPrice: 380000, sellFor: [{ vendor: { name: 'Therapeut' }, priceRUB: 250000 }, { vendor: { name: 'Flohmarkt' }, priceRUB: 400000 }] }] } };
+  const tasks = { data: { tasks: [{ id: 'a'.repeat(24), name: 'Gunsmith 1', minPlayerLevel: 1, kappaRequired: true, trader: { name: 'Mechanic' }, map: null, taskRequirements: [], objectives: [{ id: 'o1', type: 'giveItem', description: 'x', maps: [], items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU' }], count: 1, foundInRaid: true }] }] } };
+  const { core, cleanup } = tempCore({ script: [{ text: JSON.stringify({ name: 'Graphikkarte', english: 'Graphics card', confidence: 0.9 }) }],
+    fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : /hideoutStations/.test(String(init?.body)) ? { data: { hideoutStations: [] } } : tasks), { headers: { 'Content-Type': 'application/json' } }) });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
+    await core.gemini.discover();
+    core.platform.captureAroundCursor = async () => ({ data: Buffer.from('jpeg'), width: 640, height: 420 });
+    const r = await core.gaming.eftScan();
+    assert.equal(r.name, 'Graphikkarte'); assert.equal(r.flea, 400000); assert.deepEqual(r.trader, { name: 'Therapeut', price: 250000 });
+    assert.equal(r.slots, 2); assert.equal(r.perSlot, 200000);
+    assert.equal(r.need.quest, 1); assert.equal(r.need.questFir, 1);
+  } finally { cleanup(); }
+});

@@ -165,6 +165,12 @@ app.whenReady().then(async () => {
     if (mcDots < 1) throw new Error('Keine Exits auf der Eck-Karte');
     await sleep(800);
     fs.writeFileSync(path.join(SHOTS, '61c-overlay-mapcorner.png'), (await mc.win.webContents.capturePage()).toPNG());
+    // Raid-Begleiter + Item-Scan im Overlay / auf der Seite
+    core.gaming.eftRaid.st = { ...core.gaming.eftRaid.st, phase: 'inraid', map: 'customs', startedAt: new Date(Date.now() - 200000).toISOString(), type: 'pmc' };
+    core.gaming.eftRaid.save();
+    core.bus.emit('eft:scan', { state: 'done', name: 'Graphikkarte', short: 'GPU', slots: 2, flea: 400000, trader: { name: 'Therapeut', price: 250000 }, perSlot: 200000, need: { quest: 1, questFir: 1, hideout: 0, tasks: ['Gunsmith 1'], stations: [] }, recognized: 'Graphikkarte', alternatives: [] });
+    await waitFor(() => js(`document.body.textContent.includes('Raid-Begleiter') && document.body.textContent.includes('Wert pro Slot')`), 6000);
+    await shot('61d-gaming-tarkov-companion');
     core.gaming.context.running = [];
     core.bus.emit('game:running', { running: [], started: [], stopped: ['eft'] });
     await shot('61b-gaming-tarkov-map');

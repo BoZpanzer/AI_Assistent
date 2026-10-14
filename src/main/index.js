@@ -91,6 +91,29 @@ function send(type, data) {
   if (mapCorner?.visible && /^(game:|settings:)/.test(type)) mapCorner.send(type, data);
 }
 
+/** Ausschnitt um den Mauszeiger (Item-Scanner): ~640×420 echte Pixel, Overlays kurz ausgeblendet. */
+async function captureAroundCursor() {
+  const pt = screen.getCursorScreenPoint();
+  const disp = screen.getDisplayNearestPoint(pt);
+  const sf = disp.scaleFactor || 1;
+  const full = { width: Math.round(disp.size.width * sf), height: Math.round(disp.size.height * sf) };
+  const hide = [overlay, mapCorner].map((o) => (o?.win && !o.win.isDestroyed() && o.visible ? o : null)).filter(Boolean);
+  for (const o of hide) o.win.setOpacity(0);
+  if (hide.length) await new Promise((r) => setTimeout(r, 60));
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: full });
+    const src = sources.find((x) => String(x.display_id) === String(disp.id)) || sources[0];
+    if (!src || src.thumbnail.isEmpty()) throw new Error('Kein Bildschirmbild erhalten');
+    const img = src.thumbnail; const sz = img.getSize();
+    const k = sz.width / disp.size.width; // Thumbnail-Pixel pro DIP
+    const cx = (pt.x - disp.bounds.x) * k; const cy = (pt.y - disp.bounds.y) * k;
+    const w = Math.min(sz.width, Math.round(640 * k / sf * sf)); const h = Math.min(sz.height, Math.round(420 * k / sf * sf));
+    const x = Math.max(0, Math.min(sz.width - w, Math.round(cx - w / 2))); const y = Math.max(0, Math.min(sz.height - h, Math.round(cy - h / 2)));
+    const crop = img.crop({ x, y, width: w, height: h });
+    return { data: crop.toJPEG(88), width: w, height: h };
+  } finally { for (const o of hide) o.applyBounds(); }
+}
+
 /** Screenshot of the display under the mouse cursor (only on explicit request). */
 async function captureScreen() {
   const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -152,7 +175,7 @@ function applyDesktopSettings() {
     app.setLoginItemSettings({ openAtLogin: !!s.autostart, args: ['--hidden'] });
   }
   win?.setAlwaysOnTop(!!s.alwaysOnTop);
-  globalShortcut.unregisterAll();
+  globalShortcut.unregisterAll(); scanKey = null;
   const hk = s.globalHotkey;
   if (hk) { try { globalShortcut.register(hk, () => { showWindow(); send('ui:focus-input', {}); }); } catch { /* invalid accelerator */ } }
   const ptt = s.voice?.pushToTalkKey;
@@ -160,13 +183,28 @@ function applyDesktopSettings() {
   const reg = (acc, fn) => { if (acc) { try { globalShortcut.register(acc, fn); } catch { /* invalid accelerator */ } } };
   if (s.screen?.enabled !== false) reg(s.screen?.hotkey, () => core.screen.hotkeyQuestion().catch((e) => { toast('JARVIS – Bildschirm', e.message); core.bus.emit('overlay:answer', { question: '', answer: '⚠️ ' + e.message, cards: [] }); }));
   reg(s.overlay?.hotkey, () => overlay?.toggle());
+  applyScanHotkey();
   reg(s.overlay?.interactHotkey, () => overlay?.toggleInteractive());
+}
+
+/** Item-Scanner-Taste nur registrieren, solange Tarkov läuft (sonst blockiert sie die Tastenkombination global). */
+let scanKey = null;
+function applyScanHotkey() {
+  const acc = core.settings.get('gaming')?.eftScanHotkey;
+  const want = acc && core.gaming.context.running.includes('eft') ? acc : null;
+  if (scanKey && scanKey !== want) { try { globalShortcut.unregister(scanKey); } catch { /* ignore */ } scanKey = null; }
+  if (want && !scanKey) {
+    try {
+      globalShortcut.register(want, () => { overlay?.flash(25000); core.gaming.eftScan().catch((e) => logger.scope('main').info('Scan: ' + e.message)); });
+      scanKey = want;
+    } catch { /* ungültige Tastenkombination */ }
+  }
 }
 
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
-    'game:context', 'game:design', 'game:position', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
+    'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
     'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported',
     'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
@@ -183,6 +221,7 @@ app.whenReady().then(async () => {
     platform: {
       toast,
       captureScreen,
+      captureAroundCursor,
       idleSeconds: () => powerMonitor.getSystemIdleTime(),
       openExternal: (url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); },
     },
@@ -232,6 +271,7 @@ app.whenReady().then(async () => {
 
   registerIpc({ core, getWin: () => win, app, showWindow, overlay: () => overlay, quit: () => { quitting = true; app.quit(); }, relaunch: () => { quitting = true; app.relaunch(); app.quit(); } });
   forwardEvents();
+  core.bus.on('game:running', () => applyScanHotkey());
   createWindow();
   if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); mapCorner = new MapCorner({ core, preload: path.join(__dirname, 'preload.js'), isDev, overlay }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
   if (isE2E) global.__jarvis = { win, core, overlay: () => overlay, mapCorner: () => mapCorner };

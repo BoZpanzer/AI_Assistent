@@ -91,6 +91,8 @@ class TarkovTracker {
         for (const it of P.list('eft', { category: 'quest' })) {
           if (it.source === 'api' && !done.has(it.name) && !failed.has(it.name)) { P.remove(it.id, { source: 'api' }); removed++; }
         }
+        // Hideout-Stufen (IDs = tarkov.dev hideoutStations.levels.id)
+        if (Array.isArray(d.hideoutModulesProgress)) this.s.gaming.context.setState('eft:hideout:tracker', d.hideoutModulesProgress.filter((m) => m.complete).map((m) => m.id));
         if (Number.isFinite(d.playerLevel)) P.upsert('eft', { category: 'character', name: 'PMC-Level', value: String(d.playerLevel), source: 'api' });
         if (d.pmcFaction) P.upsert('eft', { category: 'character', name: 'Fraktion', value: String(d.pmcFaction).toUpperCase(), source: 'api' });
       } finally { this.suppress--; }

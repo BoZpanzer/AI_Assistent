@@ -263,6 +263,18 @@ function buildTools(s) {
   def({ name: 'tarkov_raid_plan', mode: 'read', description: 'Raid-Planer für Escape from Tarkov aus den OFFENEN, verfügbaren Quests des Nutzers (erledigte und gesperrte ausgeblendet): ohne map → welche Karte die meisten offenen Ziele hat; mit map (normalizedName, z. B. customs, woods) → Ziele dort, mitzunehmende Items (Platzieren/Markieren) und benötigte Schlüssel. Daten von tarkov.dev; nur diese Angaben verwenden.',
     schema: { type: 'object', properties: { map: { type: 'string' } } },
     run: async ({ map }) => { const c = s.gaming.eftProgress(); const r = await s.gaming.tarkov.raidPlan({ map, ...c }); if (map) s.gaming.pushWidget('eft', 'tarkov-raidplan', { map }); return { ...r, maps: r.maps.slice(0, 12), tasks: r.tasks?.slice(0, 25) }; } });
+  def({ name: 'tarkov_item_value', mode: 'read', description: 'Escape from Tarkov: Was ist ein Item wert (Flohmarkt Ø24h, bester Händler, Wert pro Slot) und brauche ich es noch für offene Quests (FIR) oder mein Hideout? Für „lohnt sich X“, „brauch ich X“, „was ist X wert“.',
+    schema: { type: 'object', required: ['item'], properties: { item: { type: 'string' } } },
+    run: async ({ item }) => {
+      const c = s.gaming.eftProgress();
+      const p = await s.gaming.tarkov.itemPrices(item, c.gameMode);
+      if (!p) return { notFound: item };
+      const need = await s.gaming.tarkov.neededItems({ done: c.done, built: s.gaming.eftHideoutBuilt(), gameMode: c.gameMode }).then((x) => x.items.find((i) => i.name === p.name)).catch(() => null);
+      return { ...p, need: need ? { quest: need.quest, questFir: need.questFir, hideout: need.hideout, tasks: need.tasks, stations: need.stations } : 'nicht für offene Quests/Hideout gebraucht' };
+    } });
+  def({ name: 'tarkov_needed_items', mode: 'read', description: 'Escape from Tarkov: Liste der Items, die der Nutzer noch für offene Quests (mit Found in Raid) und nicht gebaute Hideout-Stufen braucht, plus Kappa-/Lightkeeper-Fortschritt.',
+    schema: { type: 'object', properties: { kappaOnly: { type: 'boolean' }, limit: { type: 'integer' } } },
+    run: async ({ kappaOnly, limit = 40 }) => { const c = s.gaming.eftProgress(); const r = await s.gaming.tarkov.neededItems({ done: c.done, built: s.gaming.eftHideoutBuilt(), gameMode: c.gameMode, kappaOnly }); return { ...r, items: r.items.slice(0, Math.min(100, limit)) }; } });
   def({ name: 'tarkov_lookup', mode: 'read', description: 'Escape-from-Tarkov-Daten (tarkov.dev): quests, item, keys, extracts, bosses. Keine Live-Raid-Daten verfügbar.',
     schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['quests', 'item', 'keys', 'extracts', 'bosses'] }, query: { type: 'string' }, map: { type: 'string', description: 'normalizedName z. B. customs, woods, shoreline, interchange, reserve, lighthouse, streets-of-tarkov, factory, the-lab, ground-zero' } } },
     run: async ({ kind, query, map }) => {

@@ -2,6 +2,16 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.22.0 – Tarkov: Raid-Begleiter, benötigte Items, Hideout, Item-Scanner, Goons
+
+Was TarkovMonitor, TarkovTracker und RatScanner können, steckt jetzt auf der Tarkov-Seite:
+- **Raid-Begleiter (wie TarkovMonitor):** JARVIS meldet „Match gefunden“ mit der Karte, „Raid startet“, das Ende der Runthrough-Zeit (7:10) und „Scav bereit“. Raid-Zeit, Runthrough und Scav-Abklingzeit stehen als Timer im Overlay und auf der Seite. Die Scav-Abklingzeit ist geschätzt: Basiszeit minus deine gebauten Hideout-Boni. Dazu kommen Raids pro Karte und deine Flohmarkt-Verkäufe (mit Meldung, wer was für wie viel gekauft hat). Alles stammt aus den Log-Dateien des Spiels, wie bei TarkovMonitor. Die Meldungen lassen sich einzeln abschalten oder vorlesen.
+- **Benötigte Items (wie TarkovTracker):** Alles, was du noch für offene Quests (mit „Found in Raid“) und noch nicht gebaute Hideout-Stufen brauchst, mit Suche und Filter „nur Kappa“. Dazu der Kappa- und Lightkeeper-Fortschritt.
+- **Hideout:** Stufen je Station, übernommen aus TarkovTracker und hier korrigierbar. Zu jeder Station die nächste Stufe mit allen Anforderungen, und ob du sie schon bauen kannst.
+- **Item-Scanner (wie RatScanner):** Mauszeiger aufs Item, Alt+Shift+S drücken (die Taste ist nur aktiv, solange Tarkov läuft). JARVIS zeigt im Overlay Flohmarktpreis, besten Händler, Wert pro Slot und ob du das Item für Quests oder dein Hideout behalten solltest. Erkannt wird per Gemini, das ist eine kleine Anfrage pro Scan. Im Chat geht's auch: „Brauch ich eine Graphikkarte?“.
+- **Goons:** Die letzten Goon-Sichtungen der Community von tarkov.dev und ein Knopf „Goons gesehen“, der deine Sichtung meldet (wie TarkovMonitor, mit deiner Tarkov-Account-ID).
+- Positionen aus Screenshots werden jetzt auch erkannt, wenn Tarkov die Unterstriche im Dateinamen weglässt.
+
 ## 3.21.0 – Tarkov-Eck-Karte, Exits nach PMC/Scav, Schlüssel im Backup
 
 - **Tarkov-Karte oben links:** Solange Tarkov läuft, zeigt ein kleines Overlay-Fenster oben links die aktuelle Raid-Karte. Darauf sind die Exits, Transits, deine Marker und deine Position aus dem letzten Screenshot. Nach einem Screenshot zoomt die Karte 5 Minuten lang auf dich. Größe, Zoom und Ein/Aus stellst du unter Einstellungen → Overlay ein. Steht das große Overlay auch links, rutscht es darunter.

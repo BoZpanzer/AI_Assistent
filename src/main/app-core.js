@@ -38,6 +38,7 @@ const { GameBrainSync } = require('./services/gaming/brainsync');
 const { Steam } = require('./services/gaming/steam');
 const { GameDesigner } = require('./services/gaming/designer');
 const { EftLogs } = require('./services/gaming/eftlogs');
+const { EftRaid } = require('./services/gaming/eftraid');
 
 /**
  * Composition root. Pure Node (no Electron imports) so the complete service
@@ -78,13 +79,14 @@ function createCore(opts) {
   s.gaming.brainSync = new GameBrainSync(s);
   s.gaming.designer = new GameDesigner(s);
   s.gaming.eftLogs = new EftLogs(s);
+  s.gaming.eftRaid = new EftRaid(s);
   // Tarkov gestartet → TarkovTracker sofort abgleichen und Quest-Meldungen aus dem Spiel-Log mitlesen
   bus.on('game:running', ({ started = [], stopped = [] }) => {
     if (started.includes('eft')) { s.gaming.eftLogs.start().catch(() => {}); setTimeout(() => !s.stopped && s.scheduler?.runNow('tarkovtracker'), 8000); }
     if (stopped.includes('eft')) s.gaming.eftLogs.stop();
   });
   // Unbekanntes Spiel wird gespielt/besprochen → eigene Seite gestalten (einmal, im Hintergrund)
-  bus.on('game:context', (st) => { for (const x of [st?.active, st?.discussed]) if (x?.id) { clearTimeout(s._designTimer); s.gaming.eftLogs?.stop({ final: false }); s._designTimer = setTimeout(() => { if (!s.stopped) s.gaming.designer.maybeAuto(x.id); }, 1500); } });
+  bus.on('game:context', (st) => { for (const x of [st?.active, st?.discussed]) if (x?.id) { clearTimeout(s._designTimer); s.gaming.eftLogs?.stop({ final: false }); s.gaming.eftRaid?.stop(); s._designTimer = setTimeout(() => { if (!s.stopped) s.gaming.designer.maybeAuto(x.id); }, 1500); } });
   s.gaming.steam = new Steam(s);
   s.gaming.context.steam = s.gaming.steam;
   s.system = new System(s);

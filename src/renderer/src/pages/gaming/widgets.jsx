@@ -7,7 +7,7 @@ import { countdown, ago, fmtDateTime } from '../../lib/format.js';
 import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
-  map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
+  map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
   'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
@@ -199,6 +199,120 @@ function MapWidget({ game, params }) {
 /** Exit-Art aus dem Namen (wie im Hauptprozess): Leuchtpatrone, Co-op, Fahrzeug, sonst normal. */
 const exitKind = (n) => (/flare|leucht/i.test(n) ? 'flare' : /co-?op|koop/i.test(n) ? 'coop' : /\bv-?ex\b|vehicle|fahrzeug|\bcar\b|\bauto\b/i.test(n) ? 'car' : 'normal');
 const EXIT_COLOR = { normal: '#22c55e', flare: '#f97316', coop: '#a855f7', car: '#3b82f6', transit: '#22d3ee' };
+const mmss = (s) => (s == null ? '–' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
+const PHASE = { idle: 'Im Menü', searching: 'Suche Match …', found: 'Match gefunden', starting: 'Countdown', inraid: 'Im Raid', ended: 'Raid beendet' };
+const MAPNAME = { customs: 'Zollgebiet', factory: 'Fabrik', interchange: 'Interchange', 'the-lab': 'Labor', lighthouse: 'Leuchtturm', reserve: 'Reserve', shoreline: 'Küste', 'streets-of-tarkov': 'Streets', woods: 'Wald', 'ground-zero': 'Ground Zero', 'the-labyrinth': 'Labyrinth', terminal: 'Terminal' };
+
+/** Raid-Begleiter (wie TarkovMonitor): Raid-Status, Timer, Scav-Abklingzeit, Statistik, Goons, letzter Item-Scan. */
+function TarkovCompanion() {
+  const [st, setSt] = useState(null);
+  const now = useNow(1000);
+  const [goons, reloadGoons, gst] = useRpc('tarkov.goons', {}, {});
+  const [scan, setScan] = useState(null);
+  useEffect(() => { rpc('tarkov.raidState').then(setSt).catch(() => {}); }, []);
+  useEvent('eft:raid', setSt);
+  useEvent('eft:scan', (d) => setScan(d));
+  const cfg = useStore((x) => x.settings?.gaming) || {};
+  const elapsed = st?.phase === 'inraid' && st.startedAt ? (now - Date.parse(st.startedAt)) / 1000 : null;
+  const rtLeft = elapsed != null ? Math.max(0, (cfg.eftRunthroughSec ?? 430) - elapsed) : null;
+  const scavLeft = st?.scavReadyAt ? Math.max(0, (Date.parse(st.scavReadyAt) - now) / 1000) : null;
+  const plays = Object.entries(st?.stats?.plays || {}).sort((a, b) => b[1] - a[1]);
+  const flea = st?.stats?.flea || {};
+  const report = async () => { if (!(await ask('Goons auf deiner aktuellen Raid-Karte an tarkov.dev melden? (Dabei wird deine Tarkov-Account-ID mitgeschickt, wie bei TarkovMonitor.)', '', { confirmOnly: true, okLabel: 'Melden' }))) return; const r = await guard(() => rpc('tarkov.reportGoons'), 'Goon-Sichtung gemeldet – danke!'); if (r) reloadGoons(); };
+  return (
+    <Panel icon={Timer} title="Raid-Begleiter" sub="Aus den Tarkov-Logs · wie TarkovMonitor">
+      <div class="row"><b class="grow">{PHASE[st?.phase] || 'Warte auf Tarkov'}{st?.map && st.phase !== 'idle' ? ` · ${MAPNAME[st.map] || st.map}` : ''}</b>{st?.type && st.phase === 'inraid' ? <span class="chip static">{st.type === 'pmc' ? 'PMC' : 'Scav'}</span> : null}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }} class="mt">
+        <div class="sub-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}><span class="tiny muted">Raid-Zeit</span><b style={{ fontSize: 18 }}>{mmss(elapsed)}</b></div>
+        <div class="sub-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}><span class="tiny muted">Runthrough</span><b style={{ fontSize: 18, color: rtLeft === 0 ? 'var(--green)' : undefined }}>{rtLeft == null ? '–' : rtLeft === 0 ? 'vorbei' : mmss(rtLeft)}</b></div>
+        <div class="sub-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }} title="Schätzung: Basiszeit (Einstellungen) minus gebaute Hideout-Boni"><span class="tiny muted">Scav bereit</span><b style={{ fontSize: 18, color: scavLeft === 0 ? 'var(--green)' : undefined }}>{scavLeft == null ? '–' : scavLeft === 0 ? 'jetzt' : mmss(scavLeft)}</b></div>
+      </div>
+      {plays.length > 0 && <div class="small muted mt">Raids: {plays.map(([m, n]) => `${MAPNAME[m] || m} ${n}`).join(' · ')}</div>}
+      {flea.count > 0 && <div class="small muted">Flohmarkt: {flea.count} Verkäufe · {(flea.rub || 0).toLocaleString('de-DE')} ₽{flea.usd ? ` · ${flea.usd.toLocaleString('de-DE')} $` : ''}{flea.eur ? ` · ${flea.eur.toLocaleString('de-DE')} €` : ''}</div>}
+      <div class="hr" />
+      <div class="row"><b class="grow small">Goons – letzte Sichtungen</b><button class="btn xs" onClick={report}>Goons gesehen</button></div>
+      {gst.error ? <div class="tiny muted">{gst.error}</div> : (goons || []).slice(0, 5).map((g) => <div class="row small"><span class="grow">{MAPNAME[g.map] || g.mapName}</span><span class="muted">{ago(g.at)}</span></div>)}
+      <div class="hr" />
+      <div class="row"><b class="grow small">Item-Scanner</b><span class="tiny muted">Taste im Spiel: {cfg.eftScanHotkey || 'Alt+Shift+S'} (Maus aufs Item)</span></div>
+      {scan?.state === 'running' && <div class="small"><Spinner /> Erkenne Item …</div>}
+      {scan?.state === 'error' && <div class="small" style={{ color: 'var(--red)' }}>{scan.error}</div>}
+      {scan?.state === 'done' && <ScanResult s={scan} />}
+    </Panel>
+  );
+}
+
+export function ScanResult({ s }) {
+  const rub = (v) => (v == null ? '–' : v.toLocaleString('de-DE') + ' ₽');
+  return (
+    <div class="col" style={{ gap: 2 }}>
+      <div class="row"><b class="grow">{s.name}</b><span class="tiny muted">{s.slots} Slot{s.slots > 1 ? 's' : ''}</span></div>
+      <div class="small">Flohmarkt Ø24h: <b>{rub(s.flea)}</b> · Händler: <b>{s.trader ? `${rub(s.trader.price)} (${s.trader.name})` : '–'}</b></div>
+      <div class="small">Wert pro Slot: <b>{rub(s.perSlot)}</b></div>
+      {s.need ? <div class="small" style={{ color: '#facc15' }}>Gebraucht: {[s.need.quest ? `${s.need.quest}× Quests${s.need.questFir ? ` (${s.need.questFir} FIR)` : ''}` : null, s.need.hideout ? `${s.need.hideout}× Hideout` : null].filter(Boolean).join(' · ')}<div class="tiny muted">{[...s.need.tasks, ...s.need.stations].join(', ')}</div></div> : <div class="tiny muted">Nicht für offene Quests oder dein Hideout gebraucht.</div>}
+      {s.alternatives?.length > 0 && <div class="tiny muted">Erkannt als „{s.recognized}“ – falls falsch: {s.alternatives.join(', ')}</div>}
+    </div>
+  );
+}
+
+/** Benötigte Items (wie TarkovTracker): offene Quests (FIR) + noch nicht gebaute Hideout-Stufen; Kappa/Lightkeeper. */
+function TarkovNeeded({ params }) {
+  const [kappaOnly, setKappaOnly] = useState(!!params.kappaOnly);
+  const [q, setQ] = useState('');
+  const [d, , st] = useRpc('tarkov.needed', { kappaOnly }, { deps: [kappaOnly], events: ['game:progress', 'game:data'] });
+  const list = (d?.items || []).filter((x) => !q || x.name.toLowerCase().includes(q.toLowerCase()) || x.short.toLowerCase().includes(q.toLowerCase()));
+  const bar = (p) => <div style={{ height: 5, background: 'var(--line)', borderRadius: 3 }}><div style={{ width: (p.total ? (100 * p.done) / p.total : 0) + '%', height: '100%', background: 'var(--cyan)', borderRadius: 3 }} /></div>;
+  return (
+    <Panel icon={ListChecks} title="Benötigte Items" sub="Offene Quests + Hideout · tarkov.dev" right={<label class="row gap-s small"><Checkbox checked={kappaOnly} onChange={setKappaOnly} />nur Kappa</label>}>
+      {st.error && <div class="notice warn small">{st.error}</div>}
+      {d && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div><div class="row tiny"><span class="grow">Kappa-Quests</span><b>{d.kappa.done}/{d.kappa.total}</b></div>{bar(d.kappa)}</div>
+        <div><div class="row tiny"><span class="grow">Lightkeeper-Quests</span><b>{d.lightkeeper.done}/{d.lightkeeper.total}</b></div>{bar(d.lightkeeper)}</div>
+      </div>}
+      <input class="inp mt" placeholder="Item suchen …" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+      <div class="col mt scroll" style={{ gap: 2, maxHeight: 300 }}>
+        {!d && !st.error && <Spinner />}
+        {list.slice(0, 150).map((x) => (
+          <div class="row small sub-row" title={[...x.tasks.map((t) => 'Quest: ' + t), ...x.stations.map((s) => 'Hideout: ' + s)].join('\n')}>
+            <span class="grow ellipsis">{x.name}</span>
+            {x.quest > 0 && <span class="chip static" style={{ fontSize: 10 }}>Quests {x.quest}{x.questFir ? ` · FIR ${x.questFir}` : ''}</span>}
+            {x.hideout > 0 && <span class="chip static" style={{ fontSize: 10 }}>Hideout {x.hideout}</span>}
+            <b style={{ width: 34, textAlign: 'right' }}>{x.total}</b>
+          </div>
+        ))}
+        {d && !list.length && <Empty>Nichts gefunden.</Empty>}
+      </div>
+      {d && !d.detailed && <div class="tiny muted mt">Quest-Abgaben gerade nicht verfügbar (tarkov.dev-Schema geändert) – Hideout-Items stimmen.</div>}
+      {d && <SourceTag source={d.source} fetchedAt={d.fetchedAt} offline={d.offline} />}
+    </Panel>
+  );
+}
+
+/** Hideout: Stufen je Station (aus TarkovTracker, korrigierbar), nächste Stufe mit Anforderungen. */
+function TarkovHideout() {
+  const [d, reload, st] = useRpc('tarkov.hideout', {}, { events: ['game:data', 'tarkovtracker:status'] });
+  const set = async (id, built) => { await guard(() => rpc('tarkov.setHideout', { id, built })); reload(); };
+  return (
+    <Panel icon={Castle} title="Hideout" sub={d?.fromTracker ? 'Stand aus TarkovTracker · hier korrigierbar' : 'Stufen hier abhaken (oder TarkovTracker verbinden)'}>
+      {st.error && <div class="notice warn small">{st.error}</div>}
+      {!d && !st.error && <Spinner />}
+      <div class="col scroll" style={{ gap: 6, maxHeight: 340 }}>
+        {(d?.stations || []).map((s) => (
+          <div class="sub-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }}>
+            <div class="row"><b class="grow">{s.name}</b><span class="tiny muted">Stufe {s.level}/{s.max}</span>
+              {s.level > 0 && <button class="btn icon xs ghost" title="Stufe zurücknehmen" onClick={() => set(s.levels.find((l) => l.level === s.level).id, false)}><Undo2 size={12} /></button>}
+              {s.next && <button class="btn xs" title={`Stufe ${s.next.level} als gebaut markieren`} onClick={() => set(s.next.id, true)}><Check size={12} />{s.next.level}</button>}
+            </div>
+            {s.next && <div class="tiny" style={{ color: s.next.ready ? 'var(--text-2)' : 'var(--text-3)' }}>
+              {s.next.ready ? 'Bereit zum Bauen: ' : 'Noch gesperrt: '}{s.next.items.map((i) => `${i.count}× ${i.short || i.name}`).join(', ') || 'keine Items'}{s.next.stations.length ? ` · braucht ${s.next.stations.join(', ')}` : ''}
+            </div>}
+          </div>
+        ))}
+      </div>
+      {d && <SourceTag source={d.source} fetchedAt={d.fetchedAt} offline={d.offline} />}
+    </Panel>
+  );
+}
+
 /** Raid-Planer: offene, verfügbare Quests → beste Karte, Ziele, was mitnehmen. */
 function TarkovRaidPlan({ params }) {
   const [map, setMap] = useState(params.map || '');
@@ -853,7 +967,7 @@ function RokPlanner({ game }) {
 }
 
 export const WIDGETS = {
-  map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
+  map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-companion': TarkovCompanion, 'tarkov-needed': TarkovNeeded, 'tarkov-hideout': TarkovHideout, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes,

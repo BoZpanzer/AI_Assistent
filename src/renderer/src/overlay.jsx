@@ -20,6 +20,33 @@ function Card({ icon: Icon, title, children, accent, onClose }) {
 /** „vor 40 s“ / „vor 3 min“ */
 const ageText = (s) => (s < 60 ? `vor ${Math.max(1, Math.round(s))} s` : `vor ${Math.round(s / 60)} min`);
 
+/** Tarkov: Raid-Zeit, Runthrough, Scav-Abklingzeit (nur wenn etwas läuft). */
+function EftRaidCard({ raid, now }) {
+  const el = raid.phase === 'inraid' && raid.startedAt ? (now - Date.parse(raid.startedAt)) / 1000 : null;
+  const rt = el != null ? Math.max(0, 430 - el) : null;
+  const scav = raid.scavReadyAt ? (Date.parse(raid.scavReadyAt) - now) / 1000 : null;
+  const f = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  if (el == null && !(scav > 0) && !['searching', 'found', 'starting'].includes(raid.phase)) return null;
+  return (
+    <Card icon={Timer} title="Raid">
+      {['searching', 'found', 'starting'].includes(raid.phase) && <div class="ov-row"><span class="grow">{({ searching: 'Suche Match …', found: 'Match gefunden', starting: 'Countdown' })[raid.phase]}</span></div>}
+      {el != null && <div class="ov-row"><span class="grow">Im Raid</span><b>{f(el)}</b></div>}
+      {rt != null && <div class="ov-row"><span class="grow">Runthrough</span><b class={rt === 0 ? 'ok' : ''}>{rt === 0 ? 'vorbei' : f(rt)}</b></div>}
+      {scav > 0 && <div class="ov-row"><span class="grow">Scav bereit in</span><b>{f(scav)}</b></div>}
+    </Card>
+  );
+}
+function OvScan({ s }) {
+  const rub = (v) => (v == null ? '–' : v.toLocaleString('de-DE') + ' ₽');
+  return (<>
+    <div class="ov-row"><span class="grow ov-ell"><b>{s.name}</b></span></div>
+    <div class="ov-row"><span class="grow">Flohmarkt</span><b>{rub(s.flea)}</b></div>
+    <div class="ov-row"><span class="grow">{s.trader ? s.trader.name : 'Händler'}</span><b>{rub(s.trader?.price)}</b></div>
+    <div class="ov-row"><span class="grow">pro Slot ({s.slots})</span><b>{rub(s.perSlot)}</b></div>
+    {s.need ? <div class="ov-dim" style={{ color: '#facc15' }}>Behalten: {[s.need.quest ? `${s.need.quest}× Quest${s.need.questFir ? ' (FIR)' : ''}` : null, s.need.hideout ? `${s.need.hideout}× Hideout` : null].filter(Boolean).join(' · ')}</div> : <div class="ov-dim">Nicht für Quests/Hideout gebraucht.</div>}
+  </>);
+}
+
 /** Objective-Timer: Spielzeit zwischen den Abfragen (alle 5 s) lokal weiterzählen. */
 function Objectives({ live, now }) {
   const drift = Math.max(0, (now - (live.receivedAt || now)) / 1000);
@@ -56,6 +83,10 @@ function App() {
   useEvent('lol:champselect', (d) => setChamp(d?.active ? d : null));
   useEvent('lol:review', (d) => setReview({ ...d, at: Date.now() }));
   useEvent('lol:live', (d) => setLive(d?.connected ? d : null));
+  const [raid, setRaid] = useState(null); const [scan, setScan] = useState(null);
+  useEffect(() => { rpc('tarkov.raidState').then(setRaid).catch(() => {}); }, []);
+  useEvent('eft:raid', setRaid);
+  useEvent('eft:scan', (d) => setScan({ ...d, shownAt: Date.now() }));
   useEvent('overlay:interactive', (d) => setInteractive(d.interactive));
   useEvent('voice:transcript', (t) => { if (t.role === 'done') setTimeout(() => setTranscript(null), 6000); else setTranscript((x) => ({ ...(x || {}), [t.role]: t.text })); });
   useEvent('notification', (n) => { setNotes((x) => [{ ...n, at: Date.now() }, ...x].slice(0, 3)); });
@@ -95,6 +126,8 @@ function App() {
       )}
       {live && live.tips?.length > 0 && <Card icon={Sparkles} title={`Live · ${live.champion}`}><ul>{live.tips.map((t) => <li>{t}</li>)}</ul></Card>}
       {live && live.objectives?.length > 0 && <Objectives live={live} now={now} />}
+      {scan && now - scan.shownAt < 25000 && <Card icon={Sparkles} title="Item-Scan" accent="#facc15" onClose={() => setScan(null)}>{scan.state === 'running' ? <div class="ov-dim">Erkenne Item …</div> : scan.state === 'error' ? <div class="ov-dim">{scan.error}</div> : <OvScan s={scan} />}</Card>}
+      {active?.id === 'eft' && raid && <EftRaidCard raid={raid} now={now} />}
 
       {open.length > 0 && (
         <Card icon={Timer} title="Timer">

@@ -29,6 +29,9 @@ const WIDGETS = {
   'tarkov-raid': { title: 'Raid-Status & Hilfe', params: { map: { type: 'string', maxLength: 60 }, tab: { type: 'string', enum: ['overview', 'exits', 'quests', 'keys', 'bosses'] } } },
   'tarkov-quests': { title: 'Quest-Informationen', params: { map: { type: 'string', maxLength: 60 }, query: { type: 'string', maxLength: 120 } } },
   'tarkov-raidplan': { title: 'Raid-Planer', params: { map: { type: 'string', maxLength: 60 } } },
+  'tarkov-companion': { title: 'Raid-Begleiter', params: {} },
+  'tarkov-needed': { title: 'Benötigte Items', params: { kappaOnly: { type: 'boolean' } } },
+  'tarkov-hideout': { title: 'Hideout', params: {} },
   'tarkov-item': { title: 'Item-Details', params: { query: { type: 'string', maxLength: 120 }, keysOnly: { type: 'boolean' } } },
   'lol-overview': { title: 'Performance', params: {} },
   'lol-champions': { title: 'Champions & Rollen', params: {} },
@@ -47,7 +50,7 @@ const WIDGETS = {
 };
 
 const LAYOUTS = {
-  tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
+  tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
   league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-mistakes' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
   rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
   generic: [{ type: 'ask' }, { type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
@@ -60,7 +63,7 @@ const TIMER_SCHEMA = { type: 'object', additionalProperties: false, properties: 
 
 class Gaming {
   constructor(ctx) {
-    this.db = ctx.db; this.bus = ctx.bus; this.settings = ctx.settings; this.notifications = ctx.notifications; this.brain = ctx.brain; this.web = ctx.web;
+    this.db = ctx.db; this.bus = ctx.bus; this.settings = ctx.settings; this.gemini = ctx.gemini; this.platformCapture = () => ctx.platform?.captureAroundCursor?.(); this.notifications = ctx.notifications; this.brain = ctx.brain; this.web = ctx.web;
     this.dataDir = ctx.paths.data;
     this.cache = new GameCache(ctx.db);
     const sub = { ...ctx, gameCache: this.cache };
@@ -201,6 +204,79 @@ class Gaming {
   eftPosition() {
     const p = safeJson(this.context.getState('eft:position'), null);
     return p && Date.now() - Date.parse(p.at) < 20 * 60000 ? p : null;
+  }
+
+  /** Gebaute Hideout-Stufen: aus TarkovTracker, mit eigenen Korrekturen in JARVIS. */
+  eftHideoutBuilt() {
+    const fromTracker = safeJson(this.context.getState('eft:hideout:tracker'), []) || [];
+    const manual = safeJson(this.context.getState('eft:hideout:manual'), {}) || {};
+    const s = new Set(fromTracker);
+    for (const [id, on] of Object.entries(manual)) { if (on) s.add(id); else s.delete(id); }
+    return s;
+  }
+  setEftHideout(levelId, built) {
+    if (!/^[\w-]{3,40}$/.test(String(levelId))) throw new Error('Ungültige Hideout-Stufe');
+    const manual = safeJson(this.context.getState('eft:hideout:manual'), {}) || {};
+    manual[levelId] = !!built;
+    this.context.setState('eft:hideout:manual', manual);
+    this.bus.emit('game:data', { game: 'eft' });
+    return true;
+  }
+  /** Hideout-Übersicht: je Station gebaute Stufe, nächste Stufe mit Anforderungen. */
+  async eftHideout() {
+    const built = this.eftHideoutBuilt();
+    const r = await this.tarkov.hideoutStations(this.tracker?.tdMode?.());
+    const stations = (r.value || []).map((st) => {
+      const levels = [...(st.levels || [])].sort((a, b) => a.level - b.level);
+      const cur = levels.filter((l) => built.has(l.id)).reduce((m, l) => Math.max(m, l.level), 0);
+      const next = levels.find((l) => l.level === cur + 1) || null;
+      const reqOk = next ? (next.stationLevelRequirements || []).every((q) => (r.value.find((x) => x.id === q.station?.id)?.levels || []).some((l) => l.level === q.level && built.has(l.id))) : true;
+      return { id: st.id, name: st.name, level: cur, max: levels.length ? levels[levels.length - 1].level : 0, levels: levels.map((l) => ({ id: l.id, level: l.level, built: built.has(l.id) })),
+        next: next ? { id: next.id, level: next.level, items: (next.itemRequirements || []).map((q) => ({ name: q.item?.name, short: q.item?.shortName, count: q.count })), stations: (next.stationLevelRequirements || []).map((q) => `${q.station?.name} ${q.level}`), ready: reqOk, time: next.constructionTime || 0 } : null };
+    }).sort((a, b) => (b.next?.ready ? 1 : 0) - (a.next?.ready ? 1 : 0) || a.name.localeCompare(b.name));
+    return { stations, fromTracker: (safeJson(this.context.getState('eft:hideout:tracker'), []) || []).length > 0, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline };
+  }
+
+  /** Goon-Sichtung melden: aktuelle Raid-Karte + Account-ID aus dem Tarkov-Log (wie TarkovMonitor). */
+  async eftReportGoons() {
+    const mapNameId = this.eftRaid?.st?.mapId || this.eftLogs?.location?.id;
+    return this.tarkov.reportGoons({ mapNameId, accountId: this.eftRaid?.accountId, gameMode: this.tracker?.tdMode?.() === 'pve' ? 'pve' : 'regular' });
+  }
+
+  /**
+   * Item-Scanner (wie RatScanner): Ausschnitt um den Mauszeiger → Gemini erkennt das Item (Name aus dem
+   * Inspect-Fenster bzw. Symbol) → Preise von tarkov.dev, Wert pro Slot, ob du es für Quests/Hideout brauchst.
+   * Nur auf Tastendruck; das Bild bleibt lokal bis auf die eine Erkennungsanfrage.
+   */
+  async eftScan() {
+    const cap = this.platformCapture?.();
+    if (!cap) throw new Error('Bildschirmaufnahme ist hier nicht verfügbar');
+    this.bus.emit('eft:scan', { state: 'running' });
+    try {
+      const shot = await cap;
+      const g = this.gemini;
+      if (!g?.hasKey()) throw new Error('Kein Gemini-Schlüssel');
+      const r = await g.generate({ feature: 'vision', effort: 'low', json: true, temperature: 0,
+        schema: { type: 'object', properties: { name: { type: 'string' }, english: { type: 'string' }, confidence: { type: 'number' } }, required: ['name'] },
+        system: 'Du erkennst Items aus Escape from Tarkov auf einem Bildschirmausschnitt. Das gesuchte Item liegt genau in der Bildmitte (dort ist der Mauszeiger). Gib den exakten Itemnamen zurück, wie er im Spiel heißt (bei offenem Inspect-Fenster den Titel), zusätzlich den englischen Namen. confidence 0–1. Wenn kein Item erkennbar ist: name leer. Erfinde nichts.',
+        model: g.requireModel('vision'),
+        contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: shot.data.toString('base64') } }, { text: 'Welches Item ist in der Bildmitte?' }] }] });
+      const names = [r?.name, r?.english].map((x) => String(x || '').trim()).filter((x) => x.length >= 2);
+      if (!names.length) throw new Error('Kein Item erkannt – Mauszeiger direkt aufs Item halten (oder Inspect-Fenster öffnen).');
+      const gm = this.tracker?.tdMode?.();
+      let price = null;
+      for (const n of names) { price = await this.tarkov.itemPrices(n, gm).catch(() => null); if (price) break; }
+      if (!price) throw new Error(`„${names[0]}“ nicht in der tarkov.dev-Datenbank gefunden.`);
+      const c = this.eftProgress();
+      const need = await this.tarkov.neededItems({ done: c.done, built: this.eftHideoutBuilt(), gameMode: gm }).then((x) => x.items.find((i) => i.name === price.name)).catch(() => null);
+      const out = { state: 'done', ...price, recognized: names[0], confidence: r?.confidence ?? null, need: need ? { quest: need.quest, questFir: need.questFir, hideout: need.hideout, tasks: need.tasks.slice(0, 4), stations: need.stations.slice(0, 4) } : null, at: nowIso() };
+      this.context.setState('eft:lastscan', out);
+      this.bus.emit('eft:scan', out);
+      return out;
+    } catch (e) {
+      this.bus.emit('eft:scan', { state: 'error', error: e.message });
+      throw e;
+    }
   }
 
   // ----- maps & markers -----
