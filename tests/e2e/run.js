@@ -152,6 +152,9 @@ app.whenReady().then(async () => {
     // Mittelpunkt des Rechtecks: x=(698-372)/2=163, z=(237-307)/2=-35 → (0.5, 0.5); 166.5 liegt minimal links davon
     if (!(Math.abs(pos.l - 0.4967) < 0.01 && Math.abs(pos.t - 0.5) < 0.01)) throw new Error('Exit an falscher Stelle: ' + JSON.stringify(pos));
     if (!(await js(`document.body.textContent.includes('tarkov.dev (CC BY-NC-SA 4.0)')`))) throw new Error('Quellenangabe fehlt');
+    // Position aus einem Screenshot → gelber Pfeil auf der Karte
+    core.gaming.setEftPosition({ x: 400, y: 0, z: 100, fx: 0, fz: 1, map: 'customs' });
+    await waitFor(() => js(`!!document.querySelector('.map-inner .marker svg path[fill="#facc15"]')`), 5000);
     await shot('61b-gaming-tarkov-map');
     } finally { core.gaming.tarkov.maps = origMaps; core.gaming.tarkovMaps.fetch = origFetch; }
   });

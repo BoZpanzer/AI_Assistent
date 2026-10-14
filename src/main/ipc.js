@@ -332,11 +332,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'tarkov.maps': async () => { const r = await s.gaming.tarkov.maps(); return { maps: r.value.map((m) => ({ name: m.name, id: m.normalizedName, players: m.players, raidDuration: m.raidDuration })), source: r.source, fetchedAt: r.fetchedAt, offline: r.offline }; },
     'tarkov.map': async ({ map }) => { const r = await s.gaming.tarkov.map(map); return r ? { map: r.value, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline } : null; },
     'tarkov.questMarkers': async ({ map }) => {
-      const items = s.gaming.progress.list('eft');
-      const done = new Set(items.filter((x) => x.category === 'quest' && x.status === 'done').map((x) => x.name));
-      const lvl = Number(s.gaming.tracker.status?.level ?? String(items.find((x) => /(pmc[- ]?)?level/i.test(x.name))?.value || '').match(/\d+/)?.[0]);
-      return s.gaming.tarkov.questMarkers(String(map || ''), { done, level: Number.isFinite(lvl) && lvl > 0 ? lvl : null, gameMode: s.gaming.tracker.tdMode() });
+      const c = s.gaming.eftProgress();
+      return s.gaming.tarkov.questMarkers(String(map || ''), { done: c.done, level: c.level, gameMode: c.gameMode });
     },
+    'tarkov.raidPlan': ({ map } = {}) => { const c = s.gaming.eftProgress(); return s.gaming.tarkov.raidPlan({ map: map ? String(map) : undefined, ...c }); },
+    'tarkov.position': () => s.gaming.eftPosition?.() || null,
     'tarkov.quests': ({ map, q }) => s.gaming.tarkov.searchTasks(q, { map, limit: 30 }),
     'tarkov.items': ({ q, keysOnly }) => s.gaming.tarkov.items(q, { keysOnly, limit: 20 }),
     'tarkov.keys': ({ map }) => s.gaming.tarkov.keysForMap(map),

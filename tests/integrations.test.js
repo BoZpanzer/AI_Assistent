@@ -1083,3 +1083,70 @@ test('Tarkov-Log: Quest-Meldungen → Spielstand → TarkovTracker (nur mit Schr
     assert.equal(core.gaming.eftLogs.status().watching, false);
   } finally { cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Tarkov Raid-Planer: nur offene, freigeschaltete Quests; Kartenrangliste; Mitnehmen; Schema-Rückfall', async () => {
+  const id = (n) => n.toString(16).padStart(24, '0');
+  const tasks = { data: { tasks: [
+    { id: id(1), name: 'Debut', minPlayerLevel: 1, kappaRequired: true, trader: { name: 'Prapor' }, map: null, taskRequirements: [], objectives: [{ id: 'a', type: 'shoot', description: 'Töte 5 Scavs auf Zollgebiet', optional: false, maps: [{ normalizedName: 'customs', name: 'Zollgebiet' }] }] },
+    { id: id(2), name: 'Checking', minPlayerLevel: 1, trader: { name: 'Prapor' }, map: { normalizedName: 'customs', name: 'Zollgebiet' }, taskRequirements: [{ task: { id: id(1) }, status: ['complete'] }], objectives: [{ id: 'b', type: 'findQuestItem', description: 'Finde die Bronzeuhr', maps: [] }] },
+    { id: id(3), name: 'Shootout Picnic', minPlayerLevel: 8, trader: { name: 'Prapor' }, map: null, taskRequirements: [], objectives: [{ id: 'c', type: 'shoot', description: 'Töte Scavs auf Woods', maps: [{ normalizedName: 'woods', name: 'Wald' }] }] },
+    { id: id(4), name: 'Delivery from the Past', minPlayerLevel: 1, trader: { name: 'Prapor' }, map: null, taskRequirements: [], objectives: [
+      { id: 'd', type: 'plantItem', description: 'Lege die Kiste ab', maps: [{ normalizedName: 'customs', name: 'Zollgebiet' }], items: [{ name: 'Secure Folder', shortName: 'Folder' }], count: 1 },
+      { id: 'e', type: 'mark', description: 'Markiere den Tanker', maps: [{ normalizedName: 'customs', name: 'Zollgebiet' }], markerItem: { name: 'MS2000 Marker', shortName: 'MS2000' } },
+      { id: 'f', type: 'visit', description: 'Geh in Raum 214', maps: [{ normalizedName: 'customs', name: 'Zollgebiet' }], requiredKeys: [[{ name: 'Dorm room 214 key', shortName: '214' }]] }] },
+    { id: id(5), name: 'Survivalist', minPlayerLevel: 1, trader: { name: 'Jaeger' }, map: null, taskRequirements: [], objectives: [{ id: 'g', type: 'shoot', description: 'Töte 3 Scavs ohne Rüstung', maps: [] }] },
+  ] } };
+  let schemaBroken = false;
+  // schlanke Abfrage liefert (wie die echte API) keine Detailfelder
+  const lite = () => ({ data: { tasks: tasks.data.tasks.map((t) => ({ ...t, objectives: t.objectives.map(({ items, markerItem, requiredKeys, count, ...o }) => o) })) } });
+  const { core, cleanup } = tempCore({ fetch: async (_u, init) => { const b = String(init?.body); return new Response(JSON.stringify(!/TaskObjectiveItem/.test(b) ? lite() : schemaBroken ? { errors: [{ message: 'Cannot query field items' }] } : tasks), { headers: { 'Content-Type': 'application/json' } }); } });
+  try {
+    const all = await core.gaming.tarkov.raidPlan({ done: new Set(), level: 5 });
+    assert.equal(all.available, 3, 'Checking gesperrt (Debut offen), Shootout Picnic über Level');
+    assert.equal(all.maps[0].id, 'customs'); assert.equal(all.maps[0].tasks, 2); assert.equal(all.maps[0].kappa, 1);
+    assert.ok(!all.maps.some((m) => m.id === 'woods'));
+    assert.deepEqual(all.anywhere.map((t) => t.task), ['Survivalist']);
+    const c = await core.gaming.tarkov.raidPlan({ map: 'customs', done: new Set(['Debut']), level: 5 });
+    assert.deepEqual(c.tasks.map((t) => t.task).sort(), ['Checking', 'Delivery from the Past'], 'Debut erledigt → Checking frei (Karte der Quest)');
+    assert.deepEqual(c.bring.items.map((x) => x.short).sort(), ['Folder', 'MS2000']);
+    assert.deepEqual(c.bring.keys.map((x) => x.short), ['214']);
+    // Werkzeug für den Chat blendet zusätzlich den Planer für die Karte ein
+    core.gaming.progress.upsert('eft', { category: 'quest', name: 'Debut', status: 'done', source: 'manual' });
+    const tool = require('../src/main/agent/tools.js').buildTools(core).find((t) => t.name === 'tarkov_raid_plan');
+    const out = await tool.run({ map: 'customs' });
+    assert.ok(out.tasks.some((t) => t.task === 'Checking'));
+    assert.equal(core.gaming.focus.type, 'tarkov-raidplan');
+    // tarkov.dev ändert das Schema → Planer läuft ohne Mitnehm-Liste weiter
+    schemaBroken = true; core.gaming.cache.db.run("DELETE FROM game_cache WHERE key LIKE 'eft:taskneeds%'");
+    const lp = await core.gaming.tarkov.raidPlan({ map: 'customs', done: new Set(['Debut']) });
+    assert.equal(lp.detailed, false); assert.equal(lp.tasks.length, 2); assert.equal(lp.bring.items.length, 0);
+  } finally { cleanup(); }
+});
+
+test('Tarkov-Position: Screenshot-Dateiname → Position + Blickrichtung auf der tarkov.dev-Karte; Raid-Karte aus dem Log', async () => {
+  const { parseLocation } = require('../src/main/services/gaming/eftlogs');
+  const { affineFor, SNAPSHOT } = require('../src/main/services/gaming/tarkovmaps');
+  assert.deepEqual(parseLocation('…|application|TRACE-NetworkGameCreate profileStatus: \'Profileid: x, Status: Busy, RaidMode: Online, Ip: 1.2.3.4, Port: 17000, Location: RezervBase, Sid: y\''), { id: 'RezervBase', map: 'reserve' });
+  const { core, cleanup } = tempCore();
+  const shots = fs.mkdtempSync(path.join(os.tmpdir(), 'eftshots-'));
+  try {
+    const def = SNAPSHOT.find((d) => d.id === 'customs');
+    core.gaming.context.setState('calib:eft:customs', { affine: affineFor(def).affine, source: 'tarkov.dev' });
+    core.db.run("INSERT INTO game_maps(id,game,name,image_file,width,height,created_at) VALUES('m1','eft','customs','customs.svg',4096,2082,?)", new Date().toISOString());
+    core.settings.update({ gaming: { eftScreenshotsDir: shots } });
+    fs.writeFileSync(path.join(shots, 'alt.png'), '');
+    const L = core.gaming.eftLogs;
+    L.location = { id: 'bigmap', map: 'customs' };
+    assert.equal(L.pollShots(), null, 'vorhandene Screenshots werden ignoriert');
+    const events = []; core.bus.on('game:position', (p) => events.push(p));
+    // Mitte des Kartenrechtecks (x=163, z=-35), Blick nach +z (Quaternion = keine Drehung)
+    fs.writeFileSync(path.join(shots, '2026-10-14[18-40]_163.0, 2.5, -35.0_0.0, 0.0, 0.0, 1.0_12.3 (0).png'), '');
+    const p = L.pollShots();
+    assert.equal(p.map, 'customs'); assert.ok(Math.abs(p.nx - 0.5) < 1e-6 && Math.abs(p.ny - 0.5) < 1e-6, JSON.stringify(p));
+    // Bei 180° Kartendrehung zeigt +z (Spiel) im Bild nach unten → Winkel ≈ 90°
+    assert.ok(Math.abs(p.angle - 90) < 1e-6, String(p.angle));
+    assert.equal(events.length, 1);
+    assert.equal(core.gaming.lastMap('eft').position.map, 'customs');
+    assert.equal(core.gaming.eftPosition().x, 163);
+  } finally { cleanup(); fs.rmSync(shots, { recursive: true, force: true }); }
+});

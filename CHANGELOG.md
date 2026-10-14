@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.20.0 – Tarkov: eigene Position auf der Karte, Raid-Planer
+
+- **Deine Position auf der Karte:** Drück im Raid die Screenshot-Taste (Standard: Druck). Tarkov schreibt die Position und Blickrichtung in den Dateinamen des Screenshots, und JARVIS zeigt dich als gelben Pfeil auf der Karte und auf der Mini-Karte im Overlay. Das ist dasselbe Prinzip wie bei TarkovMonitor und tarkov.dev, es wird nur der Dateiname gelesen. Die Karte springt automatisch zur Raid-Karte, die JARVIS aus dem Spiel-Log erkennt. Mit „Position“ in der Kartenleiste schaltest du das Mitspringen aus.
+- **Raid-Planer:** Ein neuer Baustein auf der Tarkov-Seite zeigt, welche Karte die meisten offenen Quests für dich hat. Erledigte Quests, Quests über deinem Level und noch gesperrte (Vorgänger offen) werden ausgeblendet. Für eine gewählte Karte zeigt er die Ziele je Quest, was du mitnehmen musst (Items zum Ablegen, MS2000-Marker) und welche Schlüssel du brauchst. Im Chat geht das auch: „Plan meinen nächsten Raid“ oder „Was kann ich auf Woods erledigen?“.
+
 ## 3.19.0 – TarkovTracker aktualisiert sich beim Spielen
 
 - **Tarkov starten → TarkovTracker-Abgleich:** Sobald Tarkov läuft, gleicht JARVIS sofort mit TarkovTracker ab und danach alle 10 Minuten (sonst alle 30), nach dem Spiel noch einmal.

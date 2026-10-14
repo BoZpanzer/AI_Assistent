@@ -21,6 +21,7 @@ html, body { background: transparent !important; overflow: hidden; }
 .ov-map { position: relative; border-radius: 6px; overflow: hidden; }
 .ov-map img { width: 100%; display: block; opacity: 0.92; }
 .ov-pin { position: absolute; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%); border: 1.5px solid white; }
+.ov-me { position: absolute; pointer-events: none; filter: drop-shadow(0 0 3px rgba(250,204,21,.8)); }
 .ov-hint { text-align: center; font-size: 11px; color: var(--yellow); }
 .ov:not(.interactive) .ov-x { display: none; }
 .grow { flex: 1; min-width: 0; }

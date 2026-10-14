@@ -1,7 +1,33 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const log = require('../../core/logger').scope('eftlogs');
+
+// Tarkov-Karten-IDs aus dem Spiel-Log → tarkov.dev-Namen
+const LOCATION = { bigmap: 'customs', factory4_day: 'factory', factory4_night: 'factory', interchange: 'interchange', laboratory: 'the-lab', lighthouse: 'lighthouse', rezervbase: 'reserve', shoreline: 'shoreline', tarkovstreets: 'streets-of-tarkov', woods: 'woods', sandbox: 'ground-zero', sandbox_high: 'ground-zero', labyrinth: 'the-labyrinth', terminal: 'terminal' };
+/** Karte des aktuellen Raids aus dem Application-Log („… Location: bigmap, …“). */
+function parseLocation(text) {
+  let last = null;
+  for (const m of String(text).matchAll(/Location:\s*([A-Za-z0-9_]+)/g)) last = m[1];
+  return last ? { id: last, map: LOCATION[last.toLowerCase()] || null } : null;
+}
+/**
+ * Position aus dem Dateinamen eines Tarkov-Screenshots, z. B.
+ * „2024-08-28[21-07]_-213.31, 1.24, -47.97_0.00119, -0.95218, 0.00379, 0.30552_14.53 (0).png“
+ * → x, y, z (Spielkoordinaten) und Blickrichtung (Vorwärtsvektor fx/fz aus der Rotation).
+ */
+function parseScreenshotName(name) {
+  const n = '(-?\\d+(?:\\.\\d+)?)';
+  const m = String(name).match(new RegExp(`_${n}, ${n}, ${n}_${n}, ${n}, ${n}, ${n}_`));
+  if (!m) return null;
+  const [x, y, z, qx, qy, qz, qw] = m.slice(1, 8).map(Number);
+  if (![x, y, z, qx, qy, qz, qw].every(Number.isFinite)) return null;
+  const fx = 2 * (qx * qz + qw * qy); const fz = 1 - 2 * (qx * qx + qy * qy);
+  const len = Math.hypot(fx, fz) || 1;
+  return { x, y, z, fx: fx / len, fz: fz / len };
+}
+
 
 /**
  * Tarkov-Logdateien mitlesen (nur lesen – wie das Community-Tool „TarkovMonitor“ von tarkov.dev).
@@ -37,7 +63,7 @@ function parseNotifications(text) {
 }
 
 class EftLogs {
-  constructor(s) { this.s = s; this.timer = null; this.offsets = new Map(); this.dir = undefined; this.lastError = null; }
+  constructor(s) { this.s = s; this.timer = null; this.offsets = new Map(); this.dir = undefined; this.lastError = null; this.location = null; this.shotsSeen = null; }
   cfg() { return this.s.settings.get('gaming') || {}; }
   enabled() { return this.cfg().eftLogWatch !== false; }
 
@@ -69,7 +95,7 @@ class EftLogs {
     try { folders = fs.readdirSync(logs).filter((f) => /^log_/i.test(f)).map((f) => ({ f, t: fs.statSync(path.join(logs, f)).mtimeMs })).sort((a, b) => b.t - a.t); } catch { return []; }
     if (!folders.length) return [];
     const newest = path.join(logs, folders[0].f);
-    try { return fs.readdirSync(newest).filter((f) => /notifications.*\.log$/i.test(f)).map((f) => path.join(newest, f)); } catch { return []; }
+    try { return fs.readdirSync(newest).filter((f) => /(notifications|application).*\.log$/i.test(f)).map((f) => path.join(newest, f)); } catch { return []; }
   }
 
   seen() { try { return new Set(JSON.parse(this.s.system.meta('eftlogs:seen') || '[]')); } catch { return new Set(); } }
@@ -90,7 +116,10 @@ class EftLogs {
         let text = buf.toString('utf8');
         const cut = text.lastIndexOf('\n'); if (cut >= 0 && from + len === size) text = text.slice(0, cut + 1);
         this.offsets.set(f, from + Buffer.byteLength(text, 'utf8'));
-        events.push(...parseNotifications(text));
+        if (/application/i.test(path.basename(f))) {
+          const loc = parseLocation(text);
+          if (loc && loc.id !== this.location?.id) { this.location = { ...loc, at: new Date().toISOString() }; if (loc.map) this.s.gaming.setLastMap('eft', loc.map); log.info('Raid-Karte: ' + loc.id); }
+        } else events.push(...parseNotifications(text));
       } finally { fs.closeSync(fd); }
     }
     return this.apply(events);
@@ -126,19 +155,50 @@ class EftLogs {
     return applied;
   }
 
+  /** Tarkov-Screenshot-Ordner (Dokumente\Escape from Tarkov\Screenshots, auch mit OneDrive). */
+  shotsDir() {
+    const home = os.homedir();
+    const cands = [this.cfg().eftScreenshotsDir, ...['Documents', 'Dokumente', 'OneDrive\\Documents', 'OneDrive\\Dokumente'].map((d) => path.join(home, d, 'Escape from Tarkov', 'Screenshots'))];
+    return cands.filter(Boolean).find((d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } }) || null;
+  }
+
+  /** Neue Screenshots → Position auf der Karte (nur Dateinamen, das Bild wird nicht gelesen). */
+  pollShots() {
+    const dir = this.shotsDir();
+    if (!dir) return null;
+    let files = []; try { files = fs.readdirSync(dir).filter((f) => /\.(png|jpe?g|bmp)$/i.test(f)); } catch { return null; }
+    if (!this.shotsSeen) { this.shotsSeen = new Set(files); return null; } // vorhandene ignorieren
+    let pos = null;
+    for (const f of files) {
+      if (this.shotsSeen.has(f)) continue;
+      this.shotsSeen.add(f);
+      const p = parseScreenshotName(f);
+      if (p) pos = p;
+    }
+    if (!pos) return null;
+    const map = this.location?.map || this.s.gaming.lastMap('eft')?.map || null;
+    return this.s.gaming.setEftPosition({ ...pos, map });
+  }
+
   /** Beim Spielstart: Ordner suchen, ab jetzt mitlesen (auch was seit Spielstart schon im Log steht). */
   async start() {
     if (this.timer || !this.enabled()) return;
     this.dir = undefined;
     if (!(await this.gameDir())) { this.lastError = 'Tarkov-Ordner nicht gefunden – unter Einstellungen → Gaming eintragen.'; log.info(this.lastError); return; }
     this.lastError = null;
-    const tick = () => this.poll().catch((e) => { this.lastError = e.message; log.debug('poll', e); });
+    this.shotsSeen = null; this.location = null;
+    let n = 0;
+    // Screenshots alle 2 s (Position soll schnell erscheinen), Logs alle 6 s
+    const tick = () => {
+      try { this.pollShots(); } catch (e) { log.debug('shots', e); }
+      if (n++ % 3 === 0) this.poll().catch((e) => { this.lastError = e.message; log.debug('poll', e); });
+    };
     tick();
-    this.timer = setInterval(tick, 5000);
+    this.timer = setInterval(tick, 2000);
     log.info('Tarkov-Log wird mitgelesen: ' + this.dir);
   }
   stop({ final = true } = {}) { if (this.timer) { clearInterval(this.timer); this.timer = null; if (final) this.poll().catch(() => {}); } }
-  status() { return { enabled: this.enabled(), watching: !!this.timer, dir: this.dir || null, error: this.lastError }; }
+  status() { return { enabled: this.enabled(), watching: !!this.timer, dir: this.dir || null, error: this.lastError, screenshots: this.shotsDir(), location: this.location }; }
 }
 
-module.exports = { EftLogs, parseNotifications };
+module.exports = { EftLogs, parseNotifications, parseLocation, parseScreenshotName, LOCATION };

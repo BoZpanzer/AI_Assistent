@@ -28,6 +28,7 @@ const WIDGETS = {
   'other-games': { title: 'Andere Spiele – Benachrichtigungen', params: {} },
   'tarkov-raid': { title: 'Raid-Status & Hilfe', params: { map: { type: 'string', maxLength: 60 }, tab: { type: 'string', enum: ['overview', 'exits', 'quests', 'keys', 'bosses'] } } },
   'tarkov-quests': { title: 'Quest-Informationen', params: { map: { type: 'string', maxLength: 60 }, query: { type: 'string', maxLength: 120 } } },
+  'tarkov-raidplan': { title: 'Raid-Planer', params: { map: { type: 'string', maxLength: 60 } } },
   'tarkov-item': { title: 'Item-Details', params: { query: { type: 'string', maxLength: 120 }, keysOnly: { type: 'boolean' } } },
   'lol-overview': { title: 'Performance', params: {} },
   'lol-champions': { title: 'Champions & Rollen', params: {} },
@@ -46,7 +47,7 @@ const WIDGETS = {
 };
 
 const LAYOUTS = {
-  tarkov: [{ type: 'map' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
+  tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
   league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-mistakes' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
   rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
   generic: [{ type: 'ask' }, { type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
@@ -142,6 +143,42 @@ class Gaming {
     return due.length;
   }
 
+  /** Tarkov-Fortschritt für Planer/Questziele: erledigte/fehlgeschlagene Quests, Level, Spielmodus. */
+  eftProgress() {
+    const items = this.progress.list('eft');
+    const names = (st) => new Set(items.filter((x) => x.category === 'quest' && x.status === st).map((x) => x.name));
+    const lvl = Number(this.tracker?.status?.level ?? String(items.find((x) => /(pmc[- ]?)?level/i.test(x.name))?.value || '').match(/\d+/)?.[0]);
+    return { done: names('done'), failed: names('failed'), level: Number.isFinite(lvl) && lvl > 0 ? lvl : null, gameMode: this.tracker?.tdMode?.() || 'regular' };
+  }
+
+  /**
+   * Eigene Position in Tarkov (aus einem Screenshot-Dateinamen). Mit tarkov.dev-Karte (affine Kalibrierung)
+   * werden auch Bildkoordinaten 0..1 und der Blickwinkel auf dem Bild mitgeschickt (für Karte und Overlay).
+   */
+  setEftPosition({ x, y, z, fx = 0, fz = 1, map }) {
+    const pos = { x, y, z, fx, fz, map: map || null, at: nowIso() };
+    if (map) {
+      const cal = safeJson(this.context.getState(`calib:eft:${map}`), null);
+      const af = cal?.affine;
+      if (Array.isArray(af) && af.length === 6) {
+        const n = (px, pz) => [af[0] * px + af[1] * pz + af[2], af[3] * px + af[4] * pz + af[5]];
+        const [nx, ny] = n(x, z); const [ax, ay] = n(x + fx * 10, z + fz * 10);
+        const m = this.db.get('SELECT width, height FROM game_maps WHERE game=? AND name=?', 'eft', map) || {};
+        pos.nx = nx; pos.ny = ny; pos.angle = Math.atan2((ay - ny) * (m.height || 1), (ax - nx) * (m.width || 1)) * 180 / Math.PI;
+        pos.onMap = nx >= -0.05 && nx <= 1.05 && ny >= -0.05 && ny <= 1.05;
+      }
+      this.setLastMap('eft', map);
+    }
+    this.context.setState('eft:position', pos);
+    this.bus.emit('game:position', { game: 'eft', ...pos });
+    return pos;
+  }
+  /** Letzte bekannte Position (nur die letzten 20 Minuten). */
+  eftPosition() {
+    const p = safeJson(this.context.getState('eft:position'), null);
+    return p && Date.now() - Date.parse(p.at) < 20 * 60000 ? p : null;
+  }
+
   // ----- maps & markers -----
   maps(gid) {
     return this.db.all('SELECT * FROM game_maps WHERE game=? ORDER BY name', gid).map((m) => ({ id: m.id, game: m.game, name: m.name, hasImage: !!m.image_file, width: m.width, height: m.height,
@@ -210,7 +247,8 @@ class Gaming {
     const st = safeJson(this.context.getState('lastmap:' + gid), null);
     const name = st?.map || this.db.get('SELECT map FROM game_markers WHERE game=? ORDER BY updated_at DESC LIMIT 1', gid)?.map || null;
     if (!name) return { map: null, hasImage: false, markers: [] };
-    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name) };
+    const pos = gid === 'eft' ? this.eftPosition() : null;
+    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name), position: pos && pos.map === name && pos.nx != null ? pos : null };
   }
   setLastMap(gid, map) { if (gid && map) { this.context.setState('lastmap:' + gid, { map: String(map).slice(0, 80) }); this.bus.emit('game:markers', { game: gid, map }); } return true; }
   markers(gid, map) {

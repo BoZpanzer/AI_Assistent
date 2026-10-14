@@ -260,6 +260,9 @@ function buildTools(s) {
     summarize: ({ game }) => { const p = s.gaming.context.resolve(game, { create: false }); if (!p) throw new Error('Spiel unbekannt'); const n = s.gaming.progress.list(p.id).length; return { summary: `Spielstand ${p.name} zurücksetzen`, details: [`${n} Einträge werden archiviert (nicht gelöscht)`] }; },
     run: ({ game, label }) => { const p = s.gaming.context.resolve(game, { create: false }); return s.gaming.progress.wipe(p.id, label); } });
 
+  def({ name: 'tarkov_raid_plan', mode: 'read', description: 'Raid-Planer für Escape from Tarkov aus den OFFENEN, verfügbaren Quests des Nutzers (erledigte und gesperrte ausgeblendet): ohne map → welche Karte die meisten offenen Ziele hat; mit map (normalizedName, z. B. customs, woods) → Ziele dort, mitzunehmende Items (Platzieren/Markieren) und benötigte Schlüssel. Daten von tarkov.dev; nur diese Angaben verwenden.',
+    schema: { type: 'object', properties: { map: { type: 'string' } } },
+    run: async ({ map }) => { const c = s.gaming.eftProgress(); const r = await s.gaming.tarkov.raidPlan({ map, ...c }); if (map) s.gaming.pushWidget('eft', 'tarkov-raidplan', { map }); return { ...r, maps: r.maps.slice(0, 12), tasks: r.tasks?.slice(0, 25) }; } });
   def({ name: 'tarkov_lookup', mode: 'read', description: 'Escape-from-Tarkov-Daten (tarkov.dev): quests, item, keys, extracts, bosses. Keine Live-Raid-Daten verfügbar.',
     schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['quests', 'item', 'keys', 'extracts', 'bosses'] }, query: { type: 'string' }, map: { type: 'string', description: 'normalizedName z. B. customs, woods, shoreline, interchange, reserve, lighthouse, streets-of-tarkov, factory, the-lab, ground-zero' } } },
     run: async ({ kind, query, map }) => {

@@ -7,7 +7,7 @@ import { countdown, ago, fmtDateTime } from '../../lib/format.js';
 import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
-  map: 'w-7', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
+  map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
   'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
@@ -40,6 +40,10 @@ function MapWidget({ game, params }) {
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [apiMap] = useRpc('tarkov.map', { map }, { enabled: isEft, deps: [map] });
   const meta = (userMaps || []).find((m) => m.name === map);
+  const [pos, setPos] = useState(null);
+  const [follow, setFollow] = useState(true);
+  useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
+  useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== map) setMap(p.map); });
   const [loadingMaps, setLoadingMaps] = useState(false);
   const autoTried = useRef(false);
   const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
@@ -126,6 +130,8 @@ function MapWidget({ game, params }) {
     if (!label.trim()) { await rpc('game.removeMarker', { id: m.id }); return; }
     await rpc('game.updateMarker', { id: m.id, patch: { label } });
   };
+  // eigene Position (aus dem letzten Tarkov-Screenshot) als Pfeil in Blickrichtung
+  const me = isEft && pos && pos.map === map && transform ? (() => { const a = transform(pos.x, pos.z); const b = transform(pos.x + pos.fx * 10, pos.z + pos.fz * 10); return { ...a, angle: Math.atan2((b.y - a.y) * imgSize.h, (b.x - a.x) * imgSize.w) * 180 / Math.PI, at: pos.at }; })() : null;
   const all = [...markers.filter((m) => visible[m.category]), ...apiPins.filter((m) => visible[m.category]), ...questPins.filter((m) => visible.quest && m.x >= 0 && m.x <= 1 && m.y >= 0 && m.y <= 1)];
   const content = (
     <div class={full ? 'overlay' : ''} style={full ? { placeItems: 'stretch', padding: 30 } : undefined}>
@@ -145,6 +151,7 @@ function MapWidget({ game, params }) {
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
             {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
+            {isEft && <div class={`tool ${follow ? 'active' : ''}`} title="Karte wechselt automatisch zur Raid-Karte, sobald du im Spiel einen Screenshot machst (Position + Blickrichtung)" onClick={() => setFollow(!follow)}><Crosshair size={15} />Position{pos ? ' ✓' : ''}</div>}
             {isEft && transform && <div class={`tool ${showQuests ? 'active' : ''}`} title="Ziele deiner offenen Quests (ohne erledigte, bis zu deinem Level) – Quelle tarkov.dev" onClick={() => setShowQuests(!showQuests)}><Target size={15} />Questziele{showQuests && questMarks?.markers ? ` (${questMarks.markers.length})` : ''}</div>}
           </div>
           <div class={`map-box ${imgUrl ? '' : 'grid-fallback'}`} ref={box} onWheel={wheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onClick={click}>
@@ -153,6 +160,9 @@ function MapWidget({ game, params }) {
               <svg width={imgSize.w} height={imgSize.h} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {[...routes, ...(routeDraft ? [{ id: 'draft', points: routeDraft }] : [])].map((r) => <polyline points={r.points.map((p) => `${p.x * imgSize.w},${p.y * imgSize.h}`).join(' ')} fill="none" stroke={r.id === 'draft' ? '#facc15' : '#22d3ee'} stroke-width={4 / view.z} stroke-dasharray={`${12 / view.z} ${8 / view.z}`} />)}
               </svg>
+              {me && <div class="marker" title={`Du – Stand ${new Date(me.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} (letzter Screenshot)`} style={{ left: me.x * imgSize.w, top: me.y * imgSize.h, transform: `translate(-50%, -50%) scale(${1 / view.z})`, zIndex: 5 }} onClick={(e) => e.stopPropagation()}>
+                <svg width="30" height="30" viewBox="-15 -15 30 30" style={{ transform: `rotate(${me.angle + 90}deg)`, filter: 'drop-shadow(0 0 6px rgba(250,204,21,.9))' }}><circle r="13" fill="rgba(250,204,21,.18)" /><path d="M0 -11 L8 8 L0 4 L-8 8 Z" fill="#facc15" stroke="#000" stroke-width="1.5" /></svg>
+              </div>}
               {all.map((m) => { const c = CATS.find((x) => x.id === m.category) || CATS[5]; return (
                 <div class="marker" style={{ left: m.x * imgSize.w, top: m.y * imgSize.h, transform: `translate(-50%, -100%) scale(${1 / view.z})`, transformOrigin: '50% 100%', opacity: m.api ? 0.85 : 1 }} onClick={(e) => { e.stopPropagation(); editMarker(m); }}>
                   <div class={`pin ${c.cls}`} style={m.api ? { borderStyle: 'dashed' } : undefined}><c.icon size={13} /></div>
@@ -180,6 +190,41 @@ function MapWidget({ game, params }) {
 }
 
 // ---------------------------------------------------------------- Tarkov
+/** Raid-Planer: offene, verfügbare Quests → beste Karte, Ziele, was mitnehmen. */
+function TarkovRaidPlan({ params }) {
+  const [map, setMap] = useState(params.map || '');
+  useEffect(() => { if (params.map) setMap(params.map); }, [params.map]);
+  const [plan, reload, st] = useRpc('tarkov.raidPlan', { map: map || undefined }, { deps: [map], events: ['game:progress'] });
+  const [all] = useRpc('tarkov.raidPlan', {}, { events: ['game:progress'] });
+  const ranking = all?.maps || plan?.maps || [];
+  const showOnMap = (id) => rpc('game.setLastMap', { game: 'eft', map: id }).then(() => rpc('game.pushWidget', { game: 'eft', type: 'map', params: { map: id } })).catch(() => {});
+  return (
+    <Panel icon={Route} title="Raid-Planer" sub={`Aus deinen offenen Quests${all?.level ? ` · Level ${all.level}` : ''} · tarkov.dev`} right={<Select style={{ width: 170 }} value={map} onChange={setMap} options={[{ value: '', label: 'Beste Karte finden' }, ...ranking.map((m) => ({ value: m.id, label: `${m.name} (${m.tasks})` }))]} />}>
+      {st.error && <div class="notice warn small">{st.error}</div>}
+      {!plan && !st.error && <Spinner />}
+      {plan && !map && <>
+        <div class="small muted">{plan.available} Quests verfügbar (erledigte und noch gesperrte ausgeblendet). Karten nach offenen Quests:</div>
+        <div class="col mt" style={{ gap: 4 }}>{plan.maps.slice(0, 8).map((m, i) => (
+          <div class="row small sub-row" style={{ cursor: 'pointer' }} onClick={() => setMap(m.id)}><b style={{ width: 18 }}>{i + 1}.</b><span class="grow">{m.name}</span><span class="muted">{m.tasks} Quests · {m.objectives} Ziele{m.kappa ? ` · ${m.kappa} Kappa` : ''}</span></div>
+        ))}</div>
+        {plan.anywhere?.length > 0 && <details class="mt"><summary class="small">Geht auf jeder Karte ({plan.anywhere.length})</summary>{plan.anywhere.map((t) => <div class="small"><b>{t.task}</b> <span class="muted">– {t.objectives.join('; ')}</span></div>)}</details>}
+      </>}
+      {plan && map && <>
+        <div class="row small"><span class="grow muted">{plan.tasks?.length || 0} Quests mit Zielen auf dieser Karte</span><button class="btn xs" onClick={() => showOnMap(map)}><MapIcon size={12} />Auf Karte zeigen</button></div>
+        {(plan.bring?.items?.length > 0 || plan.bring?.keys?.length > 0) && <div class="notice small mt"><b>Mitnehmen:</b> {[...plan.bring.items.map((x) => `${x.count > 1 ? x.count + '× ' : ''}${x.short}`), ...plan.bring.keys.map((k) => '🔑 ' + k.short)].join(' · ')}</div>}
+        {!plan.detailed && <div class="tiny muted mt">Mitnehm-Liste gerade nicht verfügbar (tarkov.dev-Schema geändert) – Ziele unten stimmen trotzdem.</div>}
+        <div class="col mt scroll" style={{ gap: 6, maxHeight: 320 }}>{(plan.tasks || []).map((t) => (
+          <div class="sub-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }}>
+            <div class="row"><b class="grow">{t.task}</b><span class="tiny muted">{t.trader}{t.kappa ? ' · Kappa' : ''}</span></div>
+            {t.objectives.map((o) => <div class="small" style={{ color: o.optional ? 'var(--text-3)' : 'var(--text-2)' }}>• {o.text}{o.optional ? ' (optional)' : ''}</div>)}
+          </div>
+        ))}{!plan.tasks?.length && <Empty>Keine offenen Quest-Ziele auf dieser Karte.</Empty>}</div>
+      </>}
+      {plan && <SourceTag source={plan.source} fetchedAt={plan.fetchedAt} offline={plan.offline} />}
+    </Panel>
+  );
+}
+
 function TarkovRaid({ game, params }) {
   const [tab, setTab] = useState(params.tab || 'overview');
   const [map, setMap] = useState(params.map || 'customs');
@@ -799,7 +844,7 @@ function RokPlanner({ game }) {
 }
 
 export const WIDGETS = {
-  map: MapWidget, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
+  map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes,

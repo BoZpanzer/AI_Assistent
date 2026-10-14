@@ -367,12 +367,15 @@ function TarkovTrackerField() {
 /** Quest-Meldungen aus dem Tarkov-Log (wie TarkovMonitor) → Spielstand + TarkovTracker. */
 function EftLogField({ canWrite, configured }) {
   const g = useStore((x) => x.settings?.gaming) || {};
-  const [st, reload] = useRpc('eft.logStatus', {}, { deps: [g.eftDir] });
+  const [st, reload] = useRpc('eft.logStatus', {}, { deps: [g.eftDir, g.eftScreenshotsDir] });
   return (
     <>
       <Field label="Quests aus dem Tarkov-Log übernehmen" hint={!configured ? 'trägt angenommene/erledigte Quests in „Mein Spielstand“ ein' : canWrite ? 'erledigte/fehlgeschlagene Quests gehen automatisch an TarkovTracker' : 'Token hat nur Leserecht – für automatisches Übertragen ein Token mit Schreibrecht verbinden'}><Toggle checked={g.eftLogWatch !== false} onChange={(v) => upd({ gaming: { eftLogWatch: v } })} /></Field>
       {g.eftLogWatch !== false && <Field label="Tarkov-Ordner" hint={st?.dir ? (st.watching ? 'wird gerade mitgelesen' : 'gefunden – wird beim Spielstart mitgelesen') : 'nicht gefunden – bitte den Spielordner wählen (enthält „Logs“)'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.eftDir || st?.dir || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { await upd({ gaming: { eftDir: f } }); reload(); } }}><FolderOpen size={14} /></button></div>
+      </Field>}
+      {g.eftLogWatch !== false && <Field label="Position auf der Karte (Screenshots)" hint={st?.screenshots ? 'Im Raid die Screenshot-Taste drücken (Standard: Druck) – JARVIS zeigt dich mit Blickrichtung auf der Karte und im Overlay' : 'Tarkov-Screenshot-Ordner nicht gefunden (Dokumente\\Escape from Tarkov\\Screenshots) – bitte wählen'}>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.eftScreenshotsDir || st?.screenshots || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { await upd({ gaming: { eftScreenshotsDir: f } }); reload(); } }}><FolderOpen size={14} /></button></div>
       </Field>}
     </>
   );

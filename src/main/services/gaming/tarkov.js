@@ -64,6 +64,68 @@ class Tarkov {
     });
   }
 
+  /**
+   * Quest-Daten für den Raid-Planer: Voraussetzungen, Karten der Ziele, mitzunehmende Items/Schlüssel.
+   * Eigene, isolierte Abfrage; scheitern die Detailfelder (Schemaänderung), gibt es eine schlanke Variante.
+   */
+  async taskNeeds(gameMode = 'regular') {
+    return this.cache.wrap('eft:taskneeds:' + gameMode, SOURCE, 2 * DAY, async () => {
+      const base = 'id type description optional maps { normalizedName name }';
+      const full = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired trader { name } map { normalizedName name } taskRequirements { task { id } status }
+        objectives { ${base}
+          ... on TaskObjectiveItem { items { name shortName } count foundInRaid }
+          ... on TaskObjectiveMark { markerItem { name shortName } }
+          ... on TaskObjectiveQuestItem { questItem { name shortName } count }
+          ... on TaskObjectiveBasic { requiredKeys { name shortName } } } } }`;
+      const lite = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired trader { name } map { normalizedName name } taskRequirements { task { id } status } objectives { ${base} } } }`;
+      let d; let detailed = true;
+      try { d = await this.gql(full, { gm: gameMode }); } catch (e) { detailed = false; d = await this.gql(lite, { gm: gameMode }); }
+      return { detailed, tasks: d.tasks };
+    });
+  }
+
+  /**
+   * Raid-Planer: offene, verfügbare Quests (nicht erledigt, Level reicht, Vorgänger erledigt) nach Karte.
+   * Ohne Kartenwahl: Rangliste der Karten nach offenen Zielen; mit Karte: Ziele, was mitzunehmen ist.
+   */
+  async raidPlan({ map, done = new Set(), failed = new Set(), level = null, gameMode } = {}) {
+    const r = await this.taskNeeds(gameMode);
+    const { tasks, detailed } = r.value;
+    const doneIds = new Set(tasks.filter((t) => done.has(t.name)).map((t) => t.id));
+    const avail = tasks.filter((t) => !done.has(t.name) && !failed.has(t.name)
+      && (level == null || (t.minPlayerLevel || 0) <= level)
+      && (t.taskRequirements || []).every((q) => !q?.task?.id || !(q.status || []).some((st) => /complete/i.test(st)) || doneIds.has(q.task.id)));
+    const objMaps = (t, o) => { const m = (o.maps || []).map((x) => x.normalizedName); return m.length ? m : t.map?.normalizedName ? [t.map.normalizedName] : []; };
+    const counts = new Map();
+    for (const t of avail) {
+      const seen = new Set();
+      for (const o of t.objectives || []) for (const m of objMaps(t, o)) {
+        const c = counts.get(m) || { id: m, name: (o.maps || []).find((x) => x.normalizedName === m)?.name || t.map?.name || m, tasks: 0, objectives: 0, kappa: 0 };
+        c.objectives++; if (!seen.has(m)) { seen.add(m); c.tasks++; if (t.kappaRequired) c.kappa++; }
+        counts.set(m, c);
+      }
+    }
+    const maps = [...counts.values()].sort((a, b) => b.tasks - a.tasks || b.objectives - a.objectives);
+    const anywhere = avail.filter((t) => (t.objectives || []).some((o) => !objMaps(t, o).length)).map((t) => ({ task: t.name, trader: t.trader?.name, objectives: t.objectives.filter((o) => !objMaps(t, o).length && !o.optional).map((o) => o.description) })).slice(0, 15);
+    const out = { maps, anywhere, available: avail.length, level, detailed, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline };
+    if (!map) return out;
+    const items = new Map(); const keys = new Map();
+    const add = (mp, it, n = 1) => { if (!it?.name) return; const k = it.name; const x = mp.get(k) || { name: it.name, short: it.shortName || it.name, count: 0, tasks: [] }; x.count += n; mp.set(k, x); return x; };
+    const sel = [];
+    for (const t of avail) {
+      const objs = (t.objectives || []).filter((o) => objMaps(t, o).includes(map));
+      if (!objs.length) continue;
+      for (const o of objs) {
+        if (/plant/i.test(o.type)) for (const it of o.items || [o.questItem].filter(Boolean)) { const x = add(items, it, o.count || 1); if (x && !x.tasks.includes(t.name)) x.tasks.push(t.name); }
+        if (o.markerItem) { const x = add(items, o.markerItem, 1); if (x && !x.tasks.includes(t.name)) x.tasks.push(t.name); }
+        for (const alt of o.requiredKeys || []) { const opts = (Array.isArray(alt) ? alt : [alt]).filter(Boolean); if (opts.length) { const x = add(keys, { name: opts.map((k) => k.name).join(' oder '), shortName: opts.map((k) => k.shortName).join(' / ') }, 0); if (x && !x.tasks.includes(t.name)) x.tasks.push(t.name); } }
+      }
+      sel.push({ task: t.name, trader: t.trader?.name, kappa: !!t.kappaRequired, objectives: objs.map((o) => ({ text: o.description, optional: !!o.optional, type: o.type })) });
+    }
+    out.map = map; out.tasks = sel; out.bring = { items: [...items.values()], keys: [...keys.values()] };
+    return out;
+  }
+
   /** Questziele auf einer Karte – ohne erledigte Quests (Spielstand/TarkovTracker), optional bis zum eigenen Level. */
   async questMarkers(map, { done = new Set(), level = null, gameMode } = {}) {
     const z = await this.taskZones(gameMode);

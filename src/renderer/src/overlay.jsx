@@ -59,7 +59,7 @@ function App() {
   const active = game?.active?.profile;
   const [timers] = useRpc('game.timers', {}, { events: ['game:timers'], initial: [] });
   const [prog] = useRpc('game.progress', { game: active?.id }, { events: ['game:progress'], enabled: !!active, deps: [active?.id] });
-  const [mini] = useRpc('game.lastMap', { game: active?.id }, { events: ['game:markers'], enabled: active?.integration === 'tarkov', deps: [active?.id] });
+  const [mini] = useRpc('game.lastMap', { game: active?.id }, { events: ['game:markers', 'game:position'], enabled: active?.integration === 'tarkov', deps: [active?.id] });
   const [cfg] = useRpc('settings.get', {}, { events: ['settings:changed'] });
   const open = (timers || []).filter((t) => !t.fired || Date.parse(t.endsAt) > now - 600000).sort((a, b) => (a.game === active?.id ? -1 : 0) - (b.game === active?.id ? -1 : 0)).slice(0, 5);
   const highlights = (prog?.items || []).filter((x) => x.status === 'in_progress' || x.status === 'todo' || (!x.status && x.value)).slice(0, 5);
@@ -109,6 +109,7 @@ function App() {
           <div class="ov-map">
             <img src={`app://jarvis/map-image/${encodeURIComponent(active.id)}/${encodeURIComponent(mini.map)}`} />
             {mini.markers.map((m) => <i class={`ov-pin mk-${m.category}`} style={{ left: m.x * 100 + '%', top: m.y * 100 + '%' }} title={m.label} />)}
+            {mini.position && <svg class="ov-me" width="18" height="18" viewBox="-9 -9 18 18" style={{ left: mini.position.nx * 100 + '%', top: mini.position.ny * 100 + '%', transform: `translate(-50%, -50%) rotate(${mini.position.angle + 90}deg)` }}><path d="M0 -8 L6 6 L0 3 L-6 6 Z" fill="#facc15" stroke="#000" stroke-width="1.2" /></svg>}
           </div>
         </Card>
       )}
