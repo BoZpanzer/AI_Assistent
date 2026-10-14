@@ -187,4 +187,12 @@ module.exports = [
     ALTER TABLE events ADD COLUMN color TEXT;
     ALTER TABLE events ADD COLUMN event_type TEXT;
   `),
+  // v5 — Spielzeit-Sessions (alle Spiele, aus der Prozesserkennung) und Patch-Notes
+  (db) => db.exec(`
+    CREATE TABLE game_sessions(id TEXT PRIMARY KEY, game TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT, last_seen TEXT NOT NULL);
+    CREATE INDEX ix_game_sessions ON game_sessions(game, start_at);
+    CREATE TABLE game_news(id TEXT PRIMARY KEY, game TEXT NOT NULL, title TEXT NOT NULL, url TEXT, published_at TEXT NOT NULL, is_patch INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL DEFAULT '', summary TEXT, source TEXT NOT NULL, seen INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+    CREATE INDEX ix_game_news ON game_news(game, published_at);
+  `),
 ];
