@@ -64,7 +64,9 @@ class ScreenVision {
     const shot = await this.capture();
     const q = question || this.s.settings.get('screen')?.defaultQuestion || 'Was sehe ich hier? Hilf mir kurz und konkret.';
     const shown = q;
-    const hint = !crop ? '' : '(Bild 1: Ausschnitt um meinen Mauszeiger – das Ding in der Mitte meine ich. Bild 2: ganzer Bildschirm. Ist in der Mitte von Bild 1 ein Escape-from-Tarkov-Item, rufe tarkov_item_value mit dem Itemnamen auf und nenne kurz Flohmarkt, besten Händler, Wert pro Slot und ob ich es für Quests/Hideout behalten sollte. Sonst beantworte die Frage normal.)';
+    const active = ctx.state().active?.profile || null;
+    const gameHint = !crop && active ? require('./gaming/kits').screenHint(active) : '';
+    const hint = !crop ? (gameHint ? `(Spiel: ${active.name}. ${gameHint})` : '') : '(Bild 1: Ausschnitt um meinen Mauszeiger – das Ding in der Mitte meine ich. Bild 2: ganzer Bildschirm. Ist in der Mitte von Bild 1 ein Escape-from-Tarkov-Item, rufe tarkov_item_value mit dem Itemnamen auf und nenne kurz Flohmarkt, besten Händler, Wert pro Slot und ob ich es für Quests/Hideout behalten sollte. Sonst beantworte die Frage normal.)';
     this.s.bus.emit('overlay:thinking', { question: shown });
     const images = [...(crop ? [{ mimeType: 'image/jpeg', data: crop.data.toString('base64'), name: 'Mauszeiger' }] : []), { mimeType: 'image/jpeg', data: shot.data.toString('base64'), name: 'Bildschirm' }];
     const msg = await this.s.orchestrator.chat({ text: q, images, channel: 'overlay', hint });

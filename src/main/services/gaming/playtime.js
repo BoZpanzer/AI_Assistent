@@ -14,7 +14,10 @@ class Playtime {
   constructor(s) {
     this.s = s;
     this.closeStale();
-    s.bus.on('game:running', ({ started = [], stopped = [] } = {}) => { for (const g of started) this.begin(g); for (const g of stopped) this.end(g); });
+    s.bus.on('game:running', ({ started = [], stopped = [] } = {}) => {
+      for (const g of started) { try { this.onStart(g); } catch (e) { log.debug('recap', e); } this.begin(g); }
+      for (const g of stopped) this.end(g);
+    });
     this.timer = setInterval(() => this.heartbeat(), HEARTBEAT_MS); this.timer.unref?.();
   }
   db() { return this.s.db; }
@@ -32,9 +35,26 @@ class Playtime {
   heartbeat(now = nowIso()) {
     const running = this.s.gaming?.context?.running || [];
     for (const g of running) { if (!this.open(g)) this.begin(g, now); else this.db().run('UPDATE game_sessions SET last_seen=? WHERE game=? AND end_at IS NULL', now, g); }
+    this.breakCheck(now);
     // Sessions, deren Spiel nicht mehr läuft (verpasstes Ereignis), schließen
     for (const o of this.db().all('SELECT * FROM game_sessions WHERE end_at IS NULL')) if (!running.includes(o.game)) this.end(o.game, o.last_seen);
   }
+  /** Optionale Pausen-Erinnerung: nach X Minuten am Stück (Einstellung, Standard aus), danach alle X Minuten erneut. */
+  breakCheck(now = nowIso()) {
+    const every = Number(this.s.settings.get('gaming')?.breakReminderMin || 0);
+    if (!every) return null;
+    const names = Object.fromEntries((this.s.gaming?.context?.profiles?.() || []).map((p) => [p.id, p.name]));
+    let sent = null;
+    for (const o of this.db().all('SELECT * FROM game_sessions WHERE end_at IS NULL')) {
+      const mins = Math.floor((Date.parse(now) - Date.parse(o.start_at)) / 60000);
+      const step = Math.floor(mins / every);
+      if (step < 1) continue;
+      const h = Math.floor(mins / 60); const m = mins % 60;
+      sent = this.s.notifications.push({ category: 'gaming', origin: 'system', game: o.game, dedupeKey: `break:${o.id}:${step}`, title: 'Kurze Pause?', body: `Du spielst ${names[o.game] || o.game} seit ${h ? h + ' h ' : ''}${m} min am Stück.` });
+    }
+    return sent;
+  }
+
   /** Beim Start: offene Sessions vom letzten Lauf (Absturz/Herunterfahren) beim letzten Lebenszeichen beenden. */
   closeStale() {
     try { for (const o of this.db().all('SELECT * FROM game_sessions WHERE end_at IS NULL')) this.end(o.game, o.last_seen); } catch (e) { log.debug('stale', e); }
@@ -68,6 +88,51 @@ class Playtime {
     const sum = (k) => games.reduce((x, g) => x + g[k], 0);
     return { games, total: { today: sum('today'), week: sum('week'), lastWeek: sum('lastWeek'), last30: sum('last30') }, since: new Date(since).toISOString() };
   }
+  // ---------- Session-Log: Notizen mit Zeitstempel („Jarvis, merk dir das“) ----------
+  logKey(game) { return 'sessionlog:' + game; }
+  addNote(game, text) {
+    const t = String(text || '').trim().slice(0, 400);
+    if (!t) throw new Error('Leere Notiz');
+    if (!game) throw new Error('Kein Spiel aktiv – sag dazu, zu welchem Spiel die Notiz gehört.');
+    const o = this.open(game);
+    const list = this.readLog(game);
+    const note = { at: nowIso(), text: t, minute: o ? Math.round((Date.now() - Date.parse(o.start_at)) / 60000) : null, session: o?.id || null };
+    list.push(note);
+    this.s.gaming.context.setState(this.logKey(game), list.slice(-200));
+    this.s.bus.emit('game:data', { game });
+    return note;
+  }
+  readLog(game) { try { return JSON.parse(this.s.gaming.context.getState(this.logKey(game)) || '[]'); } catch { return []; } }
+  log(game, limit = 30) { return this.readLog(game).slice(-limit).reverse(); }
+
+  // ---------- „Wo war ich?“ beim Spielstart nach längerer Pause (ohne KI, nur deine Daten) ----------
+  /** Recap, wenn das letzte Spielen ≥ minDays her ist. null = nichts zu sagen. */
+  recap(game, { minDays = 3, now = Date.now() } = {}) {
+    const last = this.db().get('SELECT MAX(COALESCE(end_at,last_seen)) t FROM game_sessions WHERE game=? AND end_at IS NOT NULL', game)?.t || null;
+    const days = last ? Math.floor((now - Date.parse(last)) / 86400000) : null;
+    if (last && days < minDays) return null;
+    const G = this.s.gaming; const p = G.context.profile(game);
+    const notes = this.readLog(game).slice(-3).reverse().map((n) => n.text);
+    let progress = []; try { progress = G.progress.list(game).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))).slice(0, 4).map((x) => `${x.name}${x.value ? ': ' + x.value : ''}${x.status ? ' (' + x.status + ')' : ''}`); } catch { /* ignore */ }
+    let timers = []; try { timers = G.timers({ game }).filter((t) => !t.fired).slice(0, 3).map((t) => t.label); } catch { /* ignore */ }
+    let open = 0; try { for (const c of p?.checklists || []) { const cl = G.checklist(game, c.name); if (cl && !cl.preset && cl.items.some((i) => i.done)) open += cl.items.filter((i) => !i.done).length; } } catch { /* ignore */ }
+    if (!notes.length && !progress.length && !timers.length) return null;
+    return { game, name: p?.name || game, lastPlayed: last, days, notes, progress, timers, openChecklist: open };
+  }
+  onStart(game) {
+    if (this.s.settings.get('gaming')?.gameRecap === false || game === 'league' || game === 'eft') return null; // LoL/Tarkov haben eigene Begleiter
+    const r = this.recap(game);
+    if (!r) return null;
+    const parts = [];
+    if (r.notes.length) parts.push('Notizen: ' + r.notes.join(' · '));
+    if (r.progress.length) parts.push('Stand: ' + r.progress.join(' · '));
+    if (r.timers.length) parts.push('Laufende Timer: ' + r.timers.join(', '));
+    if (r.openChecklist) parts.push(`${r.openChecklist} offene Punkte auf deinen Checklisten`);
+    this.s.gaming.context.setState('recap:' + game, r);
+    this.s.notifications.push({ category: 'gaming', origin: 'system', game, dedupeKey: 'recap:' + game + ':' + new Date().toISOString().slice(0, 10), title: `Wo war ich? – ${r.name}${r.days != null ? ` (vor ${r.days} Tagen)` : ''}`, body: parts.join('\n').slice(0, 900) });
+    return r;
+  }
+
   /** Zuletzt gespielte Spiele (für Patch-Notes). */
   recentGames(days = 30) {
     return this.db().all('SELECT game, MAX(COALESCE(end_at,last_seen)) last FROM game_sessions WHERE COALESCE(end_at,last_seen) >= ? GROUP BY game ORDER BY last DESC', new Date(Date.now() - days * 86400000).toISOString()).map((r) => r.game);

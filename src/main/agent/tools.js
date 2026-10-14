@@ -333,6 +333,43 @@ function buildTools(s) {
       if (matchup) { const n = await s.gaming.league.addMatchupNote(matchup, text, myChampion || null); return { saved: true, matchupNote: true, vs: n.vsName, onlyWith: n.mineName }; }
       const n = s.gaming.league.addLiveNote(text); return { saved: true, gameTime: n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')}` : null, champion: n.champion };
     } });
+  def({ name: 'game_playtime', mode: 'read', description: 'Spielzeit pro Spiel aus der Prozesserkennung (auch Nicht-Steam-Spiele): heute, diese Woche, letzte Woche, 30 Tage, Sessions, längste Session, 14-Tage-Verlauf. Für „wie viel habe ich diese Woche gezockt“.',
+    schema: { type: 'object', properties: { game: { type: 'string', description: 'optional: nur dieses Spiel' } } },
+    run: ({ game }) => { const p = game ? s.gaming.context.resolve(game, { create: false }) : null; return s.gaming.playtime.stats({ game: p?.id || null }); } });
+  def({ name: 'game_note', mode: 'write', description: 'Notiz im Session-Log eines Spiels speichern („Jarvis, merk dir das: …“, „notier: Basis bei 120/64/-300“) – mit Zeitstempel und Minute der laufenden Session. Ohne game: das aktive/laufende Spiel. Für LoL stattdessen lol_note. Kurz bestätigen.',
+    schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' }, game: { type: 'string' } } },
+    run: ({ text, game }) => {
+      const st = s.gaming.context.state(); const p = game ? s.gaming.context.resolve(game, { create: false }) : (st.running[0] || st.active?.profile || null);
+      const n = s.gaming.playtime.addNote(p?.id, text); return { saved: true, game: p?.name, minuteInSession: n.minute };
+    } });
+  def({ name: 'game_servers', mode: 'read', description: 'Status der gespeicherten Lieblingsserver (Steam/Source-Abfrage oder Minecraft-Ping): online, Spieler/Max, Name, Karte, Version, Ping. add: Server hinzufügen (Adresse host:port, beim Steam-Server der Query-Port).',
+    schema: { type: 'object', properties: { game: { type: 'string' }, add: { type: 'object', properties: { address: { type: 'string' }, name: { type: 'string' }, kind: { type: 'string', enum: ['steam', 'minecraft'] } } } } },
+    run: async ({ game, add }) => {
+      const { query, parseAddress } = require('../services/gaming/servers');
+      const p = game ? s.gaming.context.resolve(game, { create: false }) : s.gaming.context.state().active?.profile;
+      if (add?.address) {
+        const kind = add.kind || (p?.id === 'minecraft' ? 'minecraft' : 'steam'); parseAddress(add.address, kind === 'minecraft' ? 25565 : 27015);
+        const g = s.settings.get('gaming'); s.settings.update({ gaming: { servers: [...(g.servers || []).filter((x) => x.address !== add.address), { address: add.address, kind, ...(p ? { game: p.id } : {}), ...(add.name ? { name: add.name } : {}) }].slice(-30) } });
+      }
+      const list = (s.settings.get('gaming').servers || []).filter((x) => !p || !x.game || x.game === p.id);
+      if (!list.length) return { servers: [], note: 'Noch keine Server gespeichert – Adresse (host:port) nennen.' };
+      return { servers: await Promise.all(list.map((x) => query(x))) };
+    } });
+  def({ name: 'steam_deals', mode: 'read', description: 'Angebote auf der Steam-Wunschliste des Nutzers (Rabatt, Preis in Euro). refresh=true holt aktuelle Preise.',
+    schema: { type: 'object', properties: { refresh: { type: 'boolean' } } },
+    run: async ({ refresh }) => { if (refresh || !s.gaming.deals.state()) await s.gaming.deals.check({ notify: false }); const st = s.gaming.deals.state(); return { at: st?.at, onSale: (st?.items || []).filter((x) => x.discount > 0).slice(0, 15), total: st?.items?.length || 0 }; } });
+  def({ name: 'rok_speedups', mode: 'write', description: 'Rise of Kingdoms Speedup-Inventar und -Rechner. action=get: Inventar + Summen; set: Anzahlen übernehmen (entries: type universal|building|research|training|healing, duration z. B. "60m", "3h", "1d", count); calc: reicht es für need (z. B. "12d 4h") beim type? Liefert Plan mit möglichst wenig Überschuss und was fehlt.',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['get', 'set', 'calc'] }, entries: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, duration: { type: 'string' }, count: { type: 'integer' } } } }, type: { type: 'string' }, need: { type: 'string' } } },
+    run: ({ action, entries, type, need }) => { const R = s.gaming.rok; if (action === 'set') return R.set(entries); if (action === 'calc') return R.calc(type, need); return R.state(); } });
+  def({ name: 'game_news', mode: 'read', description: 'Offizielle Patch-Notes/News eines Spiels (Steam-News, LoL-Patch) mit gespeicherter Kurzfassung. summarize=true erzeugt für den neuesten Patch eine Kurzfassung, falls noch keine da ist. Für „was hat der letzte Patch geändert“.',
+    schema: { type: 'object', properties: { game: { type: 'string' }, summarize: { type: 'boolean' } } },
+    run: async ({ game, summarize }) => {
+      const N = s.gaming.news; const p = game ? s.gaming.context.resolve(game, { create: false }) : s.gaming.context.state().active?.profile;
+      if (!N.list({ game: p?.id, limit: 1 }).length) await N.check({ notify: false }).catch(() => {});
+      const list = N.list({ game: p?.id || null, limit: 8 });
+      if (summarize) { const top = list.find((x) => x.patch && !x.summary); if (top) top.summary = await N.summarize(top.id).catch((e) => 'Keine Kurzfassung: ' + e.message); }
+      return { game: p?.name || null, items: list.map((x) => ({ title: x.title, date: x.publishedAt, patch: x.patch, url: x.url, summary: x.summary, source: x.source })), note: list.length ? undefined : 'Keine News gefunden – nur Steam-Spiele und LoL haben eine offizielle Quelle.' };
+    } });
   def({ name: 'league_coaching', mode: 'read', description: 'LoL-Coaching außerhalb des Spiels: Wochenbericht (diese/letzte Woche, Zielerreichung, Ziel-Vorschläge aus den Fehlermustern) und Session-/Tilt-Statistik (Winrate nach Niederlagen-Serien, nach Spielanzahl am Stück, nach Tageszeit) sowie offene Debrief-Fragen zum letzten Spiel. Für „wie lief meine Woche“, „sollte ich aufhören“, „wann spiele ich am besten“.',
     schema: { type: 'object', properties: {} },
     run: () => { const L = s.gaming.league; const g = L.deepGames(1)[0]; return { weekly: L.weekly(), session: L.sessionStats(), goals: L.goals(), lastGameDebrief: g ? { matchId: g.matchId, ...(L.debrief(g.matchId) || {}) } : null }; } });

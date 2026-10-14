@@ -248,6 +248,36 @@ const KITS = {
   onearmedcook: { genre: 'casual' },
 };
 
+/**
+ * Was der Screenshot-Hotkey in einem Spiel zusätzlich tun soll (Anweisung an das Chat-Modell, nur Werkzeuge
+ * aus dem festen Satz). Genre-Standard + spielspezifisch. Timer → add_game_timer, Werte → update_game_progress.
+ */
+const TIMER_RULE = 'Sind Restzeiten sichtbar (Bau, Forschung, Training, Zucht, Craft, Abklingzeit …), lege für jede eine Erinnerung mit add_game_timer an (Bezeichnung wie im Spiel, Restzeit exakt abgelesen; unsichere Werte nicht anlegen, sondern nachfragen) und nenne sie kurz.';
+const PROGRESS_RULE = 'Sichtbare Werte meines Spielstands (Level, Stufen, Ränge, Ausrüstung) speichere mit update_game_progress.';
+const GENRE_SCREEN = {
+  survival: TIMER_RULE + ' ' + PROGRESS_RULE,
+  builder: TIMER_RULE + ' ' + PROGRESS_RULE,
+  rpg: PROGRESS_RULE + ' Bei Fragen zu Bossen/Quests: Hilfe in Stufen (erst Hinweis, Lösung nur auf Nachfrage).',
+  shooter: 'Ist ein Scoreboard oder eine Match-Zusammenfassung zu sehen, lies meine Werte (Rang, KDA/Kills, Schaden, Platzierung) exakt ab und speichere Rang/Rating mit update_game_progress.',
+  racing: 'Sind Rundenzeiten oder Ergebnisse sichtbar, lies sie exakt ab und speichere Bestzeiten pro Strecke mit update_game_progress.',
+  sports: PROGRESS_RULE,
+};
+const SCREEN = {
+  rok: TIMER_RULE + ' Rise of Kingdoms: Kommandanten (Sterne, Level, Skills), Gebäudestufen, Forschung und VIP mit update_game_progress speichern. Ist ein Speedup-Inventar zu sehen, die Anzahl je Typ und Dauer mit rok_speedups (set) übernehmen.',
+  minecraft: 'Ist der F3-Bildschirm offen, lies die XYZ-Koordinaten und die Dimension exakt ab und speichere sie mit update_game_progress (Kategorie „Wegpunkte“, Name aus meiner Frage oder „Wegpunkt“).',
+  ark: TIMER_RULE + ' ARK: Ist ein Stat-Fenster einer Kreatur zu sehen, speichere Art, Level und Werte (HP, Ausdauer, Gewicht, Nahkampf, Mutationen) mit update_game_progress; bei Babys/Eiern Reife- und Prägezeiten als Timer.',
+  ark_asa: TIMER_RULE + ' ARK: Ist ein Stat-Fenster einer Kreatur zu sehen, speichere Art, Level und Werte (HP, Ausdauer, Gewicht, Nahkampf, Mutationen) mit update_game_progress; bei Babys/Eiern Reife- und Prägezeiten als Timer.',
+  supremacyww3: TIMER_RULE + ' Supremacy: auch Ankunftszeiten von Einheiten und Bauaufträge als Timer.',
+  palworld: TIMER_RULE + ' Palworld: Pals aus dem Paldeck/der Box mit Level und passiven Skills mit update_game_progress speichern.',
+  eldenring: PROGRESS_RULE + ' Elden Ring: Werte vom Statusbildschirm (Level, Attribute, Waffe) speichern. Hilfe zu Bossen und NPC-Quests in Stufen.',
+};
+function screenHint(p) {
+  if (!p) return '';
+  const kit = KITS[p.id] || {};
+  const genre = kit.genre || p.genre;
+  return SCREEN[p.id] || kit.screen || (genre ? GENRE_SCREEN[genre] || '' : TIMER_RULE + ' ' + PROGRESS_RULE);
+}
+
 /** Profile + Kit + Genre-Standardwerte zusammenführen. */
 function applyKit(p) {
   const kit = KITS[p.id] || {};
@@ -280,4 +310,4 @@ function kitLayout(p) {
   return out;
 }
 
-module.exports = { KITS, GENRE_LAYOUTS, GENRE_QUESTIONS, GENRE_PROGRESS, applyKit, kitLayout };
+module.exports = { KITS, GENRE_LAYOUTS, GENRE_QUESTIONS, GENRE_PROGRESS, applyKit, kitLayout, screenHint, GENRE_SCREEN };

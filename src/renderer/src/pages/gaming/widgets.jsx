@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -1144,11 +1144,118 @@ function RokPlanner({ game }) {
   );
 }
 
+// ---------- Basis-Paket für jedes Spiel ----------
+const fmtM = (m) => (m == null ? '–' : m >= 60 ? `${Math.floor(m / 60)} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim() : `${m} min`);
+
+function Playtime({ game }) {
+  const [st] = useRpc('game.playtime', {}, { events: ['game:data', 'game:running'] });
+  const [log, reloadLog] = useRpc('game.log', { game: game.id, limit: 12 }, { events: ['game:data'], initial: [] });
+  const [recap] = useRpc('game.recap', { game: game.id }, { events: ['game:data'] });
+  const [t, setT] = useState('');
+  const g = st?.games?.find((x) => x.game === game.id);
+  const max = Math.max(30, ...(g?.daily || [0]));
+  const add = async () => { if (!t.trim()) return; await guard(() => rpc('game.addLog', { game: game.id, text: t })); setT(''); reloadLog(); };
+  const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  return (
+    <Panel icon={Timer} title="Spielzeit & Session-Log" sub="Aus der Spielerkennung – auch ohne Steam, nur lokal">
+      {!g ? <div class="small muted">Noch keine Session erfasst. Sobald {game.name} läuft, zählt JARVIS mit.</div> : <>
+        <div class="row wrap gap-s"><span class="chip static">Heute {fmtM(g.today)}</span><span class="chip static">Woche {fmtM(g.week)}</span><span class="chip static" title="letzte Woche">Vorwoche {fmtM(g.lastWeek)}</span><span class="chip static" title="30 Tage">{g.sessions} Sessions · Ø {fmtM(g.avgSession)}</span>{g.running && <span class="chip static" style={{ color: 'var(--green)' }}>läuft</span>}</div>
+        <div class="row mt" style={{ alignItems: 'flex-end', gap: 3, height: 54 }}>
+          {g.daily.map((m, i) => { const d = new Date(Date.now() - (13 - i) * 86400000); return <div class="col" style={{ flex: 1, alignItems: 'center', gap: 2 }} title={`${d.toLocaleDateString('de-DE')}: ${fmtM(m)}`}><div style={{ width: '100%', height: Math.max(2, (m / max) * 40), background: m ? 'var(--cyan)' : 'var(--line)', borderRadius: 2, opacity: i === 13 ? 1 : 0.7 }} /><span class="tiny muted" style={{ fontSize: 9 }}>{days[d.getDay()]}</span></div>; })}
+        </div>
+        <div class="tiny muted">Längste Session (30 Tage): {fmtM(g.longest)} · alle Spiele diese Woche: {fmtM(st.total.week)}</div>
+      </>}
+      {recap && (recap.days == null || recap.days >= 3) && (recap.notes?.length || recap.progress?.length) ? <div class="notice small mt"><b>Wo war ich?</b>{recap.days != null ? ` (zuletzt vor ${recap.days} Tagen)` : ''}{recap.notes?.length ? <div>Notizen: {recap.notes.join(' · ')}</div> : null}{recap.progress?.length ? <div>Stand: {recap.progress.join(' · ')}</div> : null}{recap.timers?.length ? <div>Timer: {recap.timers.join(', ')}</div> : null}</div> : null}
+      <div class="col mt" style={{ gap: 3 }}>
+        <b class="small">Session-Log</b>
+        {!log.length && <div class="tiny muted">„Jarvis, merk dir das: …“ – landet hier mit Uhrzeit und Session-Minute.</div>}
+        {log.map((n) => <div class="small"><span class="tiny muted">{fmtDateTime(n.at)}{n.minute != null ? ` · Min. ${n.minute}` : ''}</span> {n.text}</div>)}
+        <div class="row gap-s"><input class="inp grow" placeholder="Notiz für das Session-Log" value={t} onInput={(e) => setT(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn xs" onClick={add}><Plus size={12} /></button></div>
+      </div>
+    </Panel>
+  );
+}
+
+function News({ game }) {
+  const [list, reload] = useRpc('news.list', { game: game.id, limit: 8 }, { events: ['game:data'], initial: [] });
+  const [busy, setBusy] = useState(null);
+  const [open, setOpen] = useState(0);
+  const sum = async (id) => { setBusy(id); await guard(() => rpc('news.summarize', { id })); setBusy(null); reload(); };
+  const check = async () => { setBusy('check'); await guard(() => rpc('news.check')); setBusy(null); reload(); };
+  return (
+    <Panel icon={Bell} title="Patch-Notes" sub="Offizielle News – Kurzfassung per KI, nur auf Wunsch oder für Spiele, die du gerade spielst" right={<button class="btn xs ghost" title="Jetzt prüfen" onClick={check}>{busy === 'check' ? <Spinner size={12} /> : <RefreshCw size={13} />}</button>}>
+      {!list.length && <Empty>Noch keine News. JARVIS schaut alle 6 Stunden nach (für Spiele der letzten 30 Tage und Favoriten).</Empty>}
+      {list.map((n, i) => (
+        <div class="mb">
+          <div class="row small" style={{ cursor: 'pointer' }} onClick={() => setOpen(open === i ? -1 : i)}>{n.patch && <span class="chip static" style={{ fontSize: 10 }}>Patch</span>}<b class="grow">{n.title}</b><span class="tiny muted">{ago(n.publishedAt)}</span></div>
+          {open === i && <div class="col" style={{ gap: 4, marginTop: 4 }}>
+            {n.summary ? <div class="md small" dangerouslySetInnerHTML={{ __html: renderMarkdown(n.summary) }} /> : n.patch && <button class="btn xs" disabled={busy === n.id} onClick={() => sum(n.id)}>{busy === n.id ? <Spinner size={12} /> : <Sparkles size={12} />}Kurzfassung</button>}
+            <div class="tiny muted">{n.source}{n.url ? <> · <a href={n.url} target="_blank" rel="noreferrer">Original</a></> : null}</div>
+          </div>}
+        </div>
+      ))}
+    </Panel>
+  );
+}
+
+function Servers({ game }) {
+  const [list, reload] = useRpc('game.servers', { game: game.id }, { initial: [] });
+  const [addr, setAddr] = useState(''); const [name, setName] = useState('');
+  useEffect(() => { const t = setInterval(reload, 120000); return () => clearInterval(t); }, []);
+  const add = async () => { if (!addr.trim()) return; await guard(() => rpc('game.addServer', { address: addr.trim(), name: name.trim() || undefined, game: game.id, kind: game.id === 'minecraft' ? 'minecraft' : 'steam' }), 'Server gespeichert'); setAddr(''); setName(''); reload(); };
+  return (
+    <Panel icon={Radio} title="Server-Status" sub={game.id === 'minecraft' ? 'Minecraft-Statusabfrage' : 'Steam-Serverabfrage (Query-Port, oft Spielport + 1)'} right={<button class="btn xs ghost" onClick={reload}><RefreshCw size={13} /></button>}>
+      {!list.length && <Empty>Noch keine Server. Adresse als host:port eintragen.</Empty>}
+      {list.map((x) => <div class="row small mb"><span style={{ width: 8, height: 8, borderRadius: 4, background: x.online ? 'var(--green)' : 'var(--red, #e5484d)' }} /><span class="grow"><b>{x.name || x.address}</b>{x.online ? <span class="muted"> · {x.players}/{x.maxPlayers} Spieler{x.map ? ' · ' + x.map : ''}{x.version ? ' · ' + x.version : ''} · {x.ping} ms</span> : <span class="muted"> · offline ({x.error})</span>}</span><button class="btn xs ghost" title="Entfernen" onClick={() => guard(() => rpc('game.removeServer', { address: x.address })).then(reload)}><X size={11} /></button></div>)}
+      <div class="row gap-s mt"><input class="inp grow" placeholder="host:port" value={addr} onInput={(e) => setAddr(e.currentTarget.value)} /><input class="inp" style={{ width: 130 }} placeholder="Name (optional)" value={name} onInput={(e) => setName(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn xs" onClick={add}><Plus size={12} /></button></div>
+    </Panel>
+  );
+}
+
+function Deals() {
+  const [st, reload] = useRpc('deals.state', {}, { events: ['game:data'] });
+  const [busy, setBusy] = useState(false);
+  const check = async () => { setBusy(true); await guard(() => rpc('deals.check')); setBusy(false); reload(); };
+  const sale = (st?.items || []).filter((x) => x.discount > 0);
+  return (
+    <Panel icon={TrendingDown} title="Wunschliste im Angebot" sub={st?.at ? `Steam · Stand ${ago(st.at)}` : 'Steam-Wunschliste (muss öffentlich sein)'} right={<button class="btn xs ghost" onClick={check}>{busy ? <Spinner size={12} /> : <RefreshCw size={13} />}</button>}>
+      {!st && <Empty>Noch nicht geprüft. JARVIS schaut zweimal am Tag nach und meldet Rabatte ab der eingestellten Höhe.</Empty>}
+      {st && !sale.length && <div class="small muted">Gerade nichts von deinen {st.items.length} Wunschlisten-Spielen im Angebot.</div>}
+      {sale.slice(0, 8).map((d) => <div class="row small mb"><b class="grow"><a href={d.url} target="_blank" rel="noreferrer">{d.name}</a></b><span class="chip static" style={{ color: 'var(--green)' }}>−{d.discount} %</span><span>{d.final.toFixed(2).replace('.', ',')} €</span></div>)}
+    </Panel>
+  );
+}
+
+const SPEED_TYPES = [['building', 'Bau'], ['research', 'Forschung'], ['training', 'Training'], ['healing', 'Heilung']];
+function RokSpeedups() {
+  const [st, reload] = useRpc('rok.speedups', {}, { events: ['game:data'] });
+  const [type, setType] = useState('building'); const [need, setNeed] = useState(''); const [res, setRes] = useState(null);
+  const [edit, setEdit] = useState(false); const [inv, setInv] = useState(null);
+  const calc = async () => { if (!need.trim()) return; setRes(await guard(() => rpc('rok.calc', { type, need }))); };
+  const fmt = (m) => (m >= 1440 ? `${Math.round(m / 144) / 10} T` : m >= 60 ? `${Math.round(m / 6) / 10} h` : `${m} min`);
+  const save = async () => { const entries = []; for (const [t, row] of Object.entries(inv)) for (const [d, n] of Object.entries(row)) entries.push({ type: t, duration: d + 'm', count: Number(n) || 0 }); await guard(() => rpc('rok.setSpeedups', { entries }), 'Inventar gespeichert'); setEdit(false); reload(); };
+  if (!st) return null;
+  return (
+    <Panel icon={Timer} title="Speedup-Rechner" sub="Inventar per Screenshot-Hotkey („lies meine Speedups“) oder hier pflegen">
+      <div class="row wrap gap-s">{Object.entries(st.types).map(([k, l]) => <span class="chip static">{l}: {st.totalsText[k]}</span>)}</div>
+      <div class="row gap-s mt"><Select style={{ width: 130 }} value={type} onChange={setType} options={SPEED_TYPES.map(([v, label]) => ({ value: v, label }))} /><input class="inp grow" placeholder="Benötigt, z. B. 12d 4h 30m" value={need} onInput={(e) => setNeed(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && calc()} /><button class="btn xs" onClick={calc}>Reicht es?</button></div>
+      {res && <div class="small mt"><b style={{ color: res.enough ? 'var(--green)' : 'var(--orange)' }}>{res.enough ? 'Reicht' : `Es fehlen ${res.missingText}`}</b> · benötigt {res.needText}, vorhanden ({res.typeLabel} + Universal) {res.haveText}{res.plan.length ? <div class="muted">Plan: {res.plan.map((x) => x.label).join(' · ')}{res.overshoot ? ` (Überschuss ${fmt(res.overshoot)})` : ''}</div> : null}</div>}
+      <button class="btn xs ghost mt" onClick={() => { setInv(JSON.parse(JSON.stringify(st.inventory))); setEdit(!edit); }}>{edit ? 'Schließen' : 'Inventar bearbeiten'}</button>
+      {edit && inv && <div class="mt" style={{ overflowX: 'auto' }}>
+        <table class="small" style={{ borderCollapse: 'collapse' }}><thead><tr><th />{st.durations.map((d) => <th class="tiny muted" style={{ padding: '0 3px' }}>{fmt(d)}</th>)}</tr></thead>
+          <tbody>{Object.entries(st.types).map(([t, l]) => <tr><td class="tiny" style={{ paddingRight: 6 }}>{l}</td>{st.durations.map((d) => <td><input class="inp" style={{ width: 44, padding: '2px 4px' }} type="number" min="0" value={inv[t][d]} onInput={(e) => setInv({ ...inv, [t]: { ...inv[t], [d]: e.currentTarget.value } })} /></td>)}</tr>)}</tbody></table>
+        <button class="btn xs mt" onClick={save}><Check size={12} />Speichern</button>
+      </div>}
+    </Panel>
+  );
+}
+
 export const WIDGETS = {
   map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-companion': TarkovCompanion, 'tarkov-needed': TarkovNeeded, 'tarkov-hideout': TarkovHideout, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
+  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups,
 };
 export { nextScheduled };

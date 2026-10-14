@@ -576,7 +576,9 @@ test('Spiel-Kits: jedes gespielte Steam-Spiel hat passende Fragen, Layout aus fe
     const layout = core.gaming.layout(id);
     assert.ok(layout.widgets.every((w) => WIDGET_TYPES.includes(w.type)), id);
     assert.equal(layout.widgets[0].type, 'ask', id);
-    assert.deepEqual(kitLayout(p).map((w) => w.type), layout.widgets.map((w) => w.type));
+    const extra = require('../src/main/services/gaming/index').extrasFor(p);
+    assert.deepEqual(kitLayout(p).map((w) => w.type), layout.widgets.map((w) => w.type).filter((t) => !extra.includes(t) || kitLayout(p).some((w) => w.type === t)));
+    for (const t of extra) assert.ok(layout.widgets.some((w) => w.type === t), 'Basis-Widget fehlt: ' + t);
   }
   // Checklisten-Vorlage, bis der Nutzer etwas ändert
   const cl = core.gaming.checklist('eldenring', 'Hauptbosse');
@@ -1023,7 +1025,7 @@ test('Spielseite für unbekanntes Spiel: Recherche → Bausteine aus dem Baukast
     assert.equal(d.progressCats[0][0], 'bosse');
     // Seite nutzt den Entwurf; Profil gilt als gestaltet → kein zweiter automatischer Lauf
     const layout = core.gaming.layout(p.id);
-    assert.deepEqual(layout.widgets.map((w) => w.type), types);
+    { const extra = require('../src/main/services/gaming/index').extrasFor(layout.game); assert.deepEqual(layout.widgets.map((w) => w.type).filter((t) => !extra.includes(t) || types.includes(t)), types); }
     assert.equal(layout.game.designed, true); assert.equal(layout.game.wiki.label, 'Valheim Wiki');
     assert.deepEqual(core.gaming.checklist(p.id, 'Bosse').items.map((i) => i.text), ['Eikthyr', 'The Elder', 'Bonemass']);
     assert.equal(core.gaming.designer.needsDesign(core.gaming.context.profile(p.id)), false);

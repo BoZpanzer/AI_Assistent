@@ -127,6 +127,10 @@ class Scheduler {
     }, { initialDelayMs: 45_000 });
     // Nach einer Tarkov-Session sofort abgleichen
     s.bus.on('game:running', ({ stopped = [] }) => { if (stopped.includes('eft')) setTimeout(() => this.runNow('tarkovtracker'), 30_000); });
+    // Patch-Notes deiner Spiele (Steam-News, LoL-Patch) alle 6 h – nie während eines Spiels
+    this.add('game-news', 6 * 3600_000, async () => { await s.gaming.news.check(); }, { heavy: true, initialDelayMs: 4 * 60_000 });
+    // Steam-Wunschliste: Angebote zweimal am Tag prüfen
+    this.add('wishlist', 12 * 3600_000, async () => { if (s.gaming.steam && (await s.gaming.steam.root?.())) await s.gaming.deals.check(); }, { heavy: true, initialDelayMs: 6 * 60_000 });
     this.add('lol-live', 5_000, async () => {
       const g = s.settings.get('gaming');
       if (!g.lolLiveCoach && g.lolObjectives === false) return;

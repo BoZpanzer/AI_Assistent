@@ -2,6 +2,19 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.25.0 – Basis-Paket für alle Spiele + Rise of Kingdoms
+
+- **Spielzeit für jedes Spiel:** auch für LoL, Tarkov, RoK und andere Spiele ohne Steam, aus der Spielerkennung. Pro Spiel heute, diese Woche, Vorwoche, Sessions, längste Session und 14-Tage-Verlauf. Absturzsicher: Endet JARVIS unerwartet, zählt die Session bis zum letzten Lebenszeichen.
+- **Pausen-Erinnerung** nach X Minuten am Stück (Einstellungen, standardmäßig aus).
+- **Session-Log:** „Jarvis, merk dir das: …“ speichert die Notiz mit Uhrzeit und Session-Minute beim jeweiligen Spiel.
+- **„Wo war ich?“:** Startest du ein Spiel nach mindestens 3 Tagen Pause, fasst JARVIS deine letzten Notizen, deinen Spielstand und laufende Timer zusammen, ohne KI.
+- **Patch-Notes-Wächter:** offizielle Steam-News deiner Spiele (zuletzt gespielt, Favoriten) und neue LoL-Patches. Bei neuen Patch-Notes kommt eine Meldung mit KI-Kurzfassung, die markiert, was dich betrifft. Die Kurzfassung gibt es nur für Spiele der letzten 14 Tage, höchstens 6 pro Tag, sonst per Knopf.
+- **Screenshot-Hotkey mit Spielwissen:** In Aufbau- und Survival-Spielen werden abgelesene Restzeiten automatisch zu Erinnerungen und Werte landen im Spielstand. Minecraft übernimmt Koordinaten vom F3-Bildschirm, ARK Kreaturen-Werte, Shooter Rang und Scoreboard.
+- **Server-Status** deiner Lieblingsserver: Steam-Server (Rust, ARK, CS2, Arma …) und Minecraft mit Spielerzahl, Karte, Version und Ping.
+- **Steam-Wunschliste:** Meldung, wenn ein Spiel ab dem eingestellten Rabatt im Angebot ist (Wunschliste muss öffentlich sein).
+- **Rise of Kingdoms – Speedup-Rechner:** Inventar per Screenshot oder Tabelle pflegen, dann zeigt „Reicht es für 12 T 4 h Bau?“ einen Plan mit typgebundenen Speedups zuerst, möglichst wenig Überschuss und was fehlt. Bau-, Forschungs- und Trainings-Timer per Screenshot werden zu Erinnerungen.
+- Neue Widgets kommen automatisch auf jede Spielseite: auf eigene Layouts einmalig, danach entscheidest du.
+
 ## 3.24.0 – LoL-Coach: Matchup-Karte, Replay-Sprünge, Spielanalyse, Wochenbericht
 
 - **Matchup-Karte in der Championauswahl:** wer auf Level 1–3, 6, im Mid- und Lategame stärker ist, Win-Condition, was du vermeiden solltest, gefährliche Fähigkeiten und ein Build-Hinweis. Das ist KI-Champion-Wissen, das einmal pro Matchup und Patch erzeugt und dann gespeichert wird. Dazu kommen deine eigene Bilanz gegen den Champion (CS/Gold-Differenz, frühe Tode, Jungler-Beteiligung, Level 6) und deine eigenen Notizen. Der Lane-Gegner wird automatisch gewählt, wenn er eindeutig ist (Bot/Support), sonst tippst du auf einen Gegner. Ein Matchup lässt sich auch jederzeit von Hand nachschlagen.

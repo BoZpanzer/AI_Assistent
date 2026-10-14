@@ -98,9 +98,9 @@ test('Migration einer bestehenden 3.0.0-Datenbank (Schema v1 → v2) – Daten b
   raw.exec("INSERT INTO tasks(id,title,status,created_at,updated_at) VALUES('t1','Alte Aufgabe','open','2026-10-12','2026-10-12')");
   raw.close();
   const db = new Database(path.join(dir, 'jarvis.sqlite3'), { backupDir: path.join(dir, 'backups') });
-  assert.equal(db.version, 4);
+  assert.equal(db.version, 5);
   assert.equal(db.get('SELECT title FROM tasks').title, 'Alte Aufgabe');
-  assert.ok(fs.readdirSync(path.join(dir, 'backups')).some((f) => f.includes('vor-migration-v1-zu-v4')));
+  assert.ok(fs.readdirSync(path.join(dir, 'backups')).some((f) => f.includes('vor-migration-v1-zu-v5')));
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -211,7 +211,7 @@ class Gemini {
   }
 
   async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low' }) {
-    if (['lol', 'study'].includes(feature) && this.guard?.braking()) throw new Error('Gemini-Budget fast aufgebraucht – Hintergrund-KI pausiert (Kostenbremse).');
+    if (['lol', 'study', 'news'].includes(feature) && this.guard?.braking()) throw new Error('Gemini-Budget fast aufgebraucht – Hintergrund-KI pausiert (Kostenbremse).');
     const base = { systemInstruction: system, temperature: temperature ?? 0.3 };
     if (json) { base.responseMimeType = 'application/json'; if (schema) base.responseSchema = schema; }
     if (tools) base.tools = tools;

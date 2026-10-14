@@ -45,13 +45,25 @@ const WIDGETS = {
   'lol-review': { title: 'Nachbesprechung', params: {} },
   'lol-mistakes': { title: 'Fehleranalyse', params: {} },
   'lol-game': { title: 'Spielanalyse', params: { matchId: { type: 'string', maxLength: 40 } } },
+  playtime: { title: 'Spielzeit & Session-Log', params: {} },
+  news: { title: 'Patch-Notes', params: {} },
+  servers: { title: 'Server-Status', params: {} },
+  deals: { title: 'Wunschliste im Angebot', params: {} },
+  'rok-speedups': { title: 'Speedup-Rechner', params: {} },
   'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
   ask: { title: 'Frag JARVIS', params: {} },
   links: { title: 'Tools & Links', params: {} },
 };
 
-const ADDED = { league: ['lol-game', 'lol-coach'] };
+/** Neue Widgets je Spiel – kommen automatisch dazu (eigene Layouts: einmalig, danach entscheidest du). */
+const SERVER_GAMES = new Set(['minecraft', 'arma3', 'rust', 'ark', 'ark_asa', 'palworld', 'cs2', 'sandstorm', 'pixark', 'hytale', 'terraria', 'theforest']);
+function extrasFor(p) {
+  if (p.integration === 'league') return ['lol-game', 'lol-coach', 'playtime', 'news'];
+  if (p.integration === 'tarkov') return ['playtime'];
+  if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
+  return ['playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
+}
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
   league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-game' }, { type: 'lol-mistakes' }, { type: 'lol-coach' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
@@ -85,16 +97,22 @@ class Gaming {
     if (!p) return null;
     const base = LAYOUTS[p.integration] || LAYOUTS.generic;
     let custom = safeJson(this.context.getState('layout:' + gid), null);
+    const extras = extrasFor(p);
     // Neue Widgets einmalig auch in eigene Layouts aufnehmen (danach entscheidet der Nutzer selbst)
-    if (custom && ADDED[p.integration]) {
+    if (custom) {
       const seen = safeJson(this.context.getState('layout:added:' + gid), []) || [];
-      const add = ADDED[p.integration].filter((t) => !seen.includes(t));
+      const add = extras.filter((t) => !seen.includes(t));
       if (add.length) {
         custom = [...custom, ...add.filter((t) => !custom.some((w) => w.type === t)).map((type) => ({ type }))];
         this.context.setState('layout:' + gid, custom); this.context.setState('layout:added:' + gid, [...seen, ...add]);
       }
     }
     let widgets = (custom || (p.designWidgets && p.integration === 'generic' ? p.designWidgets : p.kit && p.integration === 'generic' ? kitLayout(p) : base)).map((w) => ({ ...w, params: w.params || {} }));
+    if (!custom) {
+      const missing = extras.filter((t) => !widgets.some((w) => w.type === t)).map((type) => ({ type, params: {} }));
+      const at = widgets.findIndex((w) => w.type === 'other-games');
+      if (missing.length) widgets = at >= 0 ? [...widgets.slice(0, at), ...missing, ...widgets.slice(at)] : [...widgets, ...missing];
+    }
     if (p.integration === 'generic' && !p.wiki) widgets = widgets.filter((w) => w.type !== 'wiki');
     const focus = this.focus && this.focus.game === gid ? this.focus : null;
     return { game: p, widgets, focus, widgetTitles: Object.fromEntries(Object.entries(WIDGETS).map(([k, v]) => [k, v.title])) };
@@ -478,4 +496,4 @@ class Gaming {
   }
 }
 
-module.exports = { Gaming, WIDGETS, LAYOUTS, WIDGET_TYPES: Object.keys(WIDGETS) };
+module.exports = { Gaming, WIDGETS, LAYOUTS, WIDGET_TYPES: Object.keys(WIDGETS), extrasFor };

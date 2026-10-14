@@ -285,6 +285,30 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'lol.reviews': ({ limit } = {}) => s.gaming.lolflow.reviews(limit || 10),
     'lol.reviewNow': () => s.gaming.lolflow.review({ force: true }),
     'lol.champselect': () => s.gaming.lolflow.state(),
+    'game.playtime': ({ game } = {}) => s.gaming.playtime.stats({ game: game || null }),
+    'game.log': ({ game, limit } = {}) => s.gaming.playtime.log(game, limit || 30),
+    'game.addLog': ({ game, text }) => s.gaming.playtime.addNote(game, text),
+    'game.recap': ({ game }) => s.gaming.playtime.recap(game, { minDays: 0 }),
+    'game.servers': async ({ game } = {}) => {
+      const { query } = require('./services/gaming/servers');
+      const list = (s.settings.get('gaming').servers || []).filter((x) => !game || !x.game || x.game === game);
+      return Promise.all(list.map((x) => query(x)));
+    },
+    'game.addServer': ({ address, game, name, kind }) => {
+      const g = s.settings.get('gaming'); const list = (g.servers || []).filter((x) => x.address !== address);
+      list.push({ address: String(address).trim(), ...(game ? { game } : {}), ...(name ? { name: String(name).slice(0, 80) } : {}), ...(kind ? { kind } : {}) });
+      s.settings.update({ gaming: { servers: list.slice(-30) } }); return true;
+    },
+    'game.removeServer': ({ address }) => { const g = s.settings.get('gaming'); s.settings.update({ gaming: { servers: (g.servers || []).filter((x) => x.address !== address) } }); return true; },
+    'deals.state': () => s.gaming.deals.state(),
+    'deals.check': () => s.gaming.deals.check({ notify: false }),
+    'rok.speedups': () => s.gaming.rok.state(),
+    'rok.setSpeedups': ({ entries }) => s.gaming.rok.set(entries),
+    'rok.calc': ({ type, need }) => s.gaming.rok.calc(type, need),
+    'news.list': ({ game, limit } = {}) => s.gaming.news.list({ game: game || null, limit: limit || 20 }),
+    'news.summarize': ({ id }) => s.gaming.news.summarize(id),
+    'news.check': () => s.gaming.news.check(),
+    'news.seen': ({ game }) => { s.gaming.news.markSeen(game); return true; },
     'lol.answerDebrief': ({ matchId, index, text }) => s.gaming.league.answerDebrief(matchId, index, text),
     'lol.session': () => s.gaming.league.sessionStats(),
     'lol.weekly': () => s.gaming.league.weekly(),

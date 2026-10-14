@@ -195,7 +195,17 @@ app.whenReady().then(async () => {
     await shot('62-gaming-league');
     await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Wochenbericht & Session')); p && p.scrollIntoView(); })()`); await sleep(300);
     await shot('62b-gaming-league-coach');
-    core.gaming.context.setActive('rok', 'manual'); await sleep(600); await shot('63-gaming-rok');
+    // Basis-Paket: Spielzeit + Session-Log, RoK-Speedup-Rechner
+    const ago = (ms) => new Date(Date.now() - ms).toISOString();
+    for (let d = 0; d < 6; d++) core.db.run("INSERT INTO game_sessions(id,game,start_at,end_at,last_seen) VALUES(?,?,?,?,?)", 'e2e-rok' + d, 'rok', ago(d * 86400000 + (40 + d * 20) * 60000), ago(d * 86400000), ago(d * 86400000));
+    core.gaming.playtime.addNote('rok', 'MGE startet Montag – Speedups sparen');
+    core.gaming.rok.set([{ type: 'building', duration: '60m', count: 42 }, { type: 'research', duration: '3h', count: 9 }, { type: 'universal', duration: '24h', count: 3 }, { type: 'universal', duration: '5m', count: 120 }]);
+    core.gaming.context.setActive('rok', 'manual'); await sleep(600);
+    await waitFor(() => js(`document.body.textContent.includes('Speedup-Rechner') && document.body.textContent.includes('Spielzeit & Session-Log') && document.body.textContent.includes('MGE startet')`), 8000);
+    await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Speedup-Rechner')); p && p.scrollIntoView(); const i = p && p.querySelector('input.inp.grow'); if (i) { i.value = '2d 6h'; i.dispatchEvent(new Event('input', { bubbles: true })); } })()`); await sleep(150);
+    await js(`[...document.querySelectorAll('.panel button')].find((b) => b.textContent.includes('Reicht es?')).click()`); await sleep(400);
+    if (!(await js(`document.body.textContent.includes('Plan:')`))) throw new Error('Speedup-Plan fehlt');
+    await shot('63-gaming-rok');
     core.gaming.context.setActive('ark', 'manual'); await sleep(600); await shot('64-gaming-ark');
   });
   await step('Spiel-Kits: Rust mit Fragen, Force-Wipe-Termin, Checkliste; Elden Ring mit Bossliste', async () => {
@@ -204,6 +214,18 @@ app.whenReady().then(async () => {
     core.gaming.context.setActive('rust', 'manual'); await sleep(800);
     await waitFor(() => js(`document.body.textContent.includes('Frag JARVIS zu Rust') && document.body.textContent.includes('Monatlicher Force-Wipe') && document.body.textContent.includes('Nach dem Wipe')`), 8000);
     if (!(await js(`document.body.textContent.includes('277,3 h gespielt')`))) throw new Error('Steam-Spielzeit fehlt');
+    // Basis-Paket auf der Rust-Seite: Patch-Notes mit Kurzfassung, Server-Status (lokaler Testserver), Wunschliste
+    core.db.run("INSERT OR REPLACE INTO game_news(id,game,title,url,published_at,is_patch,body,summary,source,seen,created_at) VALUES('e2e-n1','rust','Oktober-Update: Kompaktbogen','https://store.steampowered.com/news/app/252490',?,1,'x','- Neuer Kompaktbogen\n- Raketen kosten mehr Schwefel (betrifft dich)','Steam-News (offiziell)',0,?)", new Date().toISOString(), new Date().toISOString());
+    core.gaming.cache.set('steam:wishlist', { at: new Date().toISOString(), items: [{ appid: 1086940, name: "Baldur's Gate 3", final: 29.99, initial: 59.99, discount: 50, url: 'https://store.steampowered.com/app/1086940/' }] }, 'Steam Store', 86400000);
+    const udp = require('node:dgram').createSocket('udp4'); await new Promise((r) => udp.bind(0, '127.0.0.1', r));
+    udp.on('message', (m, ri) => { const str = (x) => Buffer.from(x + '\0'); udp.send(Buffer.concat([Buffer.from([0xff, 0xff, 0xff, 0xff, 0x49, 17]), str('[EU] Rust Main'), str('Procedural Map'), str('rust'), str('Rust'), Buffer.from([0x84, 0x03, 87, 200, 0, 0x64, 0x77, 0, 1]), str('2588')]), ri.port, ri.address); });
+    core.settings.update({ gaming: { servers: [{ address: '127.0.0.1:' + udp.address().port, game: 'rust', name: 'Main', kind: 'steam' }] } });
+    await nav('dashboard'); await nav('gaming'); core.gaming.context.setActive('rust', 'manual'); await sleep(800);
+    await waitFor(() => js(`document.body.textContent.includes('Patch-Notes') && document.body.textContent.includes('87/200 Spieler') && document.body.textContent.includes('Wunschliste im Angebot')`), 8000);
+    await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Patch-Notes')); p && p.scrollIntoView(); })()`); await sleep(300);
+    await shot('66b-gaming-rust-basis');
+    udp.close();
+    await js(`document.querySelector('.panel')?.scrollIntoView()`); await sleep(200);
     await shot('66-gaming-rust-kit');
     // Frage mit „…“ landet im Eingabefeld statt sofort gesendet zu werden
     await js(`[...document.querySelectorAll('.ask-chip')].find(c=>c.textContent.includes('…')).click()`); await sleep(200);
