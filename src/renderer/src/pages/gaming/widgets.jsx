@@ -753,7 +753,7 @@ function LolMistakes() {
           {A.jungleCsAt10 != null && <span class="chip static" title="Eigene Jungle-Monster (CS) bis Min. 10, Ø in deinen Jungle-Spielen">Jungle-CS@10 Ø {A.jungleCsAt10}</span>}
         </div>
         {p.deathPoints?.length > 0 && <details class="mb"><summary class="small" style={{ cursor: 'pointer' }}>Todes-Karte ({p.deathPoints.length} Tode)</summary>
-          <div class="mt"><RiftMap size={280}>{p.deathPoints.map((x) => <circle cx={RX(x.x)} cy={RY(x.y)} r="3.2" fill={x.min < 14 ? '#ff5a5a' : '#ffcc33'} opacity="0.35" />)}</RiftMap>
+          <div class="mt"><RiftMap size={300}><g filter="url(#rift-heat)">{p.deathPoints.map((x) => <circle cx={RX(x.x)} cy={RY(x.y)} r="3.6" fill={x.min < 14 ? '#ff4d4d' : '#ffb020'} opacity="0.45" />)}</g>{p.deathPoints.map((x) => <circle cx={RX(x.x)} cy={RY(x.y)} r="0.7" fill={x.min < 14 ? '#ff9a9a' : '#ffd27a'} />)}</RiftMap>
           <div class="tiny muted">Rot = vor Min. 14, gelb = später. Dichte Flecken = dort stirbst du oft.</div></div></details>}
         <div class="col" style={{ gap: 8 }}>
           {!p.findings.length && <div class="small muted">Keine auffälligen Fehlermuster – solide.</div>}
@@ -770,16 +770,64 @@ function LolMistakes() {
 // ---------- Summoner's Rift (Data-Dragon-Minimap), Koordinaten 0–14870 / 0–14980 ----------
 const RX = (x) => (x / 14870) * 100; const RY = (y) => 100 - (y / 14980) * 100;
 function useMapUrl() { const [u] = useRpc('lol.mapUrl', {}, { initial: null }); return u; }
-function RiftMap({ children, size = 300 }) {
+/** Summoner's Rift als Vektorkarte (Lanes, Fluss, Basen, Drache/Baron) – optional mit der echten Minimap darunter. */
+function RiftMap({ children, size = 300, real = false }) {
   const url = useMapUrl();
+  const lane = 'M9,86 L8,14 Q8,8 14,8 L86,8 M14,92 L86,92 Q92,92 92,86 L92,14 M13,87 L87,13';
   return (
-    <svg viewBox="0 0 100 100" style={{ width: '100%', maxWidth: size, aspectRatio: '1', borderRadius: 8, background: '#0b1a17', display: 'block' }}>
-      {url && <image href={url} x="0" y="0" width="100" height="100" opacity="0.75" />}
+    <svg viewBox="0 0 100 100" style={{ width: '100%', maxWidth: size, aspectRatio: '1', display: 'block' }}>
+      <defs>
+        <radialGradient id="rift-bg" cx="50%" cy="50%" r="70%"><stop offset="0" stop-color="#11241f" /><stop offset="1" stop-color="#070f0d" /></radialGradient>
+        <filter id="rift-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.9" /></filter>
+        <filter id="rift-heat" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2" /></filter>
+      </defs>
+      <rect x="0" y="0" width="100" height="100" rx="6" fill="url(#rift-bg)" />
+      {real && url ? <image href={url} x="0" y="0" width="100" height="100" opacity="0.55" preserveAspectRatio="none" /> : <g>
+        <path d="M0,6 L6,0 L100,0 L100,94 Z" fill="#ff5a5a" opacity="0.035" />
+        <path d="M0,6 L0,100 L94,100 Z" fill="#38bdf8" opacity="0.045" />
+        <path d="M10,10 C30,26 40,40 50,50 S72,76 90,90" fill="none" stroke="#1d5a74" stroke-width="5" stroke-linecap="round" opacity="0.55" />
+        <path d={lane} fill="none" stroke="#2c4a44" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+        <path d={lane} fill="none" stroke="#4d7a70" stroke-width="0.35" stroke-dasharray="1.2 1.4" opacity="0.7" />
+        <circle cx="66.3" cy="70.5" r="3.2" fill="none" stroke="#c8aa6e" stroke-width="0.5" opacity="0.7" /><text x="66.3" y="76.6" font-size="2.4" text-anchor="middle" fill="#c8aa6e" opacity="0.8">Drache</text>
+        <circle cx="33.7" cy="30.1" r="3.2" fill="none" stroke="#b18cff" stroke-width="0.5" opacity="0.7" /><text x="33.7" y="26.2" font-size="2.4" text-anchor="middle" fill="#b18cff" opacity="0.8">Baron</text>
+        <text x="4" y="50" font-size="2.6" fill="#6f938a" transform="rotate(-90 4 50)" text-anchor="middle">TOP</text>
+        <text x="96.5" y="50" font-size="2.6" fill="#6f938a" transform="rotate(90 96.5 50)" text-anchor="middle">BOT</text>
+        <text x="53" y="47" font-size="2.6" fill="#6f938a" transform="rotate(-45 53 47)">MID</text>
+      </g>}
+      <circle cx="9" cy="91" r="6.5" fill="#38bdf8" opacity="0.16" /><circle cx="9" cy="91" r="6.5" fill="none" stroke="#38bdf8" stroke-width="0.6" opacity="0.8" />
+      <circle cx="91" cy="9" r="6.5" fill="#ff5a5a" opacity="0.14" /><circle cx="91" cy="9" r="6.5" fill="none" stroke="#ff5a5a" stroke-width="0.6" opacity="0.8" />
       {children}
     </svg>
   );
 }
-const PATH_COL = { me: '#2fd5ff', enemyJungler: '#ff5a5a', ownJungler: '#7cf29a' };
+
+/** Weicher Pfad durch die Minutenpunkte (Catmull-Rom → Bezier). */
+function smoothPath(pts) {
+  if (pts.length < 2) return '';
+  let d = `M${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i]; const p1 = pts[i]; const p2 = pts[i + 1]; const p3 = pts[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6]; const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${c1[0].toFixed(2)},${c1[1].toFixed(2)} ${c2[0].toFixed(2)},${c2[1].toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+  }
+  return d;
+}
+function RiftPath({ points, color, label }) {
+  const pts = points.map(([m, x, y]) => [RX(x), RY(y), m]);
+  if (!pts.length) return null;
+  const last = pts[pts.length - 1];
+  return (
+    <g>
+      <path d={smoothPath(pts)} fill="none" stroke={color} stroke-width="2.2" opacity="0.25" filter="url(#rift-glow)" />
+      <path d={smoothPath(pts)} fill="none" stroke={color} stroke-width="0.7" stroke-linecap="round" opacity="0.95" />
+      {pts.map(([x, y, m]) => <circle cx={x} cy={y} r={m % 3 === 0 ? 1.1 : 0.6} fill={color}><title>{`${label}: Minute ${m}`}</title></circle>)}
+      {pts.filter(([, , m]) => m % 3 === 0).map(([x, y, m]) => <g><rect x={x + 1.4} y={y - 2.2} width={m >= 10 ? 5.4 : 4} height="3.3" rx="1.3" fill="#000" opacity="0.7" /><text x={x + 1.9} y={y + 0.3} font-size="2.6" fill={color}>{m}'</text></g>)}
+      <circle cx={pts[0][0]} cy={pts[0][1]} r="1.8" fill="none" stroke={color} stroke-width="0.5" />
+      <circle cx={last[0]} cy={last[1]} r="1.6" fill={color} stroke="#000" stroke-width="0.3" />
+    </g>
+  );
+}
+const PATH_COL = { me: '#2fd5ff', enemyJungler: '#ff7a59', ownJungler: '#7cf29a' };
 const PATH_DE = { me: 'Du', enemyJungler: 'Gegn. Jungler', ownJungler: 'Dein Jungler' };
 
 function LolGame({ params = {} }) {
@@ -790,6 +838,7 @@ function LolGame({ params = {} }) {
   const [rs, reloadRs] = useRpc('lol.replayStatus', {}, {});
   const [replay, setReplay] = useState(null);
   const [show, setShow] = useState({ me: true, enemyJungler: true, ownJungler: false });
+  const [real, setReal] = useState(false);
   const [ans, setAns] = useState({});
   useEvent('lol:replay', (x) => setReplay(x));
   const jump = async (sec) => {
@@ -811,18 +860,19 @@ function LolGame({ params = {} }) {
         <Select value={mid} onChange={setSel} options={games.map((g) => ({ value: g.matchId, label: `${g.win ? 'Sieg' : 'Niederlage'} · ${g.champion || '?'}${g.vs ? ' vs ' + g.vs : ''} · ${g.kda} · ${ago(g.playedAt)}` }))} />
         {d && <>
           <div class="row wrap gap-s mt" style={{ alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 260px', maxWidth: 320 }}>
-              <RiftMap>
-                {Object.entries(d.paths || {}).filter(([k, v]) => Array.isArray(v) && v.length && show[k]).map(([k, v]) => <g>
-                  <polyline points={v.map(([, x, y]) => `${RX(x)},${RY(y)}`).join(' ')} fill="none" stroke={PATH_COL[k]} stroke-width="0.8" stroke-linejoin="round" opacity="0.9" />
-                  {v.map(([m, x, y]) => <g><circle cx={RX(x)} cy={RY(y)} r="1.6" fill={PATH_COL[k]} /><text x={RX(x) + 1.8} y={RY(y) + 1} font-size="2.6" fill="#fff">{m}</text></g>)}
-                </g>)}
-                {(d.deathsDetail || []).filter((x) => x.pos).map((x, i) => <g style={{ cursor: 'pointer' }} onClick={() => jump(x.sec || Math.round(x.min * 60))}>
+            <div style={{ flex: '1 1 300px', maxWidth: 380 }}>
+              <RiftMap real={real} size={380}>
+                {Object.entries(d.paths || {}).filter(([k, v]) => Array.isArray(v) && v.length && show[k]).map(([k, v]) => <RiftPath points={v} color={PATH_COL[k]} label={PATH_DE[k]} />)}
+                {(d.deathsDetail || []).filter((x) => x.pos).map((x) => { const cx = RX(x.pos[0]); const cy = RY(x.pos[1]); return <g style={{ cursor: 'pointer' }} onClick={() => jump(x.sec || Math.round(x.min * 60))}>
                   <title>{`${x.min}. Min · ${x.zone}${x.by?.length ? ' · ' + x.by.join(' + ') : ''} – klicken: Replay`}</title>
-                  <circle cx={RX(x.pos[0])} cy={RY(x.pos[1])} r="2.6" fill="#000" stroke="#ffcc33" stroke-width="0.7" /><text x={RX(x.pos[0])} y={RY(x.pos[1]) + 1} font-size="3" text-anchor="middle" fill="#ffcc33">✕</text>
-                </g>)}
+                  <circle cx={cx} cy={cy} r="3.4" fill="#ff3b3b" opacity="0.25" filter="url(#rift-glow)" />
+                  <circle cx={cx} cy={cy} r="2.2" fill="#1a0606" stroke="#ff4d4d" stroke-width="0.55" />
+                  <path d={`M${cx - 1},${cy - 1} L${cx + 1},${cy + 1} M${cx + 1},${cy - 1} L${cx - 1},${cy + 1}`} stroke="#ffd2d2" stroke-width="0.55" stroke-linecap="round" />
+                  <text x={cx} y={cy - 3.2} font-size="2.2" text-anchor="middle" fill="#ff9a9a">{Math.floor(x.min)}'</text>
+                </g>; })}
               </RiftMap>
-              <div class="row wrap gap-s mt">{Object.keys(PATH_COL).filter((k) => d.paths?.[k]?.length).map((k) => <button class={'chip' + (show[k] ? ' active' : '')} style={{ color: PATH_COL[k] }} onClick={() => setShow({ ...show, [k]: !show[k] })}>{PATH_DE[k]}</button>)}<span class="tiny muted">Zahlen = Minute · ✕ = dein Tod</span></div>
+              <div class="row wrap gap-s mt" style={{ alignItems: 'center' }}>{Object.keys(PATH_COL).filter((k) => d.paths?.[k]?.length).map((k) => <button class={'chip' + (show[k] ? ' active' : '')} onClick={() => setShow({ ...show, [k]: !show[k] })}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: PATH_COL[k], marginRight: 5 }} />{PATH_DE[k]}</button>)}<button class={'chip' + (real ? ' active' : '')} title="Echte Minimap (Data Dragon) darunterlegen" onClick={() => setReal(!real)}>Echte Karte</button></div>
+              <div class="tiny muted">Linie = Weg in Min. 1–14 (Ring = Start, Punkt = Min. 14) · rotes ✕ = dein Tod, Klick öffnet das Replay</div>
             </div>
             <div class="col grow" style={{ gap: 6, minWidth: 220 }}>
               <b class="small">Tode – Klick öffnet das Replay 15 s vorher</b>

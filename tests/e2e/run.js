@@ -202,7 +202,7 @@ app.whenReady().then(async () => {
     L.setDeep('EUW1_9001', { matchId: 'EUW1_9001', hasTimeline: true, v: 3, win: false, champion: 'Jinx', roleDe: 'Bot (ADC)', kills: 3, deaths: 5, assists: 4, opponent: { champion: 'Caitlyn' }, earlyDeaths: 2,
       deathsDetail: [{ min: 6, sec: 362, zone: 'Botlane', by: ['Caitlyn', 'Lee Sin'], jungler: true, gold: 1450, pos: [12500, 2600], enemies: 2 }, { min: 11.5, sec: 690, zone: 'Fluss', by: ['Lee Sin'], jungler: true, gold: 400, pos: [9000, 5800], enemies: 1, solo: true }],
       enemyJungle: { champion: 'Lee Sin', earlySide: 'top', firstGank: { min: 6, zone: 'Botlane', victim: 'Jinx' }, ganksBefore14: 3, ganksOnMe: 2 },
-      paths: { blue: true, me: path14(() => [12400, 2400]), enemyJungler: path14((m) => [3500 + m * 600, 11000 - m * 600]), ownJungler: [] },
+      paths: { blue: true, me: path14((m) => [11800 + (m % 3) * 500, 1500 + (m % 2) * 400 + (m > 10 ? 2500 : 0)]), enemyJungler: [[1, 11200, 7200], [2, 10400, 8400], [3, 9000, 9900], [4, 7400, 10600], [5, 7800, 8900], [6, 9300, 7400], [7, 10900, 5200], [8, 12300, 2900], [9, 11000, 4300], [10, 9600, 6000], [11, 8100, 7600], [12, 6500, 9000], [13, 4800, 10200], [14, 3400, 11800]], ownJungler: [] },
       levels: { me: { 2: 1.9, 3: 3.4, 6: 7.6, estimated: true }, opp: { 2: 1.8, 3: 3.2, 6: 7.0 } },
       csCurve: { me: Array.from({ length: 20 }, (_, i) => (i + 1) * 6), opp: Array.from({ length: 20 }, (_, i) => (i + 1) * 7) },
       items: [{ min: 13.2, id: 3031, name: 'Klinge der Unendlichkeit' }], firstItemMin: 13.2, playedAt: played, durationMin: 31 });

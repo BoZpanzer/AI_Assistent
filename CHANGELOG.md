@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.31.1 – Neue Karte in der Spielanalyse
+
+- Die Karte in der LoL-Spielanalyse ist jetzt eine eigene Vektorkarte des Kluftes: Lanes, Fluss, Basen, Drache und Baron. Die Jungle-Pfade sind geglättet, beschriftet ist nur jede dritte Minute, Start und Ende sind markiert. Deine Tode erscheinen als rote Marker mit Minute und öffnen per Klick das Replay. Die echte Minimap lässt sich per Knopf darunterlegen.
+- Die Todes-Karte in der Fehleranalyse ist jetzt eine weiche Heatmap.
+
 ## 3.31.0 – Abgabe-Tracker und „Wann muss ich los?“
 
 - **Abgaben & Fristen** (Alltag- und Studium-Seite): sammelt automatisch Termine mit „Abgabe“, „Frist“, „Prüfung“, „Präsentation“ … aus dem Kalender, Uni-Aufgaben mit Fälligkeit und Klausuren aus dem Klausurmodus. Eigene Abgaben trägst du von Hand oder per Sprache ein. Erinnerungen kommen 7, 2 und 1 Tag sowie 3 Stunden vorher (einstellbar).
