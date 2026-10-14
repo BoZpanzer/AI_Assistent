@@ -22,7 +22,7 @@ const ITEM_SCHEMA = {
     value: { type: 'string', maxLength: 300 },
     status: { type: 'string', enum: Object.keys(STATUS), nullable: true },
     note: { type: 'string', maxLength: 500 },
-    source: { type: 'string', enum: ['chat', 'voice', 'manual', 'api'] },
+    source: { type: 'string', enum: ['chat', 'voice', 'manual', 'api', 'log'] },
   },
 };
 

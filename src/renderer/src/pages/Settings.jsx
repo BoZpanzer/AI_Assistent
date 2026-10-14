@@ -359,6 +359,21 @@ function TarkovTrackerField() {
         </div>
       </Field>
       {st?.configured && <div class="tiny muted">{st.error ? <FixText text={'Fehler: ' + st.error} /> : st.lastSync ? `Zuletzt abgeglichen ${ago(st.lastSync)}${st.counts ? ` · ${st.counts.done} Quests erledigt` : ''}` : 'Noch nicht abgeglichen'}{st.gameMode ? ` · Modus ${st.gameMode.toUpperCase()}` : ''}</div>}
+      <EftLogField canWrite={!!st?.canWrite} configured={!!st?.configured} />
+    </>
+  );
+}
+
+/** Quest-Meldungen aus dem Tarkov-Log (wie TarkovMonitor) → Spielstand + TarkovTracker. */
+function EftLogField({ canWrite, configured }) {
+  const g = useStore((x) => x.settings?.gaming) || {};
+  const [st, reload] = useRpc('eft.logStatus', {}, { deps: [g.eftDir] });
+  return (
+    <>
+      <Field label="Quests aus dem Tarkov-Log übernehmen" hint={!configured ? 'trägt angenommene/erledigte Quests in „Mein Spielstand“ ein' : canWrite ? 'erledigte/fehlgeschlagene Quests gehen automatisch an TarkovTracker' : 'Token hat nur Leserecht – für automatisches Übertragen ein Token mit Schreibrecht verbinden'}><Toggle checked={g.eftLogWatch !== false} onChange={(v) => upd({ gaming: { eftLogWatch: v } })} /></Field>
+      {g.eftLogWatch !== false && <Field label="Tarkov-Ordner" hint={st?.dir ? (st.watching ? 'wird gerade mitgelesen' : 'gefunden – wird beim Spielstart mitgelesen') : 'nicht gefunden – bitte den Spielordner wählen (enthält „Logs“)'}>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.eftDir || st?.dir || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { await upd({ gaming: { eftDir: f } }); reload(); } }}><FolderOpen size={14} /></button></div>
+      </Field>}
     </>
   );
 }

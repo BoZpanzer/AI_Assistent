@@ -118,8 +118,11 @@ class Scheduler {
       s.system.setMeta('diagnostics:last', JSON.stringify({ at: new Date().toISOString(), list }));
       if (bad.length) s.notifications.push({ category: 'system', origin: 'system', dedupeKey: 'diag:' + new Date().toISOString().slice(0, 10) + ':' + bad.map((x) => x.id).join(','), title: `Systemcheck: ${bad.length} Problem${bad.length > 1 ? 'e' : ''}`, body: bad.map((x) => `${x.name}: ${x.detail}`).join(' · ').slice(0, 400) + ' – Einstellungen → Systemcheck' });
     }, { heavy: true, initialDelayMs: 3 * 60_000 });
-    this.add('tarkovtracker', 30 * 60_000, async () => {
+    // TarkovTracker: alle 30 min, während Tarkov läuft alle 10 min (Änderungen von anderen Geräten/Tools)
+    this.add('tarkovtracker', 10 * 60_000, async () => {
       if (!s.gaming.tracker.configured() || s.settings.get('gaming').tarkovTrackerSync === false) return;
+      const playing = s.gaming.context.running.includes('eft');
+      if (!playing && Date.now() - Date.parse(s.gaming.tracker.status.lastSync || 0) < 29 * 60_000) return;
       await s.gaming.tracker.sync();
     }, { initialDelayMs: 45_000 });
     // Nach einer Tarkov-Session sofort abgleichen

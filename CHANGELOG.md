@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.19.0 – TarkovTracker aktualisiert sich beim Spielen
+
+- **Tarkov starten → TarkovTracker-Abgleich:** Sobald Tarkov läuft, gleicht JARVIS sofort mit TarkovTracker ab und danach alle 10 Minuten (sonst alle 30), nach dem Spiel noch einmal.
+- **Quests direkt aus dem Spiel:** Während Tarkov läuft, liest JARVIS die Quest-Meldungen im Log-Ordner des Spiels mit, so wie das Community-Tool TarkovMonitor von tarkov.dev. Angenommene, erledigte und fehlgeschlagene Quests landen sofort in „Mein Spielstand“. Erledigte und fehlgeschlagene gehen automatisch an TarkovTracker, wenn dein Token Schreibrecht hat. Das ist nur Mitlesen von Dateien, ohne Zugriff aufs Spiel. Den Spielordner findet JARVIS selbst (BSG-Launcher oder Steam), sonst Einstellungen → Gaming → „Tarkov-Ordner“.
+
 ## 3.18.0 – Spielseiten für neue Spiele, Klausurmodus, Kostenbremse, LoL-Objectives, Tarkov-Stockwerke
 
 - **Eigene Seite für unbekannte Spiele:** Spielst du ein Spiel, das JARVIS noch nicht kennt (oder sprichst darüber), recherchiert JARVIS es mit der Google-Suche und stellt eine passende Seite aus den festen Bausteinen zusammen: Fragen, Spielstand-Kategorien, Timer, Karte, Wiki, Checklisten, Links. Dabei wird kein eigener Code erzeugt. JARVIS prüft alles selbst: Ein Wiki kommt nur auf die Seite, wenn es wirklich antwortet, Links nur, wenn sie erreichbar sind, und Checklisten-Einträge nur, wenn sie wörtlich in den Quellen stehen. Auf der Gaming-Seite gibt es dafür „Seite gestalten“ bzw. „Neu gestalten“, im Chat „Bau mir eine Seite für …“.

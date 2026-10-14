@@ -261,6 +261,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.clear': () => s.gaming.context.clearActive(),
     'game.installed': () => s.gaming.context.detectInstalled(),
     'game.layout': ({ id }) => s.gaming.layout(id),
+    'eft.logStatus': async () => { if (!s.gaming.eftLogs.timer) s.gaming.eftLogs.dir = undefined; await s.gaming.eftLogs.gameDir(); return s.gaming.eftLogs.status(); },
     'game.design': ({ id }) => s.gaming.designer.create(String(id || '')),
     'game.designReset': ({ id }) => s.gaming.designer.reset(String(id || '')),
     'game.designState': ({ id }) => ({ running: s.gaming.designer.running.has(String(id || '')), needs: s.gaming.designer.needsDesign(s.gaming.context.profile(String(id || ''))) }),

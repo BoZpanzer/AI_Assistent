@@ -1032,3 +1032,54 @@ test('Spielseite für unbekanntes Spiel: Recherche → Bausteine aus dem Baukast
     assert.equal(core.gaming.designer.needsDesign(core.gaming.context.profile('eft')), false);
   } finally { dnsP.lookup = origLookup; cleanup(); }
 });
+
+test('Tarkov-Log: Quest-Meldungen → Spielstand → TarkovTracker (nur mit Schreibrecht), Spielstart startet das Mitlesen', async () => {
+  const { parseNotifications } = require('../src/main/services/gaming/eftlogs');
+  const T1 = '5936d90786f7742b1420ba5b'; const T2 = '5936da9e86f7742d65037edf';
+  const entry = (ts, type, id) => `${ts}|0.16.0|Info|push-notifications|Got notification | ChatMessageReceived\n{\n  "type": "new_message",\n  "eventId": "x",\n  "dialogId": "y",\n  "message": {\n    "_id": "z",\n    "uid": "u",\n    "type": ${type},\n    "dt": ${Date.parse(ts) / 1000},\n    "templateId": "${id} successMessageText 5936d90786f7742b1420ba5b",\n    "text": ""\n  }\n}\n`;
+  const log1 = `2026-10-14 18:00:00.000|0.16.0|Info|push-notifications|Notification channel has been [Open]\n` + entry('2026-10-14 18:05:00.000', 10, T1) + entry('2026-10-14 18:30:00.000', 12, T1) + entry('2026-10-14 18:31:00.000', 11, T2)
+    + `2026-10-14 18:32:00.000|0.16.0|Info|push-notifications|Got notification | ChatMessageReceived\n{ "message": { "type": 1, "templateId": "${T1}" } }\n`;
+  const ev = parseNotifications(log1);
+  assert.deepEqual(ev.map((e) => [e.taskId, e.status]), [[T1, 'in_progress'], [T1, 'done'], [T2, 'failed']]);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eft-'));
+  const logDir = path.join(dir, 'Logs', 'log_2026.10.14_18-00-00_0.16.0');
+  fs.mkdirSync(logDir, { recursive: true });
+  const nf = path.join(logDir, '2026.10.14_18-00-00_0.16.0 push-notifications_000.log');
+  fs.writeFileSync(nf, log1.split(entry('2026-10-14 18:30:00.000', 12, T1))[0]); // erst nur „angenommen“
+  const pushed = [];
+  const tasks = { data: { tasks: [{ id: T1, name: 'Debut', minPlayerLevel: 1, trader: { name: 'Prapor' }, objectives: [] }, { id: T2, name: 'Checking', minPlayerLevel: 1, trader: { name: 'Prapor' }, objectives: [] }] } };
+  const { core, cleanup } = tempCore({ fetch: async (url, init) => {
+    if (/tarkov\.dev\/graphql/.test(url)) return new Response(JSON.stringify(tasks), { headers: { 'Content-Type': 'application/json' } });
+    if (/\/progress\/task\//.test(url)) { pushed.push([url.split('/').pop(), JSON.parse(init.body).state]); return new Response('{}', { headers: { 'Content-Type': 'application/json' } }); }
+    if (/\/token$/.test(url)) return new Response(JSON.stringify({ permissions: ['GP', 'WP'], token: 'x' }), { headers: { 'Content-Type': 'application/json' } });
+    return new Response('{}', { headers: { 'Content-Type': 'application/json' } });
+  } });
+  try {
+    core.settings.update({ gaming: { eftDir: dir } });
+    core.secrets.set('tarkovtracker.token', 'PVP_0123456789abcdef01');
+    core.gaming.tracker.setStatus({ permissions: ['GP', 'WP'], gameMode: 'pvp' });
+    await core.gaming.eftLogs.poll();
+    assert.equal(core.gaming.progress.find('eft', 'quest', 'Debut').status, 'in_progress');
+    assert.equal(pushed.length, 0, '„angenommen“ wird nicht übertragen');
+    fs.writeFileSync(nf, log1);
+    await core.gaming.eftLogs.poll();
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(core.gaming.progress.find('eft', 'quest', 'Debut').status, 'done');
+    assert.equal(core.gaming.progress.find('eft', 'quest', 'Checking').status, 'failed');
+    assert.deepEqual(pushed.sort(), [[T1, 'completed'], [T2, 'failed']].sort());
+    assert.ok(core.notifications.list({ limit: 5 }).some((n) => /Quests aktualisiert|Quest abgeschlossen/.test(n.title) && /TarkovTracker/.test(n.body)));
+    // gleicher Log nach Neustart von JARVIS → nichts doppelt
+    core.gaming.eftLogs.offsets.clear();
+    assert.deepEqual(await core.gaming.eftLogs.poll(), []);
+    // „angenommen“ später im Log stuft „erledigt“ nicht zurück
+    await core.gaming.eftLogs.apply([{ taskId: T1, status: 'in_progress', key: 'neu' }]);
+    assert.equal(core.gaming.progress.find('eft', 'quest', 'Debut').status, 'done');
+    // Spielstart → Mitlesen an, Spielende → aus
+    core.bus.emit('game:running', { running: ['eft'], started: ['eft'], stopped: [] });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(core.gaming.eftLogs.status().watching, true); assert.equal(core.gaming.eftLogs.status().dir, dir);
+    core.bus.emit('game:running', { running: [], started: [], stopped: ['eft'] });
+    assert.equal(core.gaming.eftLogs.status().watching, false);
+  } finally { cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
