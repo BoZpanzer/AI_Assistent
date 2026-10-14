@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info } from 'lucide-preact';
+import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info, Wallet } from 'lucide-preact';
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar, UpdateModal } from '../components/Shell.jsx';
@@ -26,6 +26,7 @@ export function Settings() {
           <Google s={s} />
           <StudyCard s={s} />
           <CampusDualCard s={s} />
+          <LifeCard s={s} />
           <GamingCard s={s} secrets={secrets} />
           <OverlayCard s={s} />
           <Desktop s={s} />
@@ -306,6 +307,17 @@ function DriveSource({ st }) {
       )}
       <div class="tiny muted">Nur lesend: JARVIS ändert und löscht nichts in deinem Drive. Neue Goodnotes-Exporte werden alle 20 Minuten übernommen.</div>
     </>
+  );
+}
+
+function LifeCard({ s }) {
+  const l = s.life || {};
+  return (
+    <Panel icon={Wallet} title="Alltag" sub="Ausgaben, Einkauf, Geburtstage – alles bleibt auf deinem PC">
+      <Field label="Monatsbudget (€)" hint="0 = kein Budget; Abos zählen mit"><input class="inp" type="number" min="0" step="10" style={{ width: 100 }} value={l.budgetMonthly ?? 0} onChange={(e) => upd({ life: { budgetMonthly: Math.max(0, Number(e.currentTarget.value) || 0) } })} /></Field>
+      <Field label="Gekauftes automatisch in die Vorräte"><Toggle checked={l.boughtToPantry !== false} onChange={(v) => upd({ life: { boughtToPantry: v } })} /></Field>
+      <Field label="Geburtstage: 1 Woche vorher mit Geschenkideen" hint="Ideen aus dem, was im Brain über die Person steht (kleiner Gemini-Aufruf)"><Toggle checked={l.birthdayGifts !== false} onChange={(v) => upd({ life: { birthdayGifts: v } })} /></Field>
+    </Panel>
   );
 }
 

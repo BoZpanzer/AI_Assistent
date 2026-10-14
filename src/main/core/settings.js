@@ -69,6 +69,10 @@ const SCHEMA = {
       visionDailyLimit: { type: 'number', minimum: 0, maximum: 500 },
       source: { type: 'string', enum: ['folder', 'drive'] }, driveFolder: { type: 'string', maxLength: 120 }, driveFolderId: { type: 'string', maxLength: 200 },
       preferredTime: { type: 'string', maxLength: 5 }, maxSessionsPerDay: { type: 'number', minimum: 1, maximum: 4 }, linkLectures: { type: 'boolean' } } },
+    // Alltag
+    life: { type: 'object', additionalProperties: false, properties: { budgetMonthly: { type: 'number', minimum: 0, maximum: 100000 }, boughtToPantry: { type: 'boolean' }, birthdayGifts: { type: 'boolean' } } },
+    transit: { type: 'object', additionalProperties: false, properties: { enabled: { type: 'boolean' }, api: { type: 'string', maxLength: 200 }, homeId: { type: 'string', maxLength: 40 }, homeName: { type: 'string', maxLength: 120 }, bufferMin: { type: 'number', minimum: 0, maximum: 60 }, notifyBeforeMin: { type: 'number', minimum: 0, maximum: 60 }, lookaheadHours: { type: 'number', minimum: 1, maximum: 12 } } },
+    deadlines: { type: 'object', additionalProperties: false, properties: { enabled: { type: 'boolean' }, mail: { type: 'boolean' }, remindDays: { type: 'array', maxItems: 6, items: { type: 'number', minimum: 0, maximum: 60 } } } },
     // Gaming
     gaming: { type: 'object', properties: {
       detection: { type: 'boolean' }, reduceWhileGaming: { type: 'boolean' },
@@ -125,6 +129,9 @@ const DEFAULTS = {
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
   gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: true, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: true, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },
+  life: { budgetMonthly: 0, boughtToPantry: true, birthdayGifts: true },
+  transit: { enabled: true, api: 'https://v6.db.transport.rest', homeId: '', homeName: '', bufferMin: 5, notifyBeforeMin: 10, lookaheadHours: 4 },
+  deadlines: { enabled: true, mail: false, remindDays: [7, 2, 1] },
   screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.' },
   overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false, mapCorner: true, mapSize: 320, mapZoom: true },
   telegram: { enabled: false, forwardMode: 'idle', idleMinutes: 10, chats: [], allowConfirm: true },

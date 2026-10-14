@@ -2,6 +2,15 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.30.0 – Neue Seite „Alltag“
+
+- **Ausgaben:** per Sprache oder Eingabe („Jarvis, 12 € Döner“). JARVIS erkennt die Kategorie aus der Notiz. Dazu Monatssumme, Kategorien, Hochrechnung bis Monatsende und Monatsbudget (Einstellungen → Alltag), bei dem Abos mitzählen. Ohne Bankanbindung, alles bleibt auf deinem PC.
+- **Abos:** Betrag, monatlich/jährlich/wöchentlich, nächste Abbuchung und Kündigungsfrist. Auf Wunsch kommt 2 Tage vor der Abbuchung eine Erinnerung („noch nutzen?“), außerdem 3 Tage vor der Kündigungsfrist und am letzten Tag.
+- **Einkaufsliste:** „Setz Milch und Eier auf die Einkaufsliste“. Die Liste ist nach Ladenbereich sortiert (Obst & Gemüse, Kühlregal …). Abgehaktes landet automatisch in den Vorräten.
+- **Vorräte:** mit Haltbarkeit und einer Meldung, wenn etwas bald abläuft. „Milch ist leer“ nimmt sie raus und setzt sie wieder auf die Liste. **Rezeptideen** aus deinen Vorräten, bald Ablaufendes zuerst.
+- **Training:** „Bankdrücken 3×8 mit 70 kg“ mitschreiben. Fortschritt pro Übung als Kurve (geschätztes 1RM), Meldung bei neuem Rekord, Pausen-Timer mit Ansage.
+- **Geburtstage aus dem Brain:** eine Woche vorher eine Erinnerung mit Geschenkideen, die auf dem beruhen, was im Brain über die Person steht. Am Vortag kommt nochmal eine kurze Erinnerung.
+
 ## 3.29.0 – Tarkov-Wirtschaft, Munition, LoL-Rangverlauf & Champion-Pool
 
 - **Tarkov – Händler, Crafts & Tausch:**

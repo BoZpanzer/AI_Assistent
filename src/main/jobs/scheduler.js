@@ -131,6 +131,8 @@ class Scheduler {
     this.add('game-news', 6 * 3600_000, async () => { await s.gaming.news.check(); }, { heavy: true, initialDelayMs: 4 * 60_000 });
     // Steam-Wunschliste: Angebote zweimal am Tag prüfen
     this.add('wishlist', 12 * 3600_000, async () => { if (s.gaming.steam && (await s.gaming.steam.root?.())) await s.gaming.deals.check(); }, { heavy: true, initialDelayMs: 6 * 60_000 });
+    // Alltag: Abos weiterschieben + Erinnerungen, ablaufende Vorräte, Geburtstage (7 Tage / Vortag)
+    this.add('life-daily', 3600_000, async () => { s.life.dailySubs(); if (new Date().getHours() >= 9) s.life.dailyPantry(); if (new Date().getHours() >= 9) await s.birthdays.remind(); }, { initialDelayMs: 3 * 60_000 });
     this.add('lol-live', 5_000, async () => {
       const g = s.settings.get('gaming');
       if (!g.lolLiveCoach && g.lolObjectives === false) return;

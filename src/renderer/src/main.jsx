@@ -10,12 +10,13 @@ import { Chat } from './pages/Chat.jsx';
 import { Tasks } from './pages/Tasks.jsx';
 import { Calendar } from './pages/Calendar.jsx';
 import { Study } from './pages/Study.jsx';
+import { Life } from './pages/Life.jsx';
 import { Gaming } from './pages/Gaming.jsx';
 import { Brain } from './pages/Brain.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { Setup } from './pages/Setup.jsx';
 
-const PAGES = { dashboard: Dashboard, chat: Chat, tasks: Tasks, calendar: Calendar, study: Study, gaming: Gaming, brain: Brain, settings: Settings };
+const PAGES = { dashboard: Dashboard, chat: Chat, tasks: Tasks, calendar: Calendar, study: Study, life: Life, gaming: Gaming, brain: Brain, settings: Settings };
 
 function App() {
   const ready = useStore((s) => s.ready);

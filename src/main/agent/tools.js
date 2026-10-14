@@ -333,6 +333,35 @@ function buildTools(s) {
       if (matchup) { const n = await s.gaming.league.addMatchupNote(matchup, text, myChampion || null); return { saved: true, matchupNote: true, vs: n.vsName, onlyWith: n.mineName }; }
       const n = s.gaming.league.addLiveNote(text); return { saved: true, gameTime: n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')}` : null, champion: n.champion };
     } });
+  // ---------- Alltag ----------
+  def({ name: 'add_expense', mode: 'write', description: 'Ausgabe erfassen („12 € Döner“, „Tanken 45,20“). Kategorie wird aus der Notiz erkannt oder angegeben. Antwort: kurz bestätigen + was im Monat schon ausgegeben ist bzw. vom Budget übrig.',
+    schema: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, note: { type: 'string' }, category: { type: 'string', enum: require('../services/life').CATEGORIES }, at: { type: 'string', description: 'ISO-Datum, Standard jetzt' } } },
+    run: (a) => { const r = s.life.addExpense(a); return { saved: true, amount: r.amount, category: r.category, monthTotal: r.month.total, budgetLeft: r.month.left }; },
+    card: (a, r) => ({ icon: 'check', title: 'Ausgabe erfasst', lines: [`${Number(a.amount).toFixed(2).replace('.', ',')} € · ${r?.category}${a.note ? ' · ' + a.note : ''}`, r?.budgetLeft != null ? `Noch ${r.budgetLeft.toFixed(2).replace('.', ',')} € im Budget` : `Monat: ${r?.monthTotal?.toFixed(2).replace('.', ',')} €`] }) });
+  def({ name: 'finance_overview', mode: 'read', description: 'Ausgaben-Übersicht eines Monats (Standard: aktuell): Summe, Abos, Budget-Rest, Prognose, Kategorien, letzte Ausgaben, Abos mit nächster Abbuchung.',
+    schema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM' } } },
+    run: ({ month }) => ({ ...s.life.month(month || null), subscriptionList: s.life.subscriptions() }) });
+  def({ name: 'subscription', mode: 'write', description: 'Abos verwalten: add (name, amount, cycle month|year|week, nextCharge YYYY-MM-DD, cancelBy = Kündigungsfrist, remind = vor Abbuchung erinnern), update (id + Felder), remove (id), list.',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['add', 'update', 'remove', 'list'] }, id: { type: 'string' }, name: { type: 'string' }, amount: { type: 'number' }, cycle: { type: 'string', enum: ['month', 'year', 'week'] }, nextCharge: { type: 'string' }, cancelBy: { type: 'string' }, remind: { type: 'boolean' }, active: { type: 'boolean' } } },
+    run: ({ action, id: sid, ...a }) => { const L = s.life; if (action === 'add') return L.addSubscription(a); if (action === 'update') return L.updateSubscription(sid, a); if (action === 'remove') return { removed: L.removeSubscription(sid) }; return { subscriptions: L.subscriptions() }; } });
+  def({ name: 'shopping_list', mode: 'write', description: 'Einkaufsliste: add (items mit name, optional qty), check (ids abhaken – landet dann in den Vorräten), remove, clear (erledigte entfernen), list (nach Ladenbereich sortiert).',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['add', 'check', 'remove', 'clear', 'list'] }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, qty: { type: 'string' } } } }, ids: { type: 'array', items: { type: 'string' } } } },
+    run: ({ action, items = [], ids = [] }) => { const L = s.life; if (action === 'add') return L.addShopping(items); if (action === 'check') { ids.forEach((x) => L.checkShopping(x, true)); return L.shoppingList(); } if (action === 'remove') { ids.forEach((x) => L.removeShopping(x)); return L.shoppingList(); } if (action === 'clear') { L.clearShopping(); return L.shoppingList(); } return L.shoppingList(); } });
+  def({ name: 'pantry', mode: 'write', description: 'Vorräte: add (items mit name, qty, expires YYYY-MM-DD), use (names aufgebraucht – mit toShopping=true gleich auf die Einkaufsliste), list.',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['add', 'use', 'list'] }, items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, qty: { type: 'string' }, expires: { type: 'string' } } } }, names: { type: 'array', items: { type: 'string' } }, toShopping: { type: 'boolean' } } },
+    run: ({ action, items = [], names = [], toShopping }) => { const L = s.life; if (action === 'add') return { pantry: L.addPantry(items) }; if (action === 'use') return L.usePantry(names, { toShopping: !!toShopping }); return { pantry: L.pantry() }; } });
+  def({ name: 'recipe_ideas', mode: 'read', description: 'Drei Rezeptideen aus den eingetragenen Vorräten (bald Ablaufendes zuerst), mit fehlenden Zutaten und Schritten.', schema: { type: 'object', properties: {} },
+    run: () => s.life.recipes() });
+  def({ name: 'log_workout', mode: 'write', description: 'Krafttraining mitschreiben: entries (exercise, sets, reps, weight in kg; 0 = Körpergewicht) – z. B. „Bankdrücken 3×8 mit 70 kg“. Meldet neue Rekorde (geschätztes 1RM).',
+    schema: { type: 'object', required: ['entries'], properties: { entries: { type: 'array', items: { type: 'object', properties: { exercise: { type: 'string' }, sets: { type: 'integer' }, reps: { type: 'integer' }, weight: { type: 'number' } } } } } },
+    run: ({ entries }) => s.life.logWorkout(entries) });
+  def({ name: 'training_progress', mode: 'read', description: 'Trainings-Fortschritt pro Übung (bestes geschätztes 1RM bzw. Wiederholungen je Trainingstag, Veränderung, Volumen) und letzte Einheiten.', schema: { type: 'object', properties: { days: { type: 'integer' } } },
+    run: ({ days = 120 }) => ({ progress: s.life.progress({ days }), recent: s.life.recentWorkouts(15) }) });
+  def({ name: 'rest_timer', mode: 'write', description: 'Pausen-Timer fürs Training starten (Sekunden, Standard 90). Meldet sich mit Ansage, wenn die Pause vorbei ist.', schema: { type: 'object', properties: { seconds: { type: 'integer' } } },
+    run: ({ seconds }) => s.life.rest(seconds) });
+  def({ name: 'birthday_gifts', mode: 'read', description: 'Anstehende Geburtstage (aus dem Brain) mit Geschenkideen, die auf dem basieren, was über die Person im Brain steht. name: Ideen für genau diese Person erzeugen.',
+    schema: { type: 'object', properties: { name: { type: 'string' }, days: { type: 'integer' } } },
+    run: async ({ name, days = 60 }) => (name ? { name, ...(await s.birthdays.giftIdeas(name)) } : { upcoming: s.birthdays.upcoming(days) }) });
   def({ name: 'game_playtime', mode: 'read', description: 'Spielzeit pro Spiel aus der Prozesserkennung (auch Nicht-Steam-Spiele): heute, diese Woche, letzte Woche, 30 Tage, Sessions, längste Session, 14-Tage-Verlauf. Für „wie viel habe ich diese Woche gezockt“.',
     schema: { type: 'object', properties: { game: { type: 'string', description: 'optional: nur dieses Spiel' } } },
     run: ({ game }) => { const p = game ? s.gaming.context.resolve(game, { create: false }) : null; return s.gaming.playtime.stats({ game: p?.id || null }); } });

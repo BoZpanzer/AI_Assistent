@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { MicOff, LayoutGrid, MessageCircle, SquareCheckBig, CalendarDays, BookOpen, Gamepad2, Orbit, Settings, Search, Paperclip, SendHorizontal, Mic, Minus, Square, X, ChevronRight, Bell, FileText, Brain, Upload, Globe, Calendar as CalIcon, CircleStop, Download, Rocket, RefreshCw } from 'lucide-preact';
+import { Wallet, MicOff, LayoutGrid, MessageCircle, SquareCheckBig, CalendarDays, BookOpen, Gamepad2, Orbit, Settings, Search, Paperclip, SendHorizontal, Mic, Minus, Square, X, ChevronRight, Bell, FileText, Brain, Upload, Globe, Calendar as CalIcon, CircleStop, Download, Rocket, RefreshCw } from 'lucide-preact';
 import { useStore, navigate, setState, toast, guard, getState } from '../lib/store.js';
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { audio } from '../lib/audio.js';
@@ -13,6 +13,7 @@ export const PAGES = [
   { id: 'tasks', label: 'Aufgaben', icon: SquareCheckBig },
   { id: 'calendar', label: 'Kalender', icon: CalendarDays },
   { id: 'study', label: 'Studium', icon: BookOpen },
+  { id: 'life', label: 'Alltag', icon: Wallet },
   { id: 'gaming', label: 'Gaming', icon: Gamepad2 },
   { id: 'brain', label: 'Brain', icon: Orbit },
   { id: 'settings', label: 'Einstellungen', icon: Settings },

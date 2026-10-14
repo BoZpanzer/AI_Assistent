@@ -175,6 +175,56 @@ class Birthdays {
     return { created, updated, removed, total: Object.keys(found).length };
   }
 
+  /** Nächste Geburtstage (Tage bis dahin, Alter falls Jahr bekannt). */
+  upcoming(days = 60, now = new Date()) {
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Object.values(this.collect()).filter((b) => b.name !== 'ich').map((b) => {
+      let d = new Date(t0.getFullYear(), b.month - 1, b.day); if (d < t0) d = new Date(t0.getFullYear() + 1, b.month - 1, b.day);
+      const inDays = Math.round((d - t0) / 86400000);
+      return { name: b.name, month: b.month, day: b.day, date: `${d.getFullYear()}-${String(b.month).padStart(2, '0')}-${String(b.day).padStart(2, '0')}`, inDays, turns: b.year ? d.getFullYear() - b.year : null, ideas: safeJson(this.s.system.meta(`birthday:gifts:${normText(b.name)}:${d.getFullYear()}`), null) };
+    }).filter((b) => b.inDays <= days).sort((a, b) => a.inDays - b.inDays);
+  }
+
+  /** Was im Brain über die Person steht (für Geschenkideen). */
+  facts(name) {
+    const first = String(name).replace(/\s*\(.*\)$/, '').split(' ')[0];
+    if (first.length < 2) return [];
+    return this.s.db.all("SELECT title, content FROM knowledge WHERE archived=0 AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 12", `%${first}%`, `%${first}%`)
+      .map((r) => `${r.title ? r.title + ': ' : ''}${String(r.content).slice(0, 300)}`);
+  }
+
+  /** Geschenkideen aus den Brain-Einträgen (KI, einmal pro Person und Jahr gespeichert). */
+  async giftIdeas(name, { force = false } = {}) {
+    const b = this.upcoming(366).find((x) => normText(x.name) === normText(name));
+    const year = b ? b.date.slice(0, 4) : String(new Date().getFullYear());
+    const key = `birthday:gifts:${normText(name)}:${year}`;
+    if (!force) { const c = safeJson(this.s.system.meta(key), null); if (c) return c; }
+    const facts = this.facts(name);
+    const r = await this.s.gemini.generate({ feature: 'life', model: this.s.gemini.requireModel('fast'), temperature: 0.7, json: true,
+      schema: { type: 'object', required: ['ideas'], properties: { ideas: { type: 'array', items: { type: 'object', required: ['idea', 'why'], properties: { idea: { type: 'string' }, why: { type: 'string' }, budget: { type: 'string' } } } } } },
+      system: 'Du schlägst 4 konkrete, persönliche Geschenkideen auf Deutsch vor. Begründe jede kurz mit dem, was über die Person bekannt ist (nur aus den Notizen, nichts erfinden). Gibt es wenig Infos, sag das in why und schlag eher Universelles vor. Studentenbudget beachten (meist 10–40 €).',
+      contents: [{ role: 'user', parts: [{ text: `Person: ${name}${b?.turns ? ` (wird ${b.turns})` : ''}\nNotizen aus meinem Brain:\n${facts.length ? facts.map((f) => '- ' + f).join('\n') : '(keine weiteren Notizen)'}` }] }] });
+    const out = { at: new Date().toISOString(), basedOn: facts.length, ideas: (r?.ideas || []).slice(0, 4) };
+    this.s.system.setMeta(key, JSON.stringify(out));
+    return out;
+  }
+
+  /** Täglich: 7 Tage vorher Erinnerung (mit Geschenkideen, wenn Gemini verfügbar), am Vortag nochmal kurz. */
+  async remind(now = new Date()) {
+    if (this.s.settings.get('life')?.birthdayGifts === false) return 0;
+    let n = 0;
+    for (const b of this.upcoming(7, now)) {
+      if (b.inDays === 7) {
+        let ideas = null;
+        if (this.s.gemini.hasKey()) ideas = await this.giftIdeas(b.name).catch((e) => { log.debug('gifts', e); return null; });
+        const body = `${b.name} hat am ${b.day}.${b.month}. Geburtstag${b.turns ? ` (wird ${b.turns})` : ''}.${ideas?.ideas?.length ? ' Ideen: ' + ideas.ideas.map((x) => x.idea).join(' · ') : ''}`;
+        if (this.s.notifications.push({ category: 'system', origin: 'system', dedupeKey: `bday7:${normText(b.name)}:${b.date}`, title: `In einer Woche: Geburtstag von ${b.name}`, body })) n++;
+      }
+      if (b.inDays === 1 && this.s.notifications.push({ category: 'system', origin: 'system', dedupeKey: `bday1:${normText(b.name)}:${b.date}`, title: `Morgen: Geburtstag von ${b.name}`, body: 'Geschenk besorgt?' })) n++;
+    }
+    return n;
+  }
+
   list() {
     const map = this.state();
     return Object.values(this.collect()).map((b) => ({ ...b, eventId: map[normText(b.name)]?.eventId || null, external: !!map[normText(b.name)]?.external }));

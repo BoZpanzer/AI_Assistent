@@ -42,7 +42,7 @@ app.whenReady().then(async () => {
     await sleep(150);
     await js(`document.querySelector('.chatbar .send').click()`);
   };
-  const nav = async (page) => { await js(`document.querySelectorAll('.nav button')[${['dashboard', 'chat', 'tasks', 'calendar', 'study', 'gaming', 'brain', 'settings'].indexOf(page)}].click()`); await sleep(400); };
+  const nav = async (page) => { await js(`document.querySelectorAll('.nav button')[${['dashboard', 'chat', 'tasks', 'calendar', 'study', 'life', 'gaming', 'brain', 'settings'].indexOf(page)}].click()`); await sleep(400); };
   try { await waitFor(() => js('!!document.querySelector(".frame .sidebar")').catch(() => false), 20000); } catch { console.error('Renderer startet nicht:', errors.join(' | ') || 'keine Konsolenmeldung'); app.exit(1); return; }
 
   await step('Einrichtungsassistent erscheint beim ersten Start', async () => {
@@ -177,7 +177,22 @@ app.whenReady().then(async () => {
     await shot('61b-gaming-tarkov-map');
     } finally { core.gaming.tarkov.maps = origMaps; core.gaming.tarkovMaps.fetch = origFetch; }
   });
+  await step('Alltag: Ausgaben, Abos, Einkauf, Vorräte, Training, Geburtstage', async () => {
+    const L = core.life;
+    core.settings.update({ life: { budgetMonthly: 450 } });
+    L.addExpense({ amount: 12.5, note: 'Döner' }); L.addExpense({ amount: 49, note: 'Deutschlandticket' }); L.addExpense({ amount: 63.4, note: 'Rewe Wocheneinkauf' });
+    L.addSubscription({ name: 'Spotify', amount: 10.99, nextCharge: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10), remind: true });
+    L.addShopping(['Milch', 'Bananen', 'Nudeln', 'Klopapier']);
+    L.addPantry([{ name: 'Passata' }, { name: 'Zwiebeln' }, { name: 'Joghurt', expires: new Date(Date.now() + 86400000).toISOString() }]);
+    for (let i = 3; i >= 0; i--) L.logWorkout([{ exercise: 'Bankdrücken', sets: 3, reps: 8, weight: 65 + (3 - i) * 2.5 }, { exercise: 'Kniebeugen', sets: 5, reps: 5, weight: 90 + (3 - i) * 5 }], { at: new Date(Date.now() - i * 4 * 86400000).toISOString() });
+    await nav('life');
+    await waitFor(() => js(`document.body.textContent.includes('Einkaufsliste') && document.body.textContent.includes('Spotify') && document.body.textContent.includes('Bankdrücken') && document.body.textContent.includes('Kühlregal')`), 8000);
+    await shot('68-alltag');
+    await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Fortschritt als geschätztes 1RM')); p && p.scrollIntoView(); })()`); await sleep(300);
+    await shot('68b-alltag-training');
+  });
   await step('Gaming: League of Legends & Rise of Kingdoms Layouts', async () => {
+    await nav('gaming');
     // Ein analysiertes Spiel (Timeline v3) mit Jungle-Pfaden, Tod, Debrief-Fragen + Champselect mit Matchup-Karte
     const L = core.gaming.league; const played = new Date(Date.now() - 3600_000).toISOString();
     core.db.run("INSERT OR REPLACE INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,'me',?,?)", 'EUW1_9001', played, JSON.stringify({ matchId: 'EUW1_9001', win: false, champion: 'Jinx', kills: 3, deaths: 5, assists: 4, csPerMin: 6.4, vision: 21, duration: 1860 }));

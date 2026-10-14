@@ -201,4 +201,15 @@ module.exports = [
     ALTER TABLE game_timers ADD COLUMN until TEXT;
     ALTER TABLE game_timers ADD COLUMN series TEXT;
   `),
+  // v7 — Alltag: Ausgaben, Abos, Einkauf, Vorräte, Training, Abgaben
+  (db) => db.exec(`
+    CREATE TABLE expenses(id TEXT PRIMARY KEY, amount REAL NOT NULL, category TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE INDEX ix_expenses ON expenses(at);
+    CREATE TABLE subscriptions(id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL, cycle TEXT NOT NULL DEFAULT 'month', next_charge TEXT NOT NULL, cancel_by TEXT, remind INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+    CREATE TABLE shopping(id TEXT PRIMARY KEY, name TEXT NOT NULL, qty TEXT NOT NULL DEFAULT '', section TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, done_at TEXT);
+    CREATE TABLE pantry(id TEXT PRIMARY KEY, name TEXT NOT NULL, qty TEXT NOT NULL DEFAULT '', expires TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE workouts(id TEXT PRIMARY KEY, at TEXT NOT NULL, exercise TEXT NOT NULL, ex_key TEXT NOT NULL, sets INTEGER NOT NULL, reps INTEGER NOT NULL, weight REAL NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '');
+    CREATE INDEX ix_workouts ON workouts(ex_key, at);
+    CREATE TABLE deadlines(id TEXT PRIMARY KEY, title TEXT NOT NULL, due_at TEXT NOT NULL, course TEXT NOT NULL DEFAULT '', source TEXT NOT NULL, ref TEXT, done INTEGER NOT NULL DEFAULT 0, reminded TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(source, ref));
+  `),
 ];

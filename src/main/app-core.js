@@ -35,6 +35,7 @@ const { Birthdays } = require('./services/birthdays');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 const { Playtime } = require('./services/gaming/playtime');
+const { Life } = require('./services/life');
 const { GameNews } = require('./services/gaming/news');
 const { Deals } = require('./services/gaming/deals');
 const { Rok } = require('./services/gaming/rok');
@@ -88,6 +89,7 @@ function createCore(opts) {
   s.gaming.tracker = new TarkovTracker(s);
   s.gaming.lolflow = new LolFlow(s);
   s.gaming.playtime = new Playtime(s);
+  s.life = new Life(s);
   s.gaming.news = new GameNews(s);
   s.gaming.deals = new Deals(s);
   s.gaming.rok = new Rok(s);
@@ -141,7 +143,7 @@ function createCore(opts) {
   };
   s.stop = () => {
     s.stopped = true;
-    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;
