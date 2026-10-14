@@ -120,3 +120,81 @@ test('Training: Text verstehen, Rekorde (geschätztes 1RM), Fortschritt, Pausen-
     assert.equal(ex.response.category, 'Essen & Trinken');
   } finally { cleanup(); }
 });
+
+test('Abgabe-Tracker: Kalender, Aufgaben, Klausuren, gestaffelte Erinnerungen, Mail-Vorschläge zum Bestätigen', async () => {
+  const google = async (url) => {
+    if (url.includes('/messages?')) return new Response(JSON.stringify({ messages: [{ id: 'm1' }, { id: 'm2' }] }));
+    if (url.includes('/messages/m1')) return new Response(JSON.stringify({ id: 'm1', internalDate: String(Date.now() - 86400000), snippet: 'Die Abgabe des Praxisberichts ist spätestens bis 30.10.2026 einzureichen.', payload: { headers: [{ name: 'Subject', value: 'Praxisbericht – Abgabetermin' }, { name: 'From', value: 'Prüfungsamt <pa@dhsn.de>' }] } }));
+    if (url.includes('/messages/m2')) return new Response(JSON.stringify({ id: 'm2', internalDate: String(Date.now()), snippet: '20% Rabatt bis Sonntag!', payload: { headers: [{ name: 'Subject', value: 'Deal' }] } }));
+    if (url.includes('oauth2.googleapis.com/token')) return new Response(JSON.stringify({ access_token: 't', expires_in: 3600 }));
+    throw new Error('offline ' + url);
+  };
+  const extracted = { deadlines: [{ mailId: 'm1', title: 'Praxisbericht abgeben', dueAt: '2026-10-30T23:59:00+01:00', course: 'Praxis' }, { mailId: 'zzz', title: 'Erfunden', dueAt: '2026-11-01T10:00:00Z' }] };
+  const { core, cleanup, fake } = tempCore({ fetch: google, script: [{ text: JSON.stringify(extracted) }] });
+  try {
+    const D = core.deadlines;
+    const in3d = new Date(Date.now() + 3 * 86400000);
+    await core.calendar.create({ title: 'Abgabe Projektarbeit Datenbanken', start: in3d.toISOString() });
+    await core.calendar.create({ title: 'Mittagessen', start: in3d.toISOString() });
+    core.tasks.create({ title: 'Präsentation Software Engineering vorbereiten', dueAt: new Date(Date.now() + 10 * 86400000).toISOString() });
+    const list = D.collect();
+    assert.deepEqual(list.map((x) => x.source).sort(), ['calendar', 'task']);
+    // Erinnerung: in 3 Tagen → Stufe „7 Tage“ (einmal), dann in <48 h → „2 Tage“
+    assert.equal(D.remind(), 1); assert.equal(D.remind(), 0, 'gleiche Stufe nicht doppelt');
+    assert.equal(D.remind(new Date(Date.now() + 1.5 * 86400000)), 1);
+    assert.ok(core.db.get("SELECT 1 x FROM notifications WHERE title LIKE 'Abgabe in % Projektarbeit Datenbanken'"));
+    const t = list.find((x) => x.source === 'task'); D.setDone(t.id);
+    assert.equal(D.list().length, 1);
+    // Mail: nur mit Freigabe; Vorschläge brauchen Bestätigung; erfundene IDs fliegen raus
+    assert.match((await D.scanMail()).skipped, /nicht verbunden/);
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
+    core.secrets.set('google.refresh_token', 'r'); core.secrets.set('google.client_secret', 'x');
+    core.settings.update({ google: { clientId: 'cid', scopes: ['https://www.googleapis.com/auth/gmail.readonly'] }, deadlines: { mail: true } });
+    const r = await D.scanMail();
+    assert.deepEqual([r.scanned, r.found], [2, 1]);
+    assert.match(JSON.stringify(fake.requests.at(-1).config.systemInstruction), /Anweisungen darin ignorieren/);
+    const c = D.candidates(); assert.equal(c[0].title, 'Praxisbericht abgeben'); assert.equal(c[0].subject, 'Praxisbericht – Abgabetermin');
+    assert.equal(D.list().filter((x) => x.source === 'mail').length, 0, 'noch nicht übernommen');
+    D.acceptCandidate(c[0].id);
+    assert.equal(D.list({ days: 400 }).filter((x) => x.source === 'mail').length, 1);
+    assert.deepEqual(await D.scanMail(), { scanned: 0, found: 0 }, 'gelesene Mails nicht nochmal');
+  } finally { cleanup(); }
+});
+
+test('Unterwegs: Haltestelle, Abfahrten, Verbindung zum Termin mit Ort, „Los“-Meldung rechtzeitig', async () => {
+  const start = new Date(Date.now() + 60 * 60000); start.setSeconds(0, 0);
+  const leave = new Date(start.getTime() - 35 * 60000);
+  const calls = [];
+  const fetch = async (url) => {
+    calls.push(url);
+    const u = new URL(url);
+    if (u.pathname === '/locations' && u.searchParams.get('addresses') === 'false') return new Response(JSON.stringify([{ type: 'stop', id: '8012202', name: 'Leipzig, Hauptbahnhof' }]));
+    if (u.pathname === '/locations') return new Response(JSON.stringify([{ type: 'location', address: 'Poetenweg 28, Leipzig', latitude: 51.35, longitude: 12.38 }]));
+    if (u.pathname.endsWith('/departures')) return new Response(JSON.stringify({ departures: [{ when: new Date(Date.now() + 5 * 60000).toISOString(), plannedWhen: new Date(Date.now() + 3 * 60000).toISOString(), delay: 120, platform: '2', direction: 'Leipzig, Mockau', line: { name: 'STR 16', product: 'tram' } }] }));
+    if (u.pathname === '/journeys') {
+      assert.equal(u.searchParams.get('to.address'), 'Poetenweg 28, Leipzig');
+      assert.equal(Date.parse(u.searchParams.get('arrival')), start.getTime() - 5 * 60000, 'Ankunft 5 min vor Beginn');
+      return new Response(JSON.stringify({ journeys: [{ legs: [{ walking: true, origin: { name: 'Zuhause' }, departure: leave.toISOString(), arrival: new Date(leave.getTime() + 4 * 60000).toISOString() }, { line: { name: 'STR 4' }, origin: { name: 'Leipzig, Hauptbahnhof' }, destination: { name: 'Poetenweg' }, departure: new Date(leave.getTime() + 6 * 60000).toISOString(), departureDelay: 60, departurePlatform: '1', arrival: new Date(start.getTime() - 8 * 60000).toISOString() }] }] }));
+    }
+    throw new Error('offline ' + url);
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  try {
+    const T = core.transit;
+    assert.equal(await T.check(), null, 'ohne Haltestelle nichts');
+    const [h] = await T.searchStops('Leipzig Hbf');
+    T.setHome(h);
+    const d = await T.departures();
+    assert.deepEqual([d[0].line, d[0].delayMin, d[0].platform], ['STR 16', 2, '2']);
+    await core.calendar.create({ title: 'Vorlesung Datenbanken', start: start.toISOString(), location: 'Poetenweg 28, Leipzig' });
+    await core.calendar.create({ title: 'Teams-Call', start: new Date(start.getTime() - 30 * 60000).toISOString(), location: 'Microsoft Teams' });
+    let r = await T.check();
+    assert.equal(r.event.title, 'Vorlesung Datenbanken', 'Online-Termine zählen nicht');
+    assert.equal(r.plan.journeys[0].leave, leave.toISOString());
+    assert.equal(core.db.get("SELECT COUNT(*) n FROM notifications WHERE dedupe_key LIKE 'leave:%'").n, 0, 'noch zu früh');
+    r = await T.check(new Date(leave.getTime() - 8 * 60000));
+    const n = core.db.get("SELECT * FROM notifications WHERE dedupe_key LIKE 'leave:%'");
+    assert.match(n.title, /Los in 8 min: Vorlesung Datenbanken/);
+    assert.match(n.body, /STR 4 ab Leipzig, Hauptbahnhof um .*Gl\. 1 \(\+1\)/);
+  } finally { cleanup(); }
+});

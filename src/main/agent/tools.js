@@ -333,6 +333,24 @@ function buildTools(s) {
       if (matchup) { const n = await s.gaming.league.addMatchupNote(matchup, text, myChampion || null); return { saved: true, matchupNote: true, vs: n.vsName, onlyWith: n.mineName }; }
       const n = s.gaming.league.addLiveNote(text); return { saved: true, gameTime: n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')}` : null, champion: n.champion };
     } });
+  // ---------- Unterwegs ----------
+  def({ name: 'transit', mode: 'read', description: 'ÖPNV/Bahn (DB-Daten inkl. LVB): action=departures (nächste Abfahrten ab der Heimathaltestelle), next (wann muss ich zum nächsten Termin mit Ort los – Verbindung mit Linie, Gleis, Verspätung), plan (Verbindung zu location, Ankunft bis arriveBy ISO).',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['departures', 'next', 'plan'] }, location: { type: 'string' }, arriveBy: { type: 'string' } } },
+    run: async ({ action, location, arriveBy }) => {
+      const T = s.transit;
+      if (action === 'departures') return { stop: T.cfg().homeName, departures: (await T.departures()).slice(0, 10) };
+      if (action === 'plan') return T.plan(location, arriveBy || new Date(Date.now() + 3600000).toISOString());
+      const r = await T.check(); return r ? { event: { title: r.event.title, start: r.event.start_at, location: r.event.location }, journeys: r.plan.journeys.slice(0, 2), error: r.plan.error } : { note: T.cfg().homeId ? 'In den nächsten Stunden kein Termin mit Ort.' : 'Noch keine Heimathaltestelle eingestellt (Alltag → Unterwegs).' };
+    } });
+  // ---------- Abgaben ----------
+  def({ name: 'deadlines', mode: 'read', description: 'Anstehende Abgaben/Fristen/Prüfungen (aus Kalender, Aufgaben, Klausurmodus, bestätigten Mail-Vorschlägen und manuell), sortiert nach Datum, plus offene Vorschläge aus Mails. Für „was muss ich wann abgeben“.',
+    schema: { type: 'object', properties: {} }, run: () => ({ deadlines: s.deadlines.collect(), mailSuggestions: s.deadlines.candidates() }) });
+  def({ name: 'add_deadline', mode: 'write', description: 'Abgabe/Frist eintragen (title, dueAt ISO mit Offset, course optional). JARVIS erinnert gestaffelt (Standard 7, 2, 1 Tag und 3 h vorher).',
+    schema: { type: 'object', required: ['title', 'dueAt'], properties: { title: { type: 'string' }, dueAt: { type: 'string' }, course: { type: 'string' } } },
+    run: (a) => ({ deadline: s.deadlines.add(a) }),
+    card: (a, r) => ({ icon: 'task', title: 'Abgabe eingetragen', lines: [a.title, 'Fällig ' + fmt(r?.deadline?.dueAt)] }) });
+  def({ name: 'deadline_done', mode: 'write', description: 'Abgabe als erledigt markieren (id aus deadlines).', schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, done: { type: 'boolean' } } },
+    run: ({ id: did, done }) => ({ deadline: s.deadlines.setDone(did, done !== false) }) });
   // ---------- Alltag ----------
   def({ name: 'add_expense', mode: 'write', description: 'Ausgabe erfassen („12 € Döner“, „Tanken 45,20“). Kategorie wird aus der Notiz erkannt oder angegeben. Antwort: kurz bestätigen + was im Monat schon ausgegeben ist bzw. vom Budget übrig.',
     schema: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, note: { type: 'string' }, category: { type: 'string', enum: require('../services/life').CATEGORIES }, at: { type: 'string', description: 'ISO-Datum, Standard jetzt' } } },

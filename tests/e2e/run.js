@@ -185,8 +185,10 @@ app.whenReady().then(async () => {
     L.addShopping(['Milch', 'Bananen', 'Nudeln', 'Klopapier']);
     L.addPantry([{ name: 'Passata' }, { name: 'Zwiebeln' }, { name: 'Joghurt', expires: new Date(Date.now() + 86400000).toISOString() }]);
     for (let i = 3; i >= 0; i--) L.logWorkout([{ exercise: 'Bankdrücken', sets: 3, reps: 8, weight: 65 + (3 - i) * 2.5 }, { exercise: 'Kniebeugen', sets: 5, reps: 5, weight: 90 + (3 - i) * 5 }], { at: new Date(Date.now() - i * 4 * 86400000).toISOString() });
+    core.deadlines.add({ title: 'Praxisbericht abgeben', dueAt: new Date(Date.now() + 4 * 86400000).toISOString(), course: 'Praxisphase' });
+    core.deadlines.add({ title: 'Abgabe Projektarbeit Datenbanken', dueAt: new Date(Date.now() + 12 * 86400000).toISOString() });
     await nav('life');
-    await waitFor(() => js(`document.body.textContent.includes('Einkaufsliste') && document.body.textContent.includes('Spotify') && document.body.textContent.includes('Bankdrücken') && document.body.textContent.includes('Kühlregal')`), 8000);
+    await waitFor(() => js(`document.body.textContent.includes('Einkaufsliste') && document.body.textContent.includes('Spotify') && document.body.textContent.includes('Bankdrücken') && document.body.textContent.includes('Kühlregal') && document.body.textContent.includes('Praxisbericht abgeben') && document.body.textContent.includes('Unterwegs')`), 8000);
     await shot('68-alltag');
     await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Fortschritt als geschätztes 1RM')); p && p.scrollIntoView(); })()`); await sleep(300);
     await shot('68b-alltag-training');

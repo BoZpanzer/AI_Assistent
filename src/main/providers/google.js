@@ -11,6 +11,7 @@ const SCOPES = {
   drive: 'https://www.googleapis.com/auth/drive.readonly',
   driveWrite: 'https://www.googleapis.com/auth/drive',
   identity: 'openid email',
+  gmail: 'https://www.googleapis.com/auth/gmail.readonly',
 };
 
 /**
@@ -33,13 +34,16 @@ class GoogleClient {
   }
 
   /** Interactive login. Resolves with granted scopes + account email. */
-  async connect({ drive = false, timeoutMs = 5 * 60 * 1000 } = {}) {
+  async connect({ drive = false, mail = false, timeoutMs = 5 * 60 * 1000 } = {}) {
     const { clientId, secret } = this.clientCreds();
     const verifier = crypto.randomBytes(48).toString('base64url');
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     const state = crypto.randomBytes(16).toString('hex');
     // drive: true = nur lesen (Studium), 'write' = auch Dateien anlegen (Drive-Backup)
-    const scope = [SCOPES.identity, SCOPES.calendar, drive ? SCOPES.drive : null, drive === 'write' ? SCOPES.driveWrite : null].filter(Boolean).join(' ');
+    // Bereits erteilte Rechte (Drive, Gmail) beim erneuten Verbinden behalten
+    const had = this.settings.get('google')?.scopes || [];
+    const keep = (sc) => had.includes(sc);
+    const scope = [...new Set([SCOPES.identity, SCOPES.calendar, (drive || keep(SCOPES.drive)) ? SCOPES.drive : null, (drive === 'write' || keep(SCOPES.driveWrite)) ? SCOPES.driveWrite : null, (mail || keep(SCOPES.gmail)) ? SCOPES.gmail : null].filter(Boolean))].join(' ');
 
     // Der Browser bekommt erst DANN „verbunden“ angezeigt, wenn der Token-Austausch wirklich geklappt hat.
     const page = (ok, title, text) => `<!doctype html><meta charset="utf-8"><title>JARVIS</title><body style="background:#06101c;color:#bfefff;font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh;margin:0"><div style="max-width:560px;padding:24px;text-align:center"><div style="font-size:44px">${ok ? '✅' : '⚠️'}</div><h2 style="color:${ok ? '#34d399' : '#fbbf24'}">${title}</h2><p style="line-height:1.5">${text}</p><p style="color:#7fa3b5;font-size:13px">Du kannst dieses Fenster schließen und zu JARVIS zurückkehren.</p></div>`;

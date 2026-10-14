@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.31.0 – Abgabe-Tracker und „Wann muss ich los?“
+
+- **Abgaben & Fristen** (Alltag- und Studium-Seite): sammelt automatisch Termine mit „Abgabe“, „Frist“, „Prüfung“, „Präsentation“ … aus dem Kalender, Uni-Aufgaben mit Fälligkeit und Klausuren aus dem Klausurmodus. Eigene Abgaben trägst du von Hand oder per Sprache ein. Erinnerungen kommen 7, 2 und 1 Tag sowie 3 Stunden vorher (einstellbar).
+- **Fristen aus Gmail (optional):** Nach „Gmail verbinden“ liest JARVIS nur Betreff und Vorschau passender Mails der letzten 3 Wochen und schlägt erkannte Fristen vor. Übernommen wird erst nach deiner Bestätigung, Werbung bleibt draußen.
+- **Unterwegs – „Wann muss ich los?“:** Abfahrten ab deiner Haltestelle (DB-Daten inkl. LVB, mit Verspätung und Gleis). Für den nächsten Termin mit Ort plant JARVIS die Verbindung so, dass du 5 Minuten vorher da bist, und meldet sich 10 Minuten vor der Abfahrt mit Linie, Gleis und Verspätung. Online-Termine (Teams, Zoom …) werden übersprungen. Beide Zeiten sind einstellbar.
+
 ## 3.30.0 – Neue Seite „Alltag“
 
 - **Ausgaben:** per Sprache oder Eingabe („Jarvis, 12 € Döner“). JARVIS erkennt die Kategorie aus der Notiz. Dazu Monatssumme, Kategorien, Hochrechnung bis Monatsende und Monatsbudget (Einstellungen → Alltag), bei dem Abos mitzählen. Ohne Bankanbindung, alles bleibt auf deinem PC.

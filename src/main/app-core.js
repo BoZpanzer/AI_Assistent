@@ -36,6 +36,8 @@ const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 const { Playtime } = require('./services/gaming/playtime');
 const { Life } = require('./services/life');
+const { Deadlines } = require('./services/deadlines');
+const { Transit } = require('./services/transit');
 const { GameNews } = require('./services/gaming/news');
 const { Deals } = require('./services/gaming/deals');
 const { Rok } = require('./services/gaming/rok');
@@ -90,6 +92,8 @@ function createCore(opts) {
   s.gaming.lolflow = new LolFlow(s);
   s.gaming.playtime = new Playtime(s);
   s.life = new Life(s);
+  s.deadlines = new Deadlines(s);
+  s.transit = new Transit(s);
   s.gaming.news = new GameNews(s);
   s.gaming.deals = new Deals(s);
   s.gaming.rok = new Rok(s);

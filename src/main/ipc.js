@@ -285,6 +285,25 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'lol.reviews': ({ limit } = {}) => s.gaming.lolflow.reviews(limit || 10),
     'lol.reviewNow': () => s.gaming.lolflow.review({ force: true }),
     'lol.champselect': () => s.gaming.lolflow.state(),
+    'transit.search': ({ q }) => s.transit.searchStops(String(q || '').slice(0, 80)),
+    'transit.setHome': (a) => s.transit.setHome(a),
+    'transit.departures': () => s.transit.departures(),
+    'transit.state': async () => { await s.transit.check().catch(() => null); return s.transit.state(); },
+    'deadlines.list': ({ includeDone } = {}) => s.deadlines.list({ includeDone: !!includeDone }),
+    'deadlines.refresh': () => s.deadlines.collect(),
+    'deadlines.add': (a) => s.deadlines.add(a),
+    'deadlines.done': ({ id, done }) => s.deadlines.setDone(id, done !== false),
+    'deadlines.remove': ({ id }) => s.deadlines.remove(id),
+    'deadlines.candidates': () => s.deadlines.candidates(),
+    'deadlines.accept': ({ id }) => s.deadlines.acceptCandidate(id),
+    'deadlines.reject': ({ id }) => s.deadlines.rejectCandidate(id),
+    'deadlines.mailStatus': () => ({ enabled: s.settings.get('deadlines')?.mail === true, connected: s.google.isConnected(), ready: s.deadlines.mailReady() }),
+    'deadlines.connectMail': async () => {
+      try { await s.google.connect({ mail: true }); } finally { showWindow(); }
+      s.settings.update({ deadlines: { mail: true } });
+      return s.deadlines.scanMail();
+    },
+    'deadlines.scanMail': () => s.deadlines.scanMail(),
     'life.month': ({ month } = {}) => s.life.month(month || null),
     'life.addExpense': (a) => s.life.addExpense(a),
     'life.removeExpense': ({ id }) => s.life.removeExpense(id),

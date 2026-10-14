@@ -3,6 +3,7 @@ import { Plus, Trash2, Target, BookOpen, FolderOpen, RefreshCw, Upload, Search, 
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast, getState } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
+import { DeadlinesPanel } from './Life.jsx';
 import { Panel, Spinner, Empty, Modal, ask } from '../components/ui.jsx';
 import { ago } from '../lib/format.js';
 
@@ -111,6 +112,7 @@ export function Study() {
           )}
         </div>
         <div class="col" style={{ minHeight: 0, gap: 10 }}>
+          <DeadlinesPanel />
           <ExamsPanel />
           <DocDetail id={sel} />
         </div>

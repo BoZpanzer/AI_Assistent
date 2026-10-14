@@ -316,6 +316,12 @@ function LifeCard({ s }) {
     <Panel icon={Wallet} title="Alltag" sub="Ausgaben, Einkauf, Geburtstage – alles bleibt auf deinem PC">
       <Field label="Monatsbudget (€)" hint="0 = kein Budget; Abos zählen mit"><input class="inp" type="number" min="0" step="10" style={{ width: 100 }} value={l.budgetMonthly ?? 0} onChange={(e) => upd({ life: { budgetMonthly: Math.max(0, Number(e.currentTarget.value) || 0) } })} /></Field>
       <Field label="Gekauftes automatisch in die Vorräte"><Toggle checked={l.boughtToPantry !== false} onChange={(v) => upd({ life: { boughtToPantry: v } })} /></Field>
+      <Field label="„Wann muss ich los?“-Meldungen" hint="Für Termine mit Ort – Haltestelle auf der Alltag-Seite einstellen"><Toggle checked={s.transit?.enabled !== false} onChange={(v) => upd({ transit: { enabled: v } })} /></Field>
+      <Field label="Ankunft vor Terminbeginn (Minuten)"><input class="inp" type="number" min="0" max="60" style={{ width: 90 }} value={s.transit?.bufferMin ?? 5} onChange={(e) => upd({ transit: { bufferMin: Math.max(0, Math.min(60, Number(e.currentTarget.value) || 0)) } })} /></Field>
+      <Field label="Meldung vor Abfahrt (Minuten)"><input class="inp" type="number" min="0" max="60" style={{ width: 90 }} value={s.transit?.notifyBeforeMin ?? 10} onChange={(e) => upd({ transit: { notifyBeforeMin: Math.max(0, Math.min(60, Number(e.currentTarget.value) || 0)) } })} /></Field>
+      <Field label="Fahrplan-API" hint="Öffentliche db-rest-Instanz (transport.rest); bei Ausfall eigene Instanz eintragen"><input class="inp" style={{ width: 260 }} value={s.transit?.api || ''} onChange={(e) => upd({ transit: { api: e.currentTarget.value.trim() } })} /></Field>
+      <Field label="Abgaben-Erinnerungen"><Toggle checked={s.deadlines?.enabled !== false} onChange={(v) => upd({ deadlines: { enabled: v } })} /></Field>
+      <Field label="Abgaben aus Gmail vorschlagen" hint="Nur lesend (Betreff + Vorschau); Verbinden auf der Alltag-/Studium-Seite"><Toggle checked={s.deadlines?.mail === true} onChange={(v) => upd({ deadlines: { mail: v } })} /></Field>
       <Field label="Geburtstage: 1 Woche vorher mit Geschenkideen" hint="Ideen aus dem, was im Brain über die Person steht (kleiner Gemini-Aufruf)"><Toggle checked={l.birthdayGifts !== false} onChange={(v) => upd({ life: { birthdayGifts: v } })} /></Field>
     </Panel>
   );

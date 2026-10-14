@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Wallet, ShoppingCart, Dumbbell, Gift, Refrigerator, Repeat, CookingPot, Plus, Check, X, Timer, Sparkles, Trash2, TrendingUp } from 'lucide-preact';
+import { Wallet, ShoppingCart, Dumbbell, Gift, Refrigerator, Repeat, CookingPot, Plus, Check, X, Timer, Sparkles, Trash2, TrendingUp, TrainFront, CalendarClock, Mail, RefreshCw, Search } from 'lucide-preact';
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { guard, setState } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
@@ -15,6 +15,8 @@ export function Life() {
     <div class="page">
       <div class="page-body" style={{ overflow: 'auto' }}>
         <div class="widgets">
+          <div class="w-6"><Transit /></div>
+          <div class="w-6"><DeadlinesPanel /></div>
           <div class="w-6"><Finance /></div>
           <div class="w-6"><Subscriptions /></div>
           <div class="w-6"><Shopping /></div>
@@ -142,6 +144,58 @@ function Birthdays() {
           {ide?.ideas?.length > 0 && <ul class="small" style={{ margin: '2px 0 0 16px' }}>{ide.ideas.map((x) => <li><b>{x.idea}</b>{x.budget ? <span class="muted"> ({x.budget})</span> : null} – <span class="muted">{x.why}</span></li>)}</ul>}
           {ide && <div class="tiny muted">{ide.basedOn ? `aus ${ide.basedOn} Brain-Einträgen` : 'wenig Infos im Brain – eher allgemeine Ideen'}</div>}
         </div>); })}
+    </Panel>
+  );
+}
+
+const hm = (x) => (x ? new Date(x).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '–');
+function Transit() {
+  const [st, reloadSt] = useRpc('transit.state', {}, { events: ['transit:data', 'calendar:changed', 'settings:changed'] });
+  const [deps, setDeps] = useState(null); const [err, setErr] = useState(null);
+  const [q, setQ] = useState(''); const [hits, setHits] = useState(null);
+  useNow(30000);
+  const loadDeps = async () => { try { setDeps(await rpc('transit.departures')); setErr(null); } catch (e) { setErr(String(e.message).replace(/^.*?Error: /, '')); } };
+  useEffect(() => { if (st?.home) { loadDeps(); const t = setInterval(loadDeps, 60000); return () => clearInterval(t); } }, [st?.home?.id]);
+  const search = async () => { if (q.trim().length < 3) return; setHits(await guard(() => rpc('transit.search', { q }))); };
+  const pick = async (h) => { await guard(() => rpc('transit.setHome', h), 'Haltestelle gespeichert'); setHits(null); setQ(''); reloadSt(); };
+  const j = st?.plan?.journeys?.[0];
+  return (
+    <Panel icon={TrainFront} title="Unterwegs" sub={st?.home ? `Ab ${st.home.name} · DB-Daten inkl. LVB` : 'Abfahrten und „wann muss ich los?“'}>
+      {(!st?.home || hits) && <div class="col" style={{ gap: 6 }}>
+        <div class="row gap-s"><input class="inp grow" placeholder="Deine Haltestelle, z. B. „Leipzig, Hauptbahnhof“" value={q} onInput={(e) => setQ(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && search()} /><button class="btn xs" onClick={search}><Search size={12} /></button></div>
+        {(hits || []).map((h) => <button class="chip" onClick={() => pick(h)}>{h.name}</button>)}
+      </div>}
+      {st?.event && <div class="notice small mb">
+        <b>{st.event.title}</b> um {hm(st.event.start_at)} · {st.event.location}
+        {j ? <div>Los um <b>{hm(j.leave)}</b> · {j.legs.filter((l) => !l.walking).map((l) => `${l.line} ${hm(l.dep)}${l.platform ? ' Gl. ' + l.platform : ''}${l.delayMin ? ` (+${l.delayMin})` : ''}`).join(' → ')} · an {hm(j.arrive)}</div> : <div class="muted">{st.plan?.error || 'Verbindung wird gesucht …'}</div>}
+      </div>}
+      {st?.home && <>
+        {err && <div class="small muted">{err}</div>}
+        <div class="col" style={{ gap: 2, maxHeight: 230, overflow: 'auto' }}>{(deps || []).slice(0, 10).map((d) => <div class="row small" style={{ opacity: d.cancelled ? 0.5 : 1 }}><b style={{ width: 54 }}>{d.line}</b><span class="grow">{d.direction}{d.platform ? <span class="tiny muted"> · Gl. {d.platform}</span> : null}</span><span style={{ textDecoration: d.cancelled ? 'line-through' : undefined }}>{hm(d.when)}</span>{d.delayMin ? <span style={{ color: 'var(--orange)', width: 36, textAlign: 'right' }}>+{d.delayMin}</span> : <span style={{ width: 36 }} />}</div>)}</div>
+        <div class="row tiny muted mt"><span class="grow">Vor Terminen mit Ort meldet sich JARVIS kurz vor der Abfahrt.</span><a href="#" onClick={(e) => { e.preventDefault(); setHits([]); }}>Haltestelle ändern</a></div>
+      </>}
+    </Panel>
+  );
+}
+
+const SRC_DE = { calendar: 'Kalender', task: 'Aufgabe', exam: 'Klausur', mail: 'Mail', manual: 'eingetragen' };
+export function DeadlinesPanel() {
+  const [list, reload] = useRpc('deadlines.list', {}, { events: ['deadlines:changed', 'calendar:changed', 'tasks:changed'], initial: [] });
+  const [cands, reloadC] = useRpc('deadlines.candidates', {}, { events: ['deadlines:changed'], initial: [] });
+  const [mail, reloadM] = useRpc('deadlines.mailStatus', {}, { events: ['settings:changed'] });
+  const [f, setF] = useState({ title: '', date: '' }); const [busy, setBusy] = useState(false);
+  useEffect(() => { rpc('deadlines.refresh').then(reload).catch(() => {}); }, []);
+  const add = async () => { if (!f.title || !f.date) return; if (await guard(() => rpc('deadlines.add', { title: f.title, dueAt: new Date(f.date).toISOString() }), 'Abgabe eingetragen')) { setF({ title: '', date: '' }); reload(); } };
+  const connect = async () => { setBusy(true); await guard(() => rpc('deadlines.connectMail'), 'Gmail verbunden'); setBusy(false); reloadM(); reloadC(); };
+  const col = (d) => (d < 2 ? 'var(--red, #e5484d)' : d < 7 ? 'var(--orange)' : 'var(--text-2)');
+  return (
+    <Panel icon={CalendarClock} title="Abgaben & Fristen" sub="Aus Kalender, Aufgaben, Klausurmodus und – wenn du willst – Gmail · Erinnerung 7, 2, 1 Tag und 3 h vorher">
+      {!list.length && <Empty>Keine Abgaben in Sicht. Termine mit „Abgabe“, „Frist“ oder „Prüfung“ im Titel landen automatisch hier.</Empty>}
+      {list.map((d) => <div class="row small mb"><button class="btn xs ghost" title="Erledigt" onClick={() => guard(() => rpc('deadlines.done', { id: d.id })).then(reload)}><Check size={12} /></button><span class="grow"><b>{d.title}</b><span class="tiny muted"> · {SRC_DE[d.source] || d.source}{d.course ? ' · ' + d.course : ''}</span></span><span style={{ color: col(d.inDays) }}>{fmtDateTime(d.dueAt)}</span></div>)}
+      {cands.length > 0 && <div class="col mt" style={{ gap: 4, borderTop: '1px solid var(--line)', paddingTop: 6 }}><b class="small"><Mail size={12} /> Vorschläge aus deinen Mails</b>{cands.map((c) => <div class="row small"><span class="grow">{c.title} <span class="tiny muted">· {fmtDateTime(c.dueAt)} · „{c.subject}“</span></span><button class="btn xs" onClick={() => guard(() => rpc('deadlines.accept', { id: c.id })).then(() => { reload(); reloadC(); })}><Check size={12} /></button><button class="btn xs ghost" onClick={() => guard(() => rpc('deadlines.reject', { id: c.id })).then(reloadC)}><X size={11} /></button></div>)}</div>}
+      <div class="row gap-s mt"><input class="inp grow" placeholder="Abgabe, z. B. Praxisbericht" value={f.title} onInput={(e) => setF({ ...f, title: e.currentTarget.value })} /><input class="inp" type="datetime-local" style={{ width: 200, flex: 'none' }} value={f.date} onInput={(e) => setF({ ...f, date: e.currentTarget.value })} /><button class="btn xs" onClick={add}><Plus size={12} /></button></div>
+      {mail && !mail.ready && <div class="tiny muted mt">Fristen aus Mails: <a href="#" onClick={(e) => { e.preventDefault(); if (!busy) connect(); }}>{busy ? 'verbinde …' : 'Gmail verbinden'}</a> (nur lesend: Betreff + Vorschau, Vorschläge musst du bestätigen)</div>}
+      {mail?.ready && <div class="tiny muted mt">Gmail verbunden – JARVIS schaut alle 6 Stunden nach. <a href="#" onClick={(e) => { e.preventDefault(); guard(() => rpc('deadlines.scanMail')).then(reloadC); }}>Jetzt prüfen</a></div>}
     </Panel>
   );
 }

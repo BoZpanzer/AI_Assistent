@@ -133,6 +133,11 @@ class Scheduler {
     this.add('wishlist', 12 * 3600_000, async () => { if (s.gaming.steam && (await s.gaming.steam.root?.())) await s.gaming.deals.check(); }, { heavy: true, initialDelayMs: 6 * 60_000 });
     // Alltag: Abos weiterschieben + Erinnerungen, ablaufende Vorräte, Geburtstage (7 Tage / Vortag)
     this.add('life-daily', 3600_000, async () => { s.life.dailySubs(); if (new Date().getHours() >= 9) s.life.dailyPantry(); if (new Date().getHours() >= 9) await s.birthdays.remind(); }, { initialDelayMs: 3 * 60_000 });
+    // Abgaben: Kalender/Aufgaben/Klausuren einsammeln + gestaffelt erinnern; Gmail-Vorschläge alle 6 h
+    this.add('deadlines', 30 * 60_000, async () => { s.deadlines.collect(); s.deadlines.remind(); }, { initialDelayMs: 2 * 60_000 });
+    this.add('deadlines-mail', 6 * 3600_000, async () => { await s.deadlines.scanMail(); }, { heavy: true, initialDelayMs: 8 * 60_000 });
+    // „Wann muss ich los?“ – nur wenn ein Termin mit Ort in den nächsten Stunden ansteht
+    this.add('transit', 3 * 60_000, async () => { await s.transit.check(); }, { initialDelayMs: 60_000 });
     this.add('lol-live', 5_000, async () => {
       const g = s.settings.get('gaming');
       if (!g.lolLiveCoach && g.lolObjectives === false) return;

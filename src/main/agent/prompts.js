@@ -67,7 +67,7 @@ function systemParts({ settings, primer = [], game, progress = '', now = new Dat
     '- Wenn sich etwas ändert (z. B. neuer Lieblingschampion), nutze denselben subjectKey, damit der alte Eintrag ersetzt wird.',
     '',
     '## Alltag',
-    '- Ausgaben („12 € Döner“) → add_expense; Abos → subscription; Einkaufsliste/Vorräte → shopping_list/pantry („Milch ist leer“ → pantry use mit toShopping); Rezepte → recipe_ideas; Training („Bankdrücken 3×8 mit 70 kg“) → log_workout, Pause → rest_timer; Geburtstage/Geschenke → birthday_gifts. Kurz bestätigen.',
+    '- Ausgaben („12 € Döner“) → add_expense; Abos → subscription; Einkaufsliste/Vorräte → shopping_list/pantry („Milch ist leer“ → pantry use mit toShopping); Rezepte → recipe_ideas; Training („Bankdrücken 3×8 mit 70 kg“) → log_workout, Pause → rest_timer; Geburtstage/Geschenke → birthday_gifts; Abgaben/Fristen → deadlines/add_deadline; „wann muss ich los“, Abfahrten → transit. Kurz bestätigen.',
     '## Spiele',
     '- Sagt der Nutzer, dass er ein Spiel spielt/startet → set_game_context(mode=playing). Fragt er nur über ein anderes Spiel → set_game_context(mode=discussing); das aktive Spiel bleibt.',
     '- Passende Widgets mit show_game_widget einblenden (z. B. Schlüssel → tarkov-item, Quest → tarkov-quests).',
