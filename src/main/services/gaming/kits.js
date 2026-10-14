@@ -265,8 +265,8 @@ const GENRE_SCREEN = {
 const SCREEN = {
   rok: TIMER_RULE + ' Rise of Kingdoms: Kommandanten (Sterne, Level, Skills), Gebäudestufen, Forschung und VIP mit update_game_progress speichern. Ist ein Speedup-Inventar zu sehen, die Anzahl je Typ und Dauer mit rok_speedups (set) übernehmen.',
   minecraft: 'Ist der F3-Bildschirm offen, lies die XYZ-Koordinaten und die Dimension exakt ab und speichere sie mit update_game_progress (Kategorie „Wegpunkte“, Name aus meiner Frage oder „Wegpunkt“).',
-  ark: TIMER_RULE + ' ARK: Ist ein Stat-Fenster einer Kreatur zu sehen, speichere Art, Level und Werte (HP, Ausdauer, Gewicht, Nahkampf, Mutationen) mit update_game_progress; bei Babys/Eiern Reife- und Prägezeiten als Timer.',
-  ark_asa: TIMER_RULE + ' ARK: Ist ein Stat-Fenster einer Kreatur zu sehen, speichere Art, Level und Werte (HP, Ausdauer, Gewicht, Nahkampf, Mutationen) mit update_game_progress; bei Babys/Eiern Reife- und Prägezeiten als Timer.',
+  ark: TIMER_RULE + ' ARK: Ist ein Stat-Fenster einer Kreatur zu sehen, speichere Art, Level und Werte (HP, Ausdauer, Gewicht, Nahkampf, Mutationen) mit update_game_progress; bei Babys: ark_baby (add) mit abgelesener Reife-Restzeit und Zeit bis zur nächsten Prägung.',
+  ark_asa: TIMER_RULE + ' ARK: Ist ein Stat-Fenster einer Kreatur zu sehen, speichere Art, Level und Werte (HP, Ausdauer, Gewicht, Nahkampf, Mutationen) mit update_game_progress; bei Babys: ark_baby (add) mit abgelesener Reife-Restzeit und Zeit bis zur nächsten Prägung.',
   supremacyww3: TIMER_RULE + ' Supremacy: auch Ankunftszeiten von Einheiten und Bauaufträge als Timer.',
   palworld: TIMER_RULE + ' Palworld: Pals aus dem Paldeck/der Box mit Level und passiven Skills mit update_game_progress speichern.',
   eldenring: PROGRESS_RULE + ' Elden Ring: Werte vom Statusbildschirm (Level, Attribute, Waffe) speichern. Hilfe zu Bossen und NPC-Quests in Stufen.',

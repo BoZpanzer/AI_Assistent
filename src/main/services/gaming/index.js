@@ -50,6 +50,7 @@ const WIDGETS = {
   servers: { title: 'Server-Status', params: {} },
   deals: { title: 'Wunschliste im Angebot', params: {} },
   'rok-speedups': { title: 'Speedup-Rechner', params: {} },
+  'ark-breeding': { title: 'Zucht & Prägung', params: {} },
   'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
   ask: { title: 'Frag JARVIS', params: {} },
@@ -62,7 +63,7 @@ function extrasFor(p) {
   if (p.integration === 'league') return ['lol-game', 'lol-coach', 'playtime', 'news'];
   if (p.integration === 'tarkov') return ['playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
-  return ['playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
+  return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
 }
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
@@ -74,7 +75,8 @@ const LAYOUTS = {
 const TIMER_SCHEMA = { type: 'object', additionalProperties: false, properties: {
   game: { type: 'string', maxLength: 80 }, label: { type: 'string', minLength: 1, maxLength: 120 },
   kind: { type: 'string', enum: ['build', 'research', 'training', 'taming', 'breeding', 'crafting', 'event', 'custom'] },
-  minutes: { type: 'number', minimum: 0.1, maximum: 60 * 24 * 60 }, endsAt: { type: 'string', format: 'date-time' }, note: { type: 'string', maxLength: 300 } } };
+  minutes: { type: 'number', minimum: 0.1, maximum: 60 * 24 * 60 }, endsAt: { type: 'string', format: 'date-time' }, note: { type: 'string', maxLength: 300 },
+  repeatMinutes: { type: 'number', minimum: 5, maximum: 60 * 24 * 31 }, until: { type: 'string', format: 'date-time' }, series: { type: 'string', maxLength: 40 } } };
 
 class Gaming {
   constructor(ctx) {
@@ -143,14 +145,17 @@ class Gaming {
     const ends = d.endsAt ? new Date(d.endsAt) : new Date(Date.now() + (d.minutes || 0) * 60000);
     if (isNaN(ends) || ends <= new Date()) throw new Error('Timer-Ende liegt in der Vergangenheit');
     const tid = id('tm');
-    this.db.run('INSERT INTO game_timers(id,game,label,kind,ends_at,created_at,note) VALUES(?,?,?,?,?,?,?)', tid, prof.id, d.label, d.kind || 'custom', ends.toISOString(), nowIso(), d.note || '');
+    const until = d.until ? new Date(d.until) : null;
+    if (until && isNaN(until)) throw new Error('until ungültig');
+    this.db.run('INSERT INTO game_timers(id,game,label,kind,ends_at,created_at,note,repeat_min,until,series) VALUES(?,?,?,?,?,?,?,?,?,?)', tid, prof.id, d.label, d.kind || 'custom', ends.toISOString(), nowIso(), d.note || '',
+      d.repeatMinutes ? Math.round(d.repeatMinutes) : null, until ? until.toISOString() : null, d.series || (d.repeatMinutes ? id('ts') : null));
     this.bus.emit('game:timers', {});
     return this.timer(tid);
   }
   timer(tid) { const r = this.db.get('SELECT * FROM game_timers WHERE id=?', tid); return r ? this.timerPublic(r) : null; }
   timerPublic(r) {
     const p = this.context.profile(r.game);
-    return { id: r.id, game: r.game, gameName: p?.name || r.game, label: r.label, kind: r.kind, endsAt: r.ends_at, createdAt: r.created_at, fired: !!r.fired, note: r.note, origin: 'timer', estimate: true };
+    return { id: r.id, game: r.game, gameName: p?.name || r.game, label: r.label, kind: r.kind, endsAt: r.ends_at, createdAt: r.created_at, fired: !!r.fired, note: r.note, origin: 'timer', estimate: true, repeatMin: r.repeat_min || null, until: r.until || null, series: r.series || null };
   }
   timers({ game, includeFired = false } = {}) {
     let sql = 'SELECT * FROM game_timers WHERE 1=1'; const p = [];
@@ -159,6 +164,8 @@ class Gaming {
     sql += ' ORDER BY fired, ends_at LIMIT 100';
     return this.db.all(sql, ...p).map((r) => this.timerPublic(r));
   }
+  /** Alle offenen Timer einer Serie entfernen (z. B. Prägung neu takten). */
+  removeSeries(series) { const n = this.db.run('DELETE FROM game_timers WHERE series=? AND fired=0', series); this.bus.emit('game:timers', {}); return n; }
   removeTimer(tid) { const t = this.timer(tid); this.db.run('DELETE FROM game_timers WHERE id=?', tid); this.bus.emit('game:timers', {}); return t; }
 
   /** Fire due timers → notification ("estimated", not verified game state). */
@@ -167,6 +174,12 @@ class Gaming {
     const due = this.db.all('SELECT * FROM game_timers WHERE fired=0 AND ends_at<=?', now.toISOString());
     for (const r of due) {
       this.db.run('UPDATE game_timers SET fired=1 WHERE id=?', r.id);
+      // Wiederkehrend: nächsten Termin anlegen (verpasste überspringen), bis „until“
+      if (r.repeat_min) {
+        let next = Date.parse(r.ends_at) + r.repeat_min * 60000;
+        while (next <= now.getTime()) next += r.repeat_min * 60000;
+        if (!r.until || next <= Date.parse(r.until)) this.db.run('INSERT INTO game_timers(id,game,label,kind,ends_at,created_at,note,repeat_min,until,series) VALUES(?,?,?,?,?,?,?,?,?,?)', id('tm'), r.game, r.label, r.kind, new Date(next).toISOString(), nowIso(), r.note || '', r.repeat_min, r.until, r.series);
+      }
       const p = this.context.profile(r.game);
       this.notifications.push({ category: 'gaming', origin: 'timer', game: r.game, dedupeKey: 'timer:' + r.id,
         title: `${p?.short || p?.name || r.game}: ${r.label}`,

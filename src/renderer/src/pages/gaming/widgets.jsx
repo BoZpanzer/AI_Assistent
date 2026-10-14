@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -522,12 +522,12 @@ const TIMER_KINDS = { build: ['Bau', Hammer], research: ['Forschung', FlaskConic
 function Timers({ game, params }) {
   const [list] = useRpc('game.timers', { game: game.id, includeFired: false }, { events: ['game:timers'], initial: [] });
   const kinds = params.kinds?.length ? params.kinds : ['custom', 'build', 'research', 'crafting'];
-  const [f, setF] = useState({ label: '', kind: kinds[0], h: 1, m: 0 });
+  const [f, setF] = useState({ label: '', kind: kinds[0], h: 1, m: 0, rep: '' });
   useNow(1000);
   const add = async () => {
     if (!f.label.trim()) return;
     const minutes = Number(f.h) * 60 + Number(f.m);
-    if (await guard(() => rpc('game.addTimer', { game: game.name, label: f.label.trim(), kind: f.kind, minutes }), 'Timer gestartet')) setF({ ...f, label: '' });
+    if (await guard(() => rpc('game.addTimer', { game: game.name, label: f.label.trim(), kind: f.kind, minutes, ...(f.rep ? { repeatMinutes: Number(f.rep) } : {}) }), 'Timer gestartet')) setF({ ...f, label: '' });
   };
   return (
     <Panel icon={Timer} title={game.id === 'rok' ? 'Bau- & Forschungs-Timer' : 'Timer'} sub="Eigene Zeitabschätzungen – kein verifizierter Spielstatus">
@@ -536,7 +536,7 @@ function Timers({ game, params }) {
         {list.map((t) => { const [l, I] = TIMER_KINDS[t.kind] || TIMER_KINDS.custom; const done = new Date(t.endsAt) <= new Date(); return (
           <div class={`timer-row ${done ? 'fired' : ''}`}>
             <I size={18} style={{ color: 'var(--cyan)' }} />
-            <div class="grow"><div class="small" style={{ fontWeight: 600 }}>{t.label}</div><div class="tiny muted">{l} · endet {fmtDateTime(t.endsAt)}</div></div>
+            <div class="grow"><div class="small" style={{ fontWeight: 600 }}>{t.label}</div><div class="tiny muted">{l} · endet {fmtDateTime(t.endsAt)}{t.repeatMin ? ` · ↻ alle ${t.repeatMin >= 1440 && t.repeatMin % 1440 === 0 ? t.repeatMin / 1440 + ' T' : Math.round(t.repeatMin / 6) / 10 + ' h'}` : ''}</div></div>
             <div class="left">{done ? 'fertig*' : countdown(t.endsAt)}</div>
             <button class="btn icon xs ghost" onClick={() => rpc('game.removeTimer', { id: t.id })}><X size={13} /></button>
           </div>); })}
@@ -546,6 +546,7 @@ function Timers({ game, params }) {
         <Select style={{ width: 120 }} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={kinds.map((k) => ({ value: k, label: TIMER_KINDS[k]?.[0] || k }))} />
         <input class="inp" type="number" min="0" style={{ width: 60 }} value={f.h} onInput={(e) => setF({ ...f, h: e.currentTarget.value })} title="Stunden" /><span class="tiny muted">h</span>
         <input class="inp" type="number" min="0" max="59" style={{ width: 60 }} value={f.m} onInput={(e) => setF({ ...f, m: e.currentTarget.value })} title="Minuten" /><span class="tiny muted">m</span>
+        <Select style={{ width: 110 }} value={f.rep} onChange={(v) => setF({ ...f, rep: v })} options={[{ value: '', label: 'einmalig' }, { value: '1440', label: 'täglich' }, { value: '10080', label: 'wöchentlich' }]} />
         <button class="btn sm" onClick={add}><Plus size={14} /></button>
       </div>
       <div class="tiny muted mt">* „fertig“ bedeutet: deine geschätzte Zeit ist abgelaufen.</div>
@@ -1226,6 +1227,31 @@ function Deals() {
   );
 }
 
+function ArkBreeding({ game }) {
+  const [list, reload] = useRpc('ark.babies', { game: game.id }, { events: ['game:data', 'game:timers'], initial: [] });
+  const [f, setF] = useState({ name: '', species: '', matureIn: '', cuddleIn: '' });
+  useNow(1000);
+  const add = async () => { if (!f.name.trim()) return; if (await guard(() => rpc('ark.add', { game: game.id, ...f }), 'Baby angelegt – Erinnerungen laufen')) { setF({ name: '', species: '', matureIn: '', cuddleIn: '' }); reload(); } };
+  return (
+    <Panel icon={Timer} title="Zucht & Prägung" sub="Erinnert aufs Handy zur Prägung und wenn das Baby ausgewachsen ist – Zeiten aus dem Spiel ablesen (oder Screenshot-Hotkey)">
+      {!list.length && <Empty>Noch kein Baby. Trag Name, Reife-Restzeit und Zeit bis zum nächsten Kuscheln ein – oder drück den Screenshot-Hotkey auf dem Baby.</Empty>}
+      {list.map((b) => <div class="row small mb" style={{ alignItems: 'center' }}>
+        <div class="grow"><b>{b.name}</b>{b.species ? <span class="muted"> · {b.species}</span> : null}<div class="tiny muted">{b.grown ? 'ausgewachsen' : b.matureAt ? `ausgewachsen in ${countdown(b.matureAt)}` : 'Reifezeit unbekannt'} · {b.imprints}× geprägt{b.nextCuddle ? ` · nächste Prägung in ${countdown(b.nextCuddle)}` : ''}</div></div>
+        {!b.grown && <button class="btn xs" title="Jetzt geprägt – nächste Erinnerung ab jetzt" onClick={() => guard(() => rpc('ark.imprinted', { game: game.id, id: b.id }), 'Nächste Prägung geplant').then(reload)}><Check size={12} />Geprägt</button>}
+        <button class="btn xs ghost" onClick={() => guard(() => rpc('ark.remove', { game: game.id, id: b.id })).then(reload)}><X size={11} /></button>
+      </div>)}
+      <div class="row wrap gap-s mt">
+        <input class="inp" style={{ width: 110 }} placeholder="Name" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} />
+        <input class="inp" style={{ width: 110 }} placeholder="Art (optional)" value={f.species} onInput={(e) => setF({ ...f, species: e.currentTarget.value })} />
+        <input class="inp" style={{ width: 120 }} placeholder="Reife in, z. B. 1d 4h" value={f.matureIn} onInput={(e) => setF({ ...f, matureIn: e.currentTarget.value })} />
+        <input class="inp" style={{ width: 120 }} placeholder="Prägen in, z. B. 7h 50m" value={f.cuddleIn} onInput={(e) => setF({ ...f, cuddleIn: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button class="btn xs" onClick={add}><Plus size={12} /></button>
+      </div>
+      <div class="tiny muted mt">Prägungs-Intervall: Einstellungen → Gaming (ARK-Standard 8 h, auf Servern mit anderen Raten anpassen).</div>
+    </Panel>
+  );
+}
+
 const SPEED_TYPES = [['building', 'Bau'], ['research', 'Forschung'], ['training', 'Training'], ['healing', 'Heilung']];
 function RokSpeedups() {
   const [st, reload] = useRpc('rok.speedups', {}, { events: ['game:data'] });
@@ -1256,6 +1282,6 @@ export const WIDGETS = {
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
-  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups,
+  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding,
 };
 export { nextScheduled };

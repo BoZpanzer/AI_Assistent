@@ -195,4 +195,10 @@ module.exports = [
       body TEXT NOT NULL DEFAULT '', summary TEXT, source TEXT NOT NULL, seen INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
     CREATE INDEX ix_game_news ON game_news(game, published_at);
   `),
+  // v6 — wiederkehrende Spiel-Timer (Prägung alle 8 h, wöchentliche Events)
+  (db) => db.exec(`
+    ALTER TABLE game_timers ADD COLUMN repeat_min INTEGER;
+    ALTER TABLE game_timers ADD COLUMN until TEXT;
+    ALTER TABLE game_timers ADD COLUMN series TEXT;
+  `),
 ];

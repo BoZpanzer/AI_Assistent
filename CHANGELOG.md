@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.26.0 – Wiederkehrende Timer und ARK-Zucht
+
+- **Wiederkehrende Timer** für alle Spiele: täglich, wöchentlich oder alle X Stunden, z. B. Allianz-Festung in RoK oder Gildentermine. Verpasste Termine werden übersprungen. Per Sprache: „Erinner mich jeden Montag um 20 Uhr an die Festung.“
+- **ARK – Zucht & Prägung:** Babys mit Reife-Restzeit und Zeit bis zum nächsten Kuscheln anlegen, von Hand oder per Screenshot-Hotkey auf dem Baby. JARVIS erinnert dich aufs Handy zu jeder Prägung, bis das Baby ausgewachsen ist, und sagt Bescheid, wenn es so weit ist. „Geprägt“ taktet die nächste Erinnerung neu. Das Intervall stellst du in den Einstellungen ein (ARK-Standard 8 h).
+
 ## 3.25.0 – Basis-Paket für alle Spiele + Rise of Kingdoms
 
 - **Spielzeit für jedes Spiel:** auch für LoL, Tarkov, RoK und andere Spiele ohne Steam, aus der Spielerkennung. Pro Spiel heute, diese Woche, Vorwoche, Sessions, längste Session und 14-Tage-Verlauf. Absturzsicher: Endet JARVIS unerwartet, zählt die Session bis zum letzten Lebenszeichen.

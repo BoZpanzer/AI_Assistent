@@ -207,9 +207,9 @@ function buildTools(s) {
       params: { type: 'object', properties: { query: { type: 'string' }, map: { type: 'string' }, champion: { type: 'string' }, page: { type: 'string' }, keysOnly: { type: 'boolean' }, tab: { type: 'string' } } } } },
     run: ({ game, widget, params = {} }) => { const p = s.gaming.context.resolve(game, { create: false }); if (!p) throw new Error('Spiel unbekannt'); const allowed = Object.keys(WIDGETS[widget].params); const clean = Object.fromEntries(Object.entries(params).filter(([k]) => allowed.includes(k))); return { shown: s.gaming.pushWidget(p.id, widget, clean) }; } });
 
-  def({ name: 'add_game_timer', mode: 'write', description: 'Spiel-Timer anlegen (Bau, Forschung, Zähmung …). Benachrichtigt nach Ablauf. Hinweis: Zeitabschätzung, kein verifizierter Spielstatus.',
+  def({ name: 'add_game_timer', mode: 'write', description: 'Spiel-Timer anlegen (Bau, Forschung, Zähmung …). Benachrichtigt nach Ablauf. Wiederkehrend mit repeatMinutes (z. B. wöchentliches Allianz-Event: 10080; optional bis until). Hinweis: Zeitabschätzung, kein verifizierter Spielstatus.',
     schema: { type: 'object', required: ['game', 'label'], properties: { game: { type: 'string' }, label: { type: 'string', description: 'z. B. "Rathaus Stufe 22"' }, kind: { type: 'string', enum: ['build', 'research', 'training', 'taming', 'breeding', 'crafting', 'event', 'custom'] },
-      minutes: { type: 'number' }, endsAt: { type: 'string' }, note: { type: 'string' } } },
+      minutes: { type: 'number' }, endsAt: { type: 'string' }, note: { type: 'string' }, repeatMinutes: { type: 'number' }, until: { type: 'string' } } },
     run: (a) => { const t = s.gaming.addTimer(a); return { timer: { id: t.id, game: t.gameName, label: t.label, endsAt: t.endsAt } }; },
     card: (a, r) => ({ icon: 'timer', title: 'Timer gestartet', lines: [`${r?.timer?.game}: ${a.label}`, 'Endet ' + fmt(r?.timer?.endsAt)], undo: { tool: 'remove_game_timer', args: { id: r?.timer?.id } } }) });
   def({ name: 'list_game_timers', mode: 'read', description: 'Laufende Spiel-Timer.', schema: { type: 'object', properties: { game: { type: 'string' } } },
@@ -358,6 +358,17 @@ function buildTools(s) {
   def({ name: 'steam_deals', mode: 'read', description: 'Angebote auf der Steam-Wunschliste des Nutzers (Rabatt, Preis in Euro). refresh=true holt aktuelle Preise.',
     schema: { type: 'object', properties: { refresh: { type: 'boolean' } } },
     run: async ({ refresh }) => { if (refresh || !s.gaming.deals.state()) await s.gaming.deals.check({ notify: false }); const st = s.gaming.deals.state(); return { at: st?.at, onSale: (st?.items || []).filter((x) => x.discount > 0).slice(0, 15), total: st?.items?.length || 0 }; } });
+  def({ name: 'ark_baby', mode: 'write', description: 'ARK-Zucht-Tracker: Baby anlegen (action=add: name, species, matureIn = Restzeit bis ausgewachsen, cuddleIn = Zeit bis zur nächsten Prägung, interval optional), nach dem Prägen neu takten (imprinted), entfernen (remove) oder anzeigen (list). Erinnert aufs Handy zur Prägung und wenn das Baby ausgewachsen ist. Restzeiten nur aus Aussage/Screenshot, nie schätzen.',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['add', 'imprinted', 'remove', 'list'] }, game: { type: 'string', description: 'ARK oder ARK Ascended (Standard: aktives Spiel)' }, name: { type: 'string' }, species: { type: 'string' }, matureIn: { type: 'string' }, cuddleIn: { type: 'string' }, interval: { type: 'string' } } },
+    run: ({ action, game, name, ...b }) => {
+      const st = s.gaming.context.state(); const p = game ? s.gaming.context.resolve(game, { create: false }) : (st.active?.profile || st.running[0]);
+      const gid = ['ark', 'ark_asa'].includes(p?.id) ? p.id : 'ark_asa';
+      const A = s.gaming.ark;
+      if (action === 'add') return { baby: A.add(gid, { name, ...b }) };
+      if (action === 'imprinted') return { baby: A.imprinted(gid, name) };
+      if (action === 'remove') return { removed: A.remove(gid, name) };
+      return { babies: A.state(gid) };
+    } });
   def({ name: 'rok_speedups', mode: 'write', description: 'Rise of Kingdoms Speedup-Inventar und -Rechner. action=get: Inventar + Summen; set: Anzahlen übernehmen (entries: type universal|building|research|training|healing, duration z. B. "60m", "3h", "1d", count); calc: reicht es für need (z. B. "12d 4h") beim type? Liefert Plan mit möglichst wenig Überschuss und was fehlt.',
     schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['get', 'set', 'calc'] }, entries: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, duration: { type: 'string' }, count: { type: 'integer' } } } }, type: { type: 'string' }, need: { type: 'string' } } },
     run: ({ action, entries, type, need }) => { const R = s.gaming.rok; if (action === 'set') return R.set(entries); if (action === 'calc') return R.calc(type, need); return R.state(); } });

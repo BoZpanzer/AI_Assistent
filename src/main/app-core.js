@@ -38,6 +38,7 @@ const { Playtime } = require('./services/gaming/playtime');
 const { GameNews } = require('./services/gaming/news');
 const { Deals } = require('./services/gaming/deals');
 const { Rok } = require('./services/gaming/rok');
+const { Ark } = require('./services/gaming/ark');
 const { GameBrainSync } = require('./services/gaming/brainsync');
 const { Steam } = require('./services/gaming/steam');
 const { GameDesigner } = require('./services/gaming/designer');
@@ -84,6 +85,7 @@ function createCore(opts) {
   s.gaming.news = new GameNews(s);
   s.gaming.deals = new Deals(s);
   s.gaming.rok = new Rok(s);
+  s.gaming.ark = new Ark(s);
   s.gaming.brainSync = new GameBrainSync(s);
   s.gaming.designer = new GameDesigner(s);
   s.gaming.eftLogs = new EftLogs(s);

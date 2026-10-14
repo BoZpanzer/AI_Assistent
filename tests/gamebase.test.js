@@ -224,3 +224,45 @@ test('Spielseiten bekommen das Basis-Paket automatisch, eigene Layouts einmalig'
     assert.deepEqual(types('subnautica'), ['notes'], 'danach entscheidet der Nutzer');
   } finally { cleanup(); }
 });
+
+test('Wiederkehrende Timer und ARK-Zucht: Prägung alle X h bis zur Reife, „Geprägt“ taktet neu', () => {
+  const { core, cleanup } = tempCore();
+  try {
+    const G = core.gaming;
+    // wöchentliches Event: nach Ablauf kommt der nächste Termin, verpasste werden übersprungen
+    const t = G.addTimer({ game: 'Rise of Kingdoms', label: 'Allianz-Festung', kind: 'event', minutes: 1, repeatMinutes: 10080 });
+    assert.equal(t.repeatMin, 10080);
+    G.checkTimers(new Date(Date.now() + 3 * 60000));
+    const next = G.timers({ game: 'rok' }).filter((x) => !x.fired && x.label === 'Allianz-Festung');
+    assert.equal(next.length, 1);
+    assert.ok(Math.abs(Date.parse(next[0].endsAt) - (Date.parse(t.endsAt) + 10080 * 60000)) < 1000);
+    assert.equal(next[0].series, t.series);
+
+    // ARK: Baby mit Reife in 20 h, nächste Prägung in 2 h, Intervall 8 h
+    const A = G.ark;
+    const b = A.add('ark_asa', { name: 'Rexi', species: 'Rex', matureIn: '20h', cuddleIn: '2h' });
+    let st = A.state('ark_asa')[0];
+    assert.ok(Math.abs(Date.parse(st.nextCuddle) - (Date.now() + 2 * 3600000)) < 5000);
+    const own = G.timers({ game: 'ark_asa' }).filter((x) => x.series === b.series);
+    assert.deepEqual(own.map((x) => x.label).sort(), ['Ausgewachsen: Rexi (Rex)', 'Prägen: Rexi (Rex)']);
+    // Prägung fällig → Meldung, nächste in 8 h (noch vor der Reife)
+    G.checkTimers(new Date(Date.now() + 2 * 3600000 + 1000));
+    st = A.state('ark_asa')[0];
+    assert.ok(Math.abs(Date.parse(st.nextCuddle) - (Date.now() + 10 * 3600000)) < 5000, 'nächste Prägung 8 h später');
+    assert.ok(core.db.get("SELECT 1 x FROM notifications WHERE title LIKE '%Prägen: Rexi%'"));
+    // „Geprägt“ → ab jetzt + 8 h, alte Serie ersetzt
+    A.imprinted('ark_asa', b.id);
+    st = A.state('ark_asa')[0];
+    assert.equal(st.imprints, 1);
+    assert.ok(Math.abs(Date.parse(st.nextCuddle) - (Date.now() + 8 * 3600000)) < 5000);
+    assert.equal(G.timers({ game: 'ark_asa' }).filter((x) => x.series === b.series && !x.fired).length, 2);
+    // nach der Reife keine weitere Prägung
+    const l = A.list('ark_asa'); l[0].matureAt = new Date(Date.now() + 3600000).toISOString(); A.save('ark_asa', l);
+    A.imprinted('ark_asa', b.id);
+    assert.equal(G.timers({ game: 'ark_asa' }).filter((x) => x.series === b.series && !x.fired && x.label.startsWith('Prägen')).length, 0, 'Prägung nach der Reife fällt weg');
+    assert.throws(() => A.add('rust', { name: 'x' }), /Nur für ARK/);
+    A.remove('ark_asa', b.id);
+    assert.equal(G.timers({ game: 'ark_asa' }).filter((x) => x.series === b.series && !x.fired).length, 0);
+    assert.ok(core.gaming.layout('ark_asa').widgets.some((w) => w.type === 'ark-breeding'));
+  } finally { cleanup(); }
+});
