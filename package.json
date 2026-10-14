@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "3.28.0",
+  "version": "3.29.0",
   "description": "JARVIS – Personal Intelligence System",
   "main": "src/main/index.js",
   "scripts": {

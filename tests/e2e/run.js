@@ -26,7 +26,8 @@ async function waitFor(fn, ms = 15000) { const t = Date.now(); while (Date.now()
 
 async function step(name, fn) {
   const t0 = Date.now();
-  try { await fn(); results.push({ name, ok: true, ms: Date.now() - t0 }); } catch (e) { results.push({ name, ok: false, error: e.message }); }
+  process.stderr.write(`▶ ${name}\n`);
+  try { await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('Zeitüberschreitung (90 s)')), 90000))]); results.push({ name, ok: true, ms: Date.now() - t0 }); } catch (e) { results.push({ name, ok: false, error: e.message }); }
 }
 
 app.whenReady().then(async () => {
@@ -42,7 +43,7 @@ app.whenReady().then(async () => {
     await js(`document.querySelector('.chatbar .send').click()`);
   };
   const nav = async (page) => { await js(`document.querySelectorAll('.nav button')[${['dashboard', 'chat', 'tasks', 'calendar', 'study', 'gaming', 'brain', 'settings'].indexOf(page)}].click()`); await sleep(400); };
-  await waitFor(() => js('!!document.querySelector(".frame .sidebar")').catch(() => false), 20000);
+  try { await waitFor(() => js('!!document.querySelector(".frame .sidebar")').catch(() => false), 20000); } catch { console.error('Renderer startet nicht:', errors.join(' | ') || 'keine Konsolenmeldung'); app.exit(1); return; }
 
   await step('Einrichtungsassistent erscheint beim ersten Start', async () => {
     if (!(await js('!!document.querySelector(".setup")'))) throw new Error('Setup fehlt');

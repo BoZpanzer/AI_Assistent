@@ -56,6 +56,9 @@ const WIDGETS = {
   'pubg-matches': { title: 'Match-Nachbesprechung', params: {} },
   'stardew-farm': { title: 'Mein Hof', params: {} },
   'wiki-lists': { title: 'Checklisten aus dem Wiki', params: {} },
+  'tarkov-economy': { title: 'Händler, Crafts & Tausch', params: {} },
+  'lol-progress': { title: 'Rang-Verlauf & Champion-Pool', params: {} },
+  'tarkov-ammo': { title: 'Munition', params: { caliber: { type: 'string', maxLength: 30 } } },
   'factorio-calc': { title: 'Verhältnis-Rechner', params: {} },
   'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
@@ -66,8 +69,8 @@ const WIDGETS = {
 /** Neue Widgets je Spiel – kommen automatisch dazu (eigene Layouts: einmalig, danach entscheidest du). */
 const SERVER_GAMES = new Set(['minecraft', 'arma3', 'rust', 'ark', 'ark_asa', 'palworld', 'cs2', 'sandstorm', 'pixark', 'hytale', 'terraria', 'theforest']);
 function extrasFor(p) {
-  if (p.integration === 'league') return ['lol-game', 'lol-coach', 'playtime', 'news'];
-  if (p.integration === 'tarkov') return ['playtime'];
+  if (p.integration === 'league') return ['lol-game', 'lol-coach', 'lol-progress', 'playtime', 'news'];
+  if (p.integration === 'tarkov') return ['tarkov-economy', 'tarkov-ammo', 'playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
   return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), ...(p.id === 'cs2' ? ['cs2-matches'] : []), ...(p.id === 'assettocorsa' ? ['racing-laps'] : []), ...(p.id === 'pubg' ? ['pubg-matches'] : []), ...(p.id === 'stardew' ? ['stardew-farm'] : []), ...(p.id === 'factorio' ? ['factorio-calc'] : []), 'wiki-lists', 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
 }
@@ -264,6 +267,17 @@ class Gaming {
     const s = new Set(fromTracker);
     for (const [id, on] of Object.entries(manual)) { if (on) s.add(id); else s.delete(id); }
     return s;
+  }
+  /** Händler-Resets, profitabelste Crafts (nur mit gebauten Stationen, wenn bekannt) und lohnende Tauschgeschäfte. */
+  async eftEconomy() {
+    const gm = this.tracker?.tdMode?.() || 'regular';
+    const [tr, cr, ba, hs] = await Promise.all([this.tarkov.traders(gm).catch(() => null), this.tarkov.crafts(gm).catch(() => null), this.tarkov.barters(gm).catch(() => null), this.tarkov.hideoutStations(gm).catch(() => null)]);
+    const built = this.eftHideoutBuilt();
+    const levelId = new Map(); for (const st of hs?.value || []) for (const l of st.levels || []) levelId.set(`${st.normalizedName}:${l.level}`, l.id);
+    const known = built.size > 0;
+    const crafts = (cr?.value || []).filter((c) => c.perHour != null && c.perHour > 0 && (!known || built.has(levelId.get(`${c.stationId}:${c.level}`)))).sort((a, b) => b.perHour - a.perHour).slice(0, 12);
+    const barters = (ba?.value || []).filter((b) => b.profit != null && b.profit > 0).sort((a, b) => b.profit - a.profit).slice(0, 12);
+    return { traders: tr?.value || [], crafts, barters, onlyBuilt: known, gameMode: gm, source: tr?.source || cr?.source || 'tarkov.dev', fetchedAt: cr?.fetchedAt || tr?.fetchedAt || null, note: 'Gewinn ohne Flohmarkt-Gebühr; Preise Ø 24 h.' };
   }
   setEftHideout(levelId, built) {
     if (!/^[\w-]{3,40}$/.test(String(levelId))) throw new Error('Ungültige Hideout-Stufe');

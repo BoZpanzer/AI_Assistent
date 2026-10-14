@@ -8,6 +8,18 @@ const API = 'https://api.tarkov.dev/graphql';
 const SOURCE = 'tarkov.dev (Community-API)';
 const DAY = 86400000;
 
+/** Wert eines Items: Flohmarkt-Ø 24 h, sonst bester Händler-Ankauf; Kosten: günstigster Einkauf (Flohmarkt/Händler). */
+const sellValue = (i) => Math.max(i?.avg24hPrice || 0, ...((i?.sellFor || []).filter((x) => !/flohmarkt|flea/i.test(x.vendor?.name || '')).map((x) => x.priceRUB || 0)));
+const buyCost = (i) => { const c = [...(i?.buyFor || []).map((x) => x.priceRUB).filter((x) => x > 0), ...(i?.avg24hPrice ? [i.avg24hPrice] : [])]; return c.length ? Math.min(...c) : null; };
+function profitOf(c, durationSec) {
+  const reward = (c.rewardItems || []).reduce((a, x) => a + sellValue(x.item) * x.count, 0);
+  const costs = (c.requiredItems || []).map((x) => ({ name: x.item?.name, count: x.count, cost: buyCost(x.item) }));
+  const unknown = costs.some((x) => x.cost == null);
+  const cost = costs.reduce((a, x) => a + (x.cost || 0) * x.count, 0);
+  const profit = unknown ? null : Math.round(reward - cost);
+  return { id: c.id, station: c.station?.name || null, stationId: c.station?.normalizedName || null, level: c.level, duration: durationSec, reward: (c.rewardItems || []).map((x) => `${x.count}× ${x.item?.name}`).join(', '), rewardValue: Math.round(reward), cost: Math.round(cost), inputs: costs, profit, perHour: profit != null && durationSec ? Math.round(profit / (durationSec / 3600)) : null };
+}
+
 class Tarkov {
   constructor(ctx) { this.fetch = ctx.fetch; this.cache = ctx.gameCache; }
 
@@ -210,6 +222,32 @@ class Tarkov {
       perSlot: Math.round(Math.max(flea || 0, traders[0]?.priceRUB || 0) / slots), wiki: best.wikiLink, icon: best.iconLink, alternatives: r.value.filter((i) => i !== best).slice(0, 3).map((i) => i.name), source: r.source, fetchedAt: r.fetchedAt };
   }
 
+  /** Händler mit Zeitpunkt des nächsten Restocks. */
+  async traders(gameMode = 'regular') {
+    const r = await this.cache.wrap('eft:traders:' + gameMode, SOURCE, 10 * 60000, async () => (await this.gql('query($gm: GameMode){ traders(lang: de, gameMode: $gm) { id name normalizedName resetTime } }', { gm: gameMode })).traders || []);
+    return { ...r, value: r.value.filter((t) => t.resetTime).map((t) => ({ name: t.name, id: t.normalizedName, resetTime: t.resetTime })) };
+  }
+
+  /** Hideout-Crafts mit Gewinn pro Stunde (Flohmarkt-Ø 24 h bzw. bester Händler; ohne Flohmarkt-Gebühr). */
+  async crafts(gameMode = 'regular') {
+    const it = 'item { id name shortName avg24hPrice sellFor { vendor { name } priceRUB } buyFor { vendor { name } priceRUB } }';
+    const r = await this.cache.wrap('eft:crafts:' + gameMode, SOURCE, 60 * 60000, async () => (await this.gql(`query($gm: GameMode){ crafts(lang: de, gameMode: $gm) { id station { normalizedName name } level duration rewardItems { ${it} count } requiredItems { ${it} count } } }`, { gm: gameMode })).crafts || []);
+    return { ...r, value: r.value.map((c) => profitOf(c, c.duration)) };
+  }
+
+  /** Tauschgeschäfte: Wert der Belohnung gegen Kosten der benötigten Items. */
+  async barters(gameMode = 'regular') {
+    const it = 'item { id name shortName avg24hPrice sellFor { vendor { name } priceRUB } buyFor { vendor { name } priceRUB } }';
+    const r = await this.cache.wrap('eft:barters:' + gameMode, SOURCE, 60 * 60000, async () => (await this.gql(`query($gm: GameMode){ barters(lang: de, gameMode: $gm) { id trader { name } level rewardItems { ${it} count } requiredItems { ${it} count } } }`, { gm: gameMode })).barters || []);
+    return { ...r, value: r.value.map((b) => ({ ...profitOf(b, null), trader: b.trader?.name, level: b.level })) };
+  }
+
+  /** Munition: Schaden, Durchschlag, Panzerschaden pro Kaliber. */
+  async ammo(gameMode = 'regular') {
+    const r = await this.cache.wrap('eft:ammo:' + gameMode, SOURCE, 3 * DAY, async () => (await this.gql('query($gm: GameMode){ ammo(lang: de, gameMode: $gm) { item { id name shortName avg24hPrice } caliber damage penetrationPower armorDamage projectileCount fragmentationChance } }', { gm: gameMode })).ammo || []);
+    return { ...r, value: r.value.map((a) => ({ name: a.item?.name, short: a.item?.shortName, caliber: String(a.caliber || '').replace(/^Caliber/, ''), damage: a.damage * (a.projectileCount || 1), pen: a.penetrationPower, armor: a.armorDamage, frag: Math.round((a.fragmentationChance || 0) * 100), price: a.item?.avg24hPrice || null })) };
+  }
+
   /** Questziele auf einer Karte – ohne erledigte Quests (Spielstand/TarkovTracker), optional bis zum eigenen Level. */
   async questMarkers(map, { done = new Set(), level = null, gameMode } = {}) {
     const z = await this.taskZones(gameMode);
@@ -265,4 +303,4 @@ function exitKind(name) {
   return 'normal';
 }
 
-module.exports = { Tarkov, TARKOV_SOURCE: SOURCE, exitKind };
+module.exports = { profitOf, Tarkov, TARKOV_SOURCE: SOURCE, exitKind };

@@ -372,6 +372,8 @@ class League {
     const champs = await this.champions().then((r) => r.value).catch(() => []);
     const champName = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || `Champion ${cid}`;
     let added = 0;
+    // Andere Modi (ARAM, Arena, Normal …): nur kompakte Statistik, keine Ranked-Analyse
+    try { this.recordOtherModes(games, me, champName); } catch (e) { log.debug('modes', e); }
     for (const g of games) {
       if (queues.length && !queues.includes(g.queueId)) continue;
       const mid = `${g.platformId || 'LCU'}_${g.gameId}`;
@@ -507,7 +509,70 @@ class League {
     return this.liveNotes(new Date(start - 5 * 60000).toISOString(), new Date(start + (dur + 600) * 1000).toISOString());
   }
 
+  /** ARAM/Arena/Normal-Spiele aus der Client-Matchliste merken (eigene Werte). */
+  recordOtherModes(games, me, champName) {
+    const MODES = { 450: 'ARAM', 1700: 'Arena', 1710: 'Arena', 400: 'Normal (Draft)', 430: 'Normal (Blind)', 490: 'Normal (Quickplay)', 440: 'Ranked Flex', 900: 'URF', 1900: 'URF', 2400: 'ARAM: Mayhem' };
+    let list = []; try { list = JSON.parse(this.db.get("SELECT value FROM game_state WHERE key='lol:modes'")?.value || '[]'); } catch { list = []; }
+    const seen = new Set(list.map((x) => x.id)); let added = 0;
+    for (const g of games) {
+      if (g.queueId === 420 || !MODES[g.queueId]) continue;
+      const mid = `${g.platformId || 'LCU'}_${g.gameId}`; if (seen.has(mid)) continue;
+      const ident = (g.participantIdentities || []).find((x) => x.player?.puuid === me.puuid);
+      const p = (g.participants || []).find((x) => x.participantId === ident?.participantId); const st = p?.stats;
+      if (!st) continue;
+      list.push({ id: mid, mode: MODES[g.queueId], queueId: g.queueId, at: new Date(g.gameCreation).toISOString(), champion: champName(p.championId), win: !!st.win, place: st.subteamPlacement || st.playerSubteamPlacement || null, k: st.kills, d: st.deaths, a: st.assists, damage: st.totalDamageDealtToChampions || 0, minutes: Math.round((g.gameDuration || 0) / 60) });
+      added++;
+    }
+    if (added) this.db.run("INSERT INTO game_state(key,value,updated_at) VALUES('lol:modes',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", JSON.stringify(list.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 300)), nowIso());
+    return added;
+  }
+  /** Statistik pro Modus: Spiele, Winrate (Arena: Ø Platz, Top 4), KDA, Lieblings-Champions. */
+  modeStats() {
+    let list = []; try { list = JSON.parse(this.db.get("SELECT value FROM game_state WHERE key='lol:modes'")?.value || '[]'); } catch { list = []; }
+    const by = {};
+    for (const g of list) {
+      const m = by[g.mode] = by[g.mode] || { mode: g.mode, games: 0, wins: 0, k: 0, d: 0, a: 0, places: [], champs: {} };
+      m.games++; if (g.win) m.wins++; m.k += g.k; m.d += g.d; m.a += g.a; if (g.place) m.places.push(g.place);
+      const c = m.champs[g.champion] = m.champs[g.champion] || { champion: g.champion, games: 0, wins: 0 }; c.games++; if (g.win) c.wins++;
+    }
+    return Object.values(by).map((m) => ({ mode: m.mode, games: m.games, winrate: Math.round(m.wins / m.games * 100), kda: +((m.k + m.a) / Math.max(1, m.d)).toFixed(2), avgPlace: m.places.length ? +(m.places.reduce((a, b) => a + b, 0) / m.places.length).toFixed(1) : null, top4: m.places.length ? m.places.filter((x) => x <= 4).length : null, champions: Object.values(m.champs).sort((a, b) => b.games - a.games).slice(0, 5) })).sort((a, b) => b.games - a.games);
+  }
+
+  /** LP-Verlauf: absoluter Wert über Ränge hinweg (Eisen IV 0 LP = 0, je Division 100). */
+  rankHistory() {
+    let list = []; try { list = JSON.parse(this.db.get("SELECT value FROM game_state WHERE key='lol:rankhist'")?.value || '[]'); } catch { list = []; }
+    return list;
+  }
+  /** Champion-Pool: pro Rolle die Champions, mit denen du (mit Glättung) am besten abschneidest – ab 3 Spielen. */
+  championPool(n = 80) {
+    const rows = this.db.all('SELECT summary FROM lol_matches ORDER BY played_at DESC LIMIT ?', n).map((r) => JSON.parse(r.summary));
+    const by = {};
+    for (const m of rows) {
+      const role = m.role || 'UNBEKANNT'; const k = role + '|' + m.champion;
+      const x = by[k] = by[k] || { role, champion: m.champion, games: 0, wins: 0, cs: 0, kda: 0 };
+      x.games++; if (m.win) x.wins++; x.cs += m.csPerMin || 0; x.kda += (m.kills + m.assists) / Math.max(1, m.deaths);
+    }
+    const all = Object.values(by).filter((x) => x.games >= 3).map((x) => ({ ...x, winrate: Math.round(x.wins / x.games * 100), score: Math.round((x.wins + 1) / (x.games + 2) * 100), csPerMin: +(x.cs / x.games).toFixed(1), kda: +(x.kda / x.games).toFixed(2) }));
+    const roles = {};
+    for (const x of all) (roles[x.role] = roles[x.role] || []).push(x);
+    const out = Object.entries(roles).map(([role, list]) => ({ role, games: list.reduce((a, x) => a + x.games, 0), pool: list.sort((a, b) => b.score - a.score || b.games - a.games).slice(0, 3), drop: list.filter((x) => x.games >= 5 && x.winrate < 40).map((x) => x.champion) })).sort((a, b) => b.games - a.games);
+    return { analyzed: rows.length, roles: out, note: 'Bewertung mit Glättung ((Siege+1)/(Spiele+2)), damit 2 Glückssiege nicht alles überstrahlen.' };
+  }
+
   saveRank(rank, source) {
+    try {
+      const TIERS = ['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'EMERALD', 'DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER'];
+      const DIV = { IV: 0, III: 1, II: 2, I: 3 };
+      const t = TIERS.indexOf(String(rank.tier).toUpperCase());
+      if (t >= 0) {
+        const abs = t >= 7 ? 7 * 400 + (rank.lp || 0) : t * 400 + (DIV[rank.rank] ?? 0) * 100 + (rank.lp || 0);
+        const h = this.rankHistory(); const last = h[h.length - 1];
+        if (!last || last.abs !== abs || last.wins !== rank.wins || last.losses !== rank.losses) {
+          h.push({ at: nowIso(), tier: rank.tier, rank: rank.rank, lp: rank.lp, wins: rank.wins, losses: rank.losses, abs });
+          this.db.run("INSERT INTO game_state(key,value,updated_at) VALUES('lol:rankhist',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", JSON.stringify(h.slice(-300)), nowIso());
+        }
+      }
+    } catch (e) { log.debug('rankhist', e); }
     const prev = this.cache.get('lol:rank:last', { allowStale: true });
     const same = prev?.value && prev.value.tier === rank.tier && prev.value.rank === rank.rank && prev.value.lp === rank.lp;
     this.cache.set('lol:rank:last', { ...rank, prev: same ? prev.value.prev : prev?.value ? { tier: prev.value.tier, rank: prev.value.rank, lp: prev.value.lp } : null }, source, 365 * 86400000);

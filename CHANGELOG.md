@@ -2,6 +2,18 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.29.0 – Tarkov-Wirtschaft, Munition, LoL-Rangverlauf & Champion-Pool
+
+- **Tarkov – Händler, Crafts & Tausch:**
+  - Countdown bis zum nächsten Restock jedes Händlers.
+  - Profitabelste Hideout-Crafts in Rubel pro Stunde. Ist dein Hideout bekannt (TarkovTracker oder Hideout-Widget), zeigt JARVIS nur Crafts, die du wirklich machen kannst.
+  - Lohnende Tauschgeschäfte beim Händler gegenüber dem Flohmarkt.
+  - Quelle: tarkov.dev, Preise Ø 24 h, ohne Flohmarkt-Gebühr.
+- **Tarkov – Munitionstabelle** pro Kaliber: Schaden, Durchschlag, Panzerschaden, Splitterchance, Preis. Auch per Frage: „Welche 5.56 hat den meisten Durchschlag?“
+- **LoL – Rang-Verlauf:** Rang und LP als Kurve über alle Divisionen hinweg, mit jedem Abgleich ein Punkt mehr.
+- **LoL – Champion-Pool:** pro Rolle deine besten 2–3 Champions aus den eigenen Ranked-Spielen, mit Glättung, damit zwei Glückssiege nicht alles überstrahlen. Dazu Champions mit schwacher Bilanz.
+- **LoL – andere Modi:** ARAM, Arena (Ø Platz, Top 4), Normal und Flex mit eigener Statistik und Lieblings-Champions.
+
 ## 3.28.0 – Checklisten aus dem Wiki + Factorio-Rechner
 
 - **Checklisten aus dem Wiki** für jedes Spiel: „Questlinie Ranni“, „Bosse in Reihenfolge“, „verpassbare Quests Akt 1“ … Quelle ist das Wiki des Spiels, ohne Wiki eine Websuche mit Quellen. Jeder Punkt muss mit einem wörtlichen Zitat aus der Quelle belegt sein, Unbelegtes fliegt raus. Story-Spoiler sind markiert. Die Liste erscheint auf der Spielseite mit Quelle und Stand. Vorschläge für Elden Ring, BG3, Terraria, Cyberpunk, Subnautica u. a. Geht auch per Sprache: „Leg mir eine Checkliste für die Questlinie von Millicent an.“

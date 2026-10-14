@@ -451,3 +451,64 @@ test('Factorio: Verhältnis-Rechner aus den Spieldaten (2.0- und 1.1-Format)', (
   const p3 = plan(d, 'electronic-circuit', 2, { machineFor: { crafting: 'assembling-machine-3' } });
   assert.equal(p3.steps.find((s) => s.recipe === 'electronic-circuit').machines, 0.8);
 });
+
+test('Tarkov: Händler-Resets, Craft-Gewinn pro Stunde (nur gebaute Stationen), Tauschgeschäfte, Munition', async () => {
+  const { profitOf } = require('../src/main/services/gaming/tarkov');
+  const it = (name, avg, buy, sell) => ({ id: name, name, shortName: name, avg24hPrice: avg, buyFor: buy ? [{ vendor: { name: 'Therapeut' }, priceRUB: buy }] : [], sellFor: sell ? [{ vendor: { name: 'Therapeut' }, priceRUB: sell }] : [] });
+  const p = profitOf({ id: 'c', station: { name: 'Lavatory', normalizedName: 'lavatory' }, level: 2, rewardItems: [{ item: it('Grafikkarte', 400000), count: 1 }], requiredItems: [{ item: it('Kabel', 20000, 18000), count: 2 }] }, 7200);
+  assert.deepEqual([p.rewardValue, p.cost, p.profit, p.perHour], [400000, 36000, 364000, 182000]);
+  const gql = { traders: [{ name: 'Prapor', normalizedName: 'prapor', resetTime: new Date(Date.now() + 3600000).toISOString() }],
+    crafts: [{ id: 'a', station: { name: 'Lavatory', normalizedName: 'lavatory' }, level: 2, duration: 7200, rewardItems: [{ item: it('Grafikkarte', 400000), count: 1 }], requiredItems: [{ item: it('Kabel', 20000), count: 2 }] },
+      { id: 'b', station: { name: 'Workbench', normalizedName: 'workbench' }, level: 3, duration: 3600, rewardItems: [{ item: it('Munition', 900000), count: 1 }], requiredItems: [{ item: it('Pulver', 10000), count: 1 }] }],
+    barters: [{ id: 'x', trader: { name: 'Mechanic' }, level: 2, rewardItems: [{ item: it('M4A1', 60000), count: 1 }], requiredItems: [{ item: it('Bolts', 10000), count: 2 }] }, { id: 'y', trader: { name: 'Mechanic' }, level: 1, rewardItems: [{ item: it('Schrott', 1000), count: 1 }], requiredItems: [{ item: it('Gold', 50000), count: 1 }] }],
+    hideoutStations: [{ id: 'l', name: 'Lavatory', normalizedName: 'lavatory', levels: [{ id: 'lav2', level: 2 }] }, { id: 'w', name: 'Workbench', normalizedName: 'workbench', levels: [{ id: 'wb3', level: 3 }] }],
+    ammo: [{ item: { id: '1', name: '5.56x45 M855A1', shortName: 'M855A1', avg24hPrice: 900 }, caliber: 'Caliber556x45NATO', damage: 49, penetrationPower: 44, armorDamage: 52, projectileCount: 1, fragmentationChance: 0.34 }],
+  };
+  const fetch = async (url, opts = {}) => {
+    if (url.includes('tarkov.dev')) { const q = JSON.parse(opts.body).query; const key = Object.keys(gql).find((k) => q.includes(k + '(')); return new Response(JSON.stringify({ data: { [key]: gql[key] } })); }
+    throw new Error('offline');
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  try {
+    let e = await core.gaming.eftEconomy();
+    assert.equal(e.traders[0].name, 'Prapor');
+    assert.deepEqual(e.crafts.map((c) => c.id), ['b', 'a'], 'ohne bekannten Hideout: alle, nach ₽/h');
+    assert.deepEqual(e.barters.map((b) => b.id), ['x'], 'nur lohnende Tauschgeschäfte');
+    core.gaming.setEftHideout('lav2', true);
+    core.gaming.tarkov.cache.del?.('eft:crafts:regular');
+    e = await core.gaming.eftEconomy();
+    assert.equal(e.onlyBuilt, true); assert.deepEqual(e.crafts.map((c) => c.id), ['a'], 'Werkbank 3 nicht gebaut');
+    const out = await core.orchestrator.execute('tarkov_ammo', { caliber: '5.56' }, { conversationId: 'x', channel: 'text' });
+    assert.equal(out.response.ammo[0].pen, 44); assert.equal(out.response.ammo[0].frag, 34);
+  } finally { cleanup(); }
+});
+
+test('LoL: Rang-Verlauf über Divisionen, Champion-Pool mit Glättung, ARAM/Arena-Statistik', () => {
+  const { core, cleanup } = tempCore();
+  try {
+    const L = core.gaming.league;
+    L.saveRank({ tier: 'GOLD', rank: 'II', lp: 47, wins: 30, losses: 25 }, 'test');
+    L.saveRank({ tier: 'GOLD', rank: 'II', lp: 47, wins: 30, losses: 25 }, 'test');
+    L.saveRank({ tier: 'GOLD', rank: 'I', lp: 12, wins: 32, losses: 25 }, 'test');
+    const h = L.rankHistory();
+    assert.equal(h.length, 2, 'unveränderter Stand nicht doppelt');
+    assert.deepEqual(h.map((x) => x.abs), [3 * 400 + 200 + 47, 3 * 400 + 300 + 12]);
+    let n = 0; const put = (champ, role, win, k = 5, d = 3) => core.db.run("INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?, 'me', ?, ?)", 'EUW1_' + (++n), new Date(Date.now() - n * 3600000).toISOString(), JSON.stringify({ champion: champ, role, win, kills: k, deaths: d, assists: 4, csPerMin: 7 }));
+    for (let i = 0; i < 6; i++) put('Jinx', 'BOTTOM', i < 4);
+    for (let i = 0; i < 3; i++) put('Ezreal', 'BOTTOM', i < 1);
+    for (let i = 0; i < 5; i++) put('Draven', 'BOTTOM', i < 1);
+    put('Lux', 'MIDDLE', true); put('Lux', 'MIDDLE', true);
+    const pool = L.championPool();
+    const bot = pool.roles.find((r) => r.role === 'BOTTOM');
+    assert.deepEqual(bot.pool.map((c) => c.champion), ['Jinx', 'Ezreal', 'Draven']);
+    assert.deepEqual(bot.drop, ['Draven']);
+    assert.ok(!pool.roles.some((r) => r.role === 'MIDDLE'), 'erst ab 3 Spielen');
+    const me = { puuid: 'me' };
+    const g = (id, q, win, place) => ({ gameId: id, platformId: 'EUW1', queueId: q, gameCreation: Date.now() - id * 1000, gameDuration: 1200, participantIdentities: [{ participantId: 1, player: { puuid: 'me' } }], participants: [{ participantId: 1, championId: 1, stats: { win, kills: 8, deaths: 4, assists: 12, totalDamageDealtToChampions: 30000, ...(place ? { subteamPlacement: place } : {}) } }] });
+    assert.equal(L.recordOtherModes([g(1, 450, true), g(2, 450, false), g(3, 1700, false, 2), g(4, 1700, false, 6), g(5, 420, true)], me, () => 'Annie'), 4);
+    assert.equal(L.recordOtherModes([g(1, 450, true)], me, () => 'Annie'), 0, 'keine Duplikate');
+    const m = Object.fromEntries(L.modeStats().map((x) => [x.mode, x]));
+    assert.equal(m.ARAM.games, 2); assert.equal(m.ARAM.winrate, 50); assert.equal(m.ARAM.kda, 5);
+    assert.equal(m.Arena.avgPlace, 4); assert.equal(m.Arena.top4, 1);
+  } finally { cleanup(); }
+});

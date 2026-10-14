@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12', 'tarkov-economy': 'w-6', 'lol-progress': 'w-6', 'tarkov-ammo': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -1361,6 +1361,56 @@ function FactorioCalc() {
   );
 }
 
+function LolProgress() {
+  const [d] = useRpc('lol.progress', {}, { events: ['game:data'] });
+  const h = d?.rank || [];
+  const TIER_DE = { IRON: 'Eisen', BRONZE: 'Bronze', SILVER: 'Silber', GOLD: 'Gold', PLATINUM: 'Platin', EMERALD: 'Smaragd', DIAMOND: 'Diamant', MASTER: 'Meister', GRANDMASTER: 'Großmeister', CHALLENGER: 'Herausforderer' };
+  const lo = Math.min(...h.map((x) => x.abs)); const hi = Math.max(...h.map((x) => x.abs)); const span = Math.max(100, hi - lo);
+  const pts = h.map((x, i) => `${h.length > 1 ? (i / (h.length - 1)) * 100 : 50},${38 - ((x.abs - lo) / span) * 34}`).join(' ');
+  const last = h[h.length - 1];
+  return (
+    <Panel icon={TrendingUp} title="Rang-Verlauf & Champion-Pool" sub="Aus deinen gespeicherten Ranked-Spielen und Rang-Ständen">
+      {h.length >= 2 ? <div><div class="row small"><b class="grow">{TIER_DE[last.tier] || last.tier} {last.rank} · {last.lp} LP</b><span class="tiny muted">{h.length} Stände seit {fmtDateTime(h[0].at)}</span></div>
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: '100%', height: 70 }}><polyline points={pts} fill="none" stroke="var(--cyan)" stroke-width="1.4" vector-effect="non-scaling-stroke" />{Array.from({ length: Math.floor(hi / 100) - Math.ceil(lo / 100) + 1 }, (_, i) => (Math.ceil(lo / 100) + i) * 100).map((v) => <line x1="0" x2="100" y1={38 - ((v - lo) / span) * 34} y2={38 - ((v - lo) / span) * 34} stroke="var(--line)" stroke-width="0.3" stroke-dasharray={v % 400 === 0 ? '' : '1 1'} />)}</svg>
+        <div class="tiny muted">Linien = Divisionen (durchgezogen = neuer Rang)</div></div> : <div class="small muted">Der Verlauf füllt sich mit jedem Abgleich (Client offen).</div>}
+      {d?.pool?.roles?.length > 0 && <div class="col mt" style={{ gap: 4 }}><b class="small">Dein Champion-Pool</b>{d.pool.roles.slice(0, 3).map((r) => <div class="small"><span class="muted">{r.role}:</span> {r.pool.map((c) => `${c.champion} (${c.wins}/${c.games}, ${c.kda} KDA)`).join(' · ')}{r.drop.length ? <span class="tiny muted"> · schwach: {r.drop.join(', ')}</span> : null}</div>)}</div>}
+      {d?.modes?.length > 0 && <div class="col mt" style={{ gap: 3 }}><b class="small">Andere Modi</b>{d.modes.map((m) => <div class="small">{m.mode}: {m.games} Spiele · {m.avgPlace != null ? `Ø Platz ${m.avgPlace}, Top 4: ${m.top4}` : `${m.winrate} % Siege`} · KDA {m.kda} · {m.champions.slice(0, 3).map((c) => c.champion).join(', ')}</div>)}</div>}
+    </Panel>
+  );
+}
+
+const rub = (v) => (v == null ? '–' : Math.round(v).toLocaleString('de-DE') + ' ₽');
+function TarkovEconomy() {
+  const [d, reload] = useRpc('eft.economy', {}, {});
+  const [tab, setTab] = useState('crafts');
+  useNow(1000);
+  useEffect(() => { const t = setInterval(reload, 10 * 60000); return () => clearInterval(t); }, []);
+  if (!d) return <Panel icon={Package} title="Händler, Crafts & Tausch"><Spinner /></Panel>;
+  return (
+    <Panel icon={Package} title="Händler, Crafts & Tausch" sub={`${d.source} · ${d.note}`}>
+      <div class="row wrap gap-s mb">{d.traders.map((t) => <span class="chip static" title={`Restock ${fmtDateTime(t.resetTime)}`}>{t.name}: {new Date(t.resetTime) > new Date() ? countdown(t.resetTime) : 'jetzt'}</span>)}</div>
+      <div class="row gap-s mb"><button class={'chip' + (tab === 'crafts' ? ' active' : '')} onClick={() => setTab('crafts')}>Crafts</button><button class={'chip' + (tab === 'barters' ? ' active' : '')} onClick={() => setTab('barters')}>Tausch</button></div>
+      {tab === 'crafts' && <>{!d.onlyBuilt && <div class="tiny muted mb">Alle Stationen – mit deinem Hideout (TarkovTracker oder Hideout-Widget) nur, was du craften kannst.</div>}
+        {d.crafts.map((c) => <div class="row small mb" title={`Kosten ${rub(c.cost)} · Erlös ${rub(c.rewardValue)}`}><span class="grow"><b>{c.reward}</b><span class="tiny muted"> · {c.station} {c.level} · {Math.round(c.duration / 60)} min</span></span><span style={{ color: 'var(--green)' }}>{rub(c.perHour)}/h</span></div>)}</>}
+      {tab === 'barters' && d.barters.map((b) => <div class="row small mb" title={b.inputs.map((x) => `${x.count}× ${x.name}`).join(', ')}><span class="grow"><b>{b.reward}</b><span class="tiny muted"> · {b.trader} LL{b.level}</span></span><span style={{ color: 'var(--green)' }}>+{rub(b.profit)}</span></div>)}
+    </Panel>
+  );
+}
+
+function TarkovAmmo({ params = {} }) {
+  const [d] = useRpc('eft.ammo', {}, {});
+  const cals = useMemo(() => [...new Set((d?.items || []).map((a) => a.caliber))].sort(), [d]);
+  const [cal, setCal] = useState(params.caliber || '');
+  const list = (d?.items || []).filter((a) => a.caliber === (cal || cals[0])).sort((a, b) => b.pen - a.pen);
+  return (
+    <Panel icon={Crosshair} title="Munition" sub={d ? `${d.source} · Stand ${ago(d.fetchedAt)}` : 'tarkov.dev'}>
+      {cals.length > 0 && <Select value={cal || cals[0]} onChange={setCal} options={cals} />}
+      <table class="small mt" style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr class="tiny muted"><th style={{ textAlign: 'left' }}>Patrone</th><th>Schaden</th><th>Durchschlag</th><th>Panzer</th><th>Splitter</th><th>Preis</th></tr></thead>
+        <tbody>{list.map((a) => <tr><td>{a.name}</td><td style={{ textAlign: 'center' }}>{a.damage}</td><td style={{ textAlign: 'center', color: a.pen >= 40 ? 'var(--green)' : a.pen < 20 ? 'var(--text-3)' : undefined }}><b>{a.pen}</b></td><td style={{ textAlign: 'center' }}>{a.armor}</td><td style={{ textAlign: 'center' }}>{a.frag} %</td><td style={{ textAlign: 'right' }}>{rub(a.price)}</td></tr>)}</tbody></table>
+    </Panel>
+  );
+}
+
 function ArkBreeding({ game }) {
   const [list, reload] = useRpc('ark.babies', { game: game.id }, { events: ['game:data', 'game:timers'], initial: [] });
   const [f, setF] = useState({ name: '', species: '', matureIn: '', cuddleIn: '' });
@@ -1416,6 +1466,6 @@ export const WIDGETS = {
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
-  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc,
+  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc, 'tarkov-economy': TarkovEconomy, 'lol-progress': LolProgress, 'tarkov-ammo': TarkovAmmo,
 };
 export { nextScheduled };
