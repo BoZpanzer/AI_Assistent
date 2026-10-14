@@ -177,7 +177,24 @@ app.whenReady().then(async () => {
     } finally { core.gaming.tarkov.maps = origMaps; core.gaming.tarkovMaps.fetch = origFetch; }
   });
   await step('Gaming: League of Legends & Rise of Kingdoms Layouts', async () => {
-    core.gaming.context.setActive('league', 'manual'); await sleep(600); await shot('62-gaming-league');
+    // Ein analysiertes Spiel (Timeline v3) mit Jungle-Pfaden, Tod, Debrief-Fragen + Champselect mit Matchup-Karte
+    const L = core.gaming.league; const played = new Date(Date.now() - 3600_000).toISOString();
+    core.db.run("INSERT OR REPLACE INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,'me',?,?)", 'EUW1_9001', played, JSON.stringify({ matchId: 'EUW1_9001', win: false, champion: 'Jinx', kills: 3, deaths: 5, assists: 4, csPerMin: 6.4, vision: 21, duration: 1860 }));
+    const path14 = (f) => Array.from({ length: 14 }, (_, i) => [i + 1, ...f(i + 1)]);
+    L.setDeep('EUW1_9001', { matchId: 'EUW1_9001', hasTimeline: true, v: 3, win: false, champion: 'Jinx', roleDe: 'Bot (ADC)', kills: 3, deaths: 5, assists: 4, opponent: { champion: 'Caitlyn' }, earlyDeaths: 2,
+      deathsDetail: [{ min: 6, sec: 362, zone: 'Botlane', by: ['Caitlyn', 'Lee Sin'], jungler: true, gold: 1450, pos: [12500, 2600], enemies: 2 }, { min: 11.5, sec: 690, zone: 'Fluss', by: ['Lee Sin'], jungler: true, gold: 400, pos: [9000, 5800], enemies: 1, solo: true }],
+      enemyJungle: { champion: 'Lee Sin', earlySide: 'top', firstGank: { min: 6, zone: 'Botlane', victim: 'Jinx' }, ganksBefore14: 3, ganksOnMe: 2 },
+      paths: { blue: true, me: path14(() => [12400, 2400]), enemyJungler: path14((m) => [3500 + m * 600, 11000 - m * 600]), ownJungler: [] },
+      levels: { me: { 2: 1.9, 3: 3.4, 6: 7.6, estimated: true }, opp: { 2: 1.8, 3: 3.2, 6: 7.0 } },
+      csCurve: { me: Array.from({ length: 20 }, (_, i) => (i + 1) * 6), opp: Array.from({ length: 20 }, (_, i) => (i + 1) * 7) },
+      items: [{ min: 13.2, id: 3031, name: 'Klinge der Unendlichkeit' }], firstItemMin: 13.2, playedAt: played, durationMin: 31 });
+    L.setDebriefQuestions('EUW1_9001', ['Warum warst du in Minute 6 so weit vorne?', 'Was hättest du mit 1450 Gold kaufen können?']);
+    core.gaming.context.setActive('league', 'manual'); await sleep(600);
+    await waitFor(() => js(`document.body.textContent.includes('Spielanalyse') && document.body.textContent.includes('Kurz nachgedacht') && document.body.textContent.includes('Wochenbericht')`), 8000);
+    await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Spielanalyse')); p && p.scrollIntoView(); })()`); await sleep(300);
+    await shot('62-gaming-league');
+    await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Wochenbericht & Session')); p && p.scrollIntoView(); })()`); await sleep(300);
+    await shot('62b-gaming-league-coach');
     core.gaming.context.setActive('rok', 'manual'); await sleep(600); await shot('63-gaming-rok');
     core.gaming.context.setActive('ark', 'manual'); await sleep(600); await shot('64-gaming-ark');
   });

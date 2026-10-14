@@ -119,7 +119,7 @@ function createCore(opts) {
   };
   s.stop = () => {
     s.stopped = true;
-    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.dispose(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

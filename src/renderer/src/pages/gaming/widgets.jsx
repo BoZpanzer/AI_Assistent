@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -749,6 +749,9 @@ function LolMistakes() {
           {A.gankDeathPct != null && <span class="chip static" title="Anteil deiner Tode vor Min. 14, an denen der gegnerische Jungler beteiligt war">Jungler an frühen Toden {A.gankDeathPct} %</span>}
           {A.jungleCsAt10 != null && <span class="chip static" title="Eigene Jungle-Monster (CS) bis Min. 10, Ø in deinen Jungle-Spielen">Jungle-CS@10 Ø {A.jungleCsAt10}</span>}
         </div>
+        {p.deathPoints?.length > 0 && <details class="mb"><summary class="small" style={{ cursor: 'pointer' }}>Todes-Karte ({p.deathPoints.length} Tode)</summary>
+          <div class="mt"><RiftMap size={280}>{p.deathPoints.map((x) => <circle cx={RX(x.x)} cy={RY(x.y)} r="3.2" fill={x.min < 14 ? '#ff5a5a' : '#ffcc33'} opacity="0.35" />)}</RiftMap>
+          <div class="tiny muted">Rot = vor Min. 14, gelb = später. Dichte Flecken = dort stirbst du oft.</div></div></details>}
         <div class="col" style={{ gap: 8 }}>
           {!p.findings.length && <div class="small muted">Keine auffälligen Fehlermuster – solide.</div>}
           {p.findings.slice(0, 5).map((f) => <div class="result-row" style={{ alignItems: 'flex-start', cursor: 'default' }}><TriangleAlert size={18} style={{ color: 'var(--orange)' }} /><div class="grow"><b class="small">{f.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{f.text}</div></div></div>)}
@@ -757,6 +760,128 @@ function LolMistakes() {
       </>}
       <button class="btn sm mt" onClick={() => setState({ page: 'chat', chatDraft: 'Was mache ich in meinen Ranked-Spielen falsch? Nutze die Fehleranalyse (league_deep_review) und gib mir einen Trainingsplan mit 3 messbaren Zielen.' })}><Sparkles size={14} />Mit JARVIS durchgehen</button>
       <div class="tiny muted mt">Orte und Anwesenheit bei Objectives sind aus Minuten-Positionen geschätzt.</div>
+    </Panel>
+  );
+}
+
+// ---------- Summoner's Rift (Data-Dragon-Minimap), Koordinaten 0–14870 / 0–14980 ----------
+const RX = (x) => (x / 14870) * 100; const RY = (y) => 100 - (y / 14980) * 100;
+function useMapUrl() { const [u] = useRpc('lol.mapUrl', {}, { initial: null }); return u; }
+function RiftMap({ children, size = 300 }) {
+  const url = useMapUrl();
+  return (
+    <svg viewBox="0 0 100 100" style={{ width: '100%', maxWidth: size, aspectRatio: '1', borderRadius: 8, background: '#0b1a17', display: 'block' }}>
+      {url && <image href={url} x="0" y="0" width="100" height="100" opacity="0.75" />}
+      {children}
+    </svg>
+  );
+}
+const PATH_COL = { me: '#2fd5ff', enemyJungler: '#ff5a5a', ownJungler: '#7cf29a' };
+const PATH_DE = { me: 'Du', enemyJungler: 'Gegn. Jungler', ownJungler: 'Dein Jungler' };
+
+function LolGame({ params = {} }) {
+  const [games] = useRpc('lol.games', { limit: 20 }, { events: ['game:data'], initial: [] });
+  const [sel, setSel] = useState(params.matchId || null);
+  const mid = sel || games[0]?.matchId || null;
+  const [d, reload] = useRpc('lol.deep', { matchId: mid }, { events: ['game:data'], enabled: !!mid });
+  const [rs, reloadRs] = useRpc('lol.replayStatus', {}, {});
+  const [replay, setReplay] = useState(null);
+  const [show, setShow] = useState({ me: true, enemyJungler: true, ownJungler: false });
+  const [ans, setAns] = useState({});
+  useEvent('lol:replay', (x) => setReplay(x));
+  const jump = async (sec) => {
+    setReplay({ phase: 'starting' });
+    const r = await guard(() => rpc('lol.replayJump', { matchId: mid, sec }));
+    if (r?.needsEnable) { setReplay(null); reloadRs(); }
+    else if (!r) setReplay(null);
+  };
+  const enable = async () => {
+    if (!(await ask('Replay-API in League einschalten? JARVIS trägt „EnableReplayApi=1“ in die game.cfg ein (Sicherung: game.cfg.jarvis-bak). Damit kann JARVIS in Replays zu deinen Toden springen – deine Spiele selbst betrifft das nicht.', '', { confirmOnly: true, okLabel: 'Einschalten' }))) return;
+    await guard(() => rpc('lol.enableReplayApi'), 'Replay-API eingeschaltet – ab dem nächsten Replay aktiv'); reloadRs();
+  };
+  const save = async (i) => { if (!ans[i]?.trim()) return; await guard(() => rpc('lol.answerDebrief', { matchId: mid, index: i, text: ans[i] }), 'Antwort gespeichert'); setAns({ ...ans, [i]: '' }); reload(); };
+  const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  const L = d?.levels; const curve = d?.csCurve;
+  return (
+    <Panel icon={Route} title="Spielanalyse" sub="Jungle-Pfade, Tode, Lane-Phase – aus der Riot-Timeline, nach dem Spiel">
+      {!games.length ? <Empty>Noch keine Spiele mit Timeline. Läuft der League-Client, lädt JARVIS die Details deiner letzten Ranked-Spiele automatisch.</Empty> : <>
+        <Select value={mid} onChange={setSel} options={games.map((g) => ({ value: g.matchId, label: `${g.win ? 'Sieg' : 'Niederlage'} · ${g.champion || '?'}${g.vs ? ' vs ' + g.vs : ''} · ${g.kda} · ${ago(g.playedAt)}` }))} />
+        {d && <>
+          <div class="row wrap gap-s mt" style={{ alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 260px', maxWidth: 320 }}>
+              <RiftMap>
+                {Object.entries(d.paths || {}).filter(([k, v]) => Array.isArray(v) && v.length && show[k]).map(([k, v]) => <g>
+                  <polyline points={v.map(([, x, y]) => `${RX(x)},${RY(y)}`).join(' ')} fill="none" stroke={PATH_COL[k]} stroke-width="0.8" stroke-linejoin="round" opacity="0.9" />
+                  {v.map(([m, x, y]) => <g><circle cx={RX(x)} cy={RY(y)} r="1.6" fill={PATH_COL[k]} /><text x={RX(x) + 1.8} y={RY(y) + 1} font-size="2.6" fill="#fff">{m}</text></g>)}
+                </g>)}
+                {(d.deathsDetail || []).filter((x) => x.pos).map((x, i) => <g style={{ cursor: 'pointer' }} onClick={() => jump(x.sec || Math.round(x.min * 60))}>
+                  <title>{`${x.min}. Min · ${x.zone}${x.by?.length ? ' · ' + x.by.join(' + ') : ''} – klicken: Replay`}</title>
+                  <circle cx={RX(x.pos[0])} cy={RY(x.pos[1])} r="2.6" fill="#000" stroke="#ffcc33" stroke-width="0.7" /><text x={RX(x.pos[0])} y={RY(x.pos[1]) + 1} font-size="3" text-anchor="middle" fill="#ffcc33">✕</text>
+                </g>)}
+              </RiftMap>
+              <div class="row wrap gap-s mt">{Object.keys(PATH_COL).filter((k) => d.paths?.[k]?.length).map((k) => <button class={'chip' + (show[k] ? ' active' : '')} style={{ color: PATH_COL[k] }} onClick={() => setShow({ ...show, [k]: !show[k] })}>{PATH_DE[k]}</button>)}<span class="tiny muted">Zahlen = Minute · ✕ = dein Tod</span></div>
+            </div>
+            <div class="col grow" style={{ gap: 6, minWidth: 220 }}>
+              <b class="small">Tode – Klick öffnet das Replay 15 s vorher</b>
+              {!(d.deathsDetail || []).length && <div class="small muted">Keine Tode – sauber.</div>}
+              {(d.deathsDetail || []).map((x) => <div class="row small"><button class="btn xs" title="Replay ab 15 s vorher" onClick={() => jump(x.sec || Math.round(x.min * 60))}>▶ {fmt(x.sec || Math.round(x.min * 60))}</button><span class="grow">{x.zone}{x.by?.length ? ' · ' + x.by.join(' + ') : ''}{x.jungler ? ' · Jungler' : ''}{x.gold >= 1300 ? ` · ${x.gold} Gold` : ''}</span></div>)}
+              {rs && !rs.enabled && <div class="notice small">Für Replay-Sprünge muss in League die Replay-API an sein. <button class="btn xs" onClick={enable}>Einschalten</button></div>}
+              {replay && <div class="tiny muted">{({ downloading: `Replay wird geladen${replay.progress != null ? ' … ' + Math.round(replay.progress) + ' %' : ' …'}`, starting: 'Replay startet …', playing: `Replay läuft – bei ${fmt(replay.time || 0)}` })[replay.phase] || ''}</div>}
+              {d.enemyJungle && <div class="small mt"><b>Gegn. Jungler {d.enemyJungle.champion}</b>: Start {d.enemyJungle.earlySide === 'top' ? 'oben' : d.enemyJungle.earlySide === 'bot' ? 'unten' : d.enemyJungle.earlySide || '–'}{d.enemyJungle.firstGank ? ` · 1. Gank ${d.enemyJungle.firstGank.min}. Min ${d.enemyJungle.firstGank.zone}` : ''} · {d.enemyJungle.ganksOnMe} an dir</div>}
+            </div>
+          </div>
+          {L?.me && <div class="small mt"><b>Level 2 / 3 / 6:</b> du {L.me[2] ?? '–'} / {L.me[3] ?? '–'} / {L.me[6] ?? '–'} Min.{L.opp ? ` · ${d.opponent?.champion || 'Gegner'} ${L.opp[2] ?? '–'} / ${L.opp[3] ?? '–'} / ${L.opp[6] ?? '–'} Min.` : ''}{L.me.estimated ? <span class="tiny muted"> (aus XP geschätzt)</span> : null}</div>}
+          {curve?.me?.length > 2 && <CsCurve me={curve.me} opp={curve.opp} oppName={d.opponent?.champion} />}
+          {d.items?.length > 0 && <div class="small"><b>Items:</b> {d.items.map((it) => `${it.name || it.id} (${it.min}. Min)`).join(' → ')}{d.firstItemAvg != null ? <span class="muted"> · Ø erstes Item auf {d.champion}: {d.firstItemAvg}. Min ({d.firstItemGames} Spiele)</span> : null}</div>}
+          {d.notes?.length > 0 && <div class="small mt"><b>Deine Notizen im Spiel:</b>{d.notes.map((n) => <div class="muted">• {n.gameSec != null ? fmt(n.gameSec) + ' ' : ''}{n.text}</div>)}</div>}
+          {d.debrief?.questions?.length > 0 && <div class="col mt" style={{ gap: 6, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+            <b class="small">Kurz nachgedacht</b>
+            {d.debrief.questions.map((q, i) => <div class="col" style={{ gap: 3 }}><div class="small">{q}</div>{d.debrief.answers?.[i] ? <div class="small muted">↳ {d.debrief.answers[i]}</div> : <div class="row gap-s"><input class="inp grow" placeholder="Ein Satz reicht" value={ans[i] || ''} onInput={(e) => setAns({ ...ans, [i]: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && save(i)} /><button class="btn xs" onClick={() => save(i)}><Check size={12} /></button></div>}</div>)}
+          </div>}
+        </>}
+      </>}
+    </Panel>
+  );
+}
+
+function CsCurve({ me, opp, oppName }) {
+  const n = me.length; const all = [...me, ...(opp || [])].filter((v) => v != null); const max = Math.max(10, ...all);
+  const pts = (arr) => arr.map((v, i) => (v == null ? null : `${(i / (n - 1)) * 100},${40 - (v / max) * 36}`)).filter(Boolean).join(' ');
+  return (
+    <div class="mt">
+      <div class="row tiny muted"><span class="grow">CS pro Minute (1–{n})</span><span style={{ color: '#2fd5ff' }}>du {me[n - 1]}</span>{opp && <span style={{ color: '#ff8a5a', marginLeft: 8 }}>{oppName || 'Gegner'} {opp[n - 1]}</span>}</div>
+      <svg viewBox="0 0 100 42" preserveAspectRatio="none" style={{ width: '100%', height: 70 }}>
+        {[0.25, 0.5, 0.75].map((f) => <line x1="0" x2="100" y1={40 - f * 36} y2={40 - f * 36} stroke="var(--line)" stroke-width="0.3" />)}
+        {n >= 10 && <line x1={(9 / (n - 1)) * 100} x2={(9 / (n - 1)) * 100} y1="2" y2="40" stroke="var(--line)" stroke-dasharray="1 1" stroke-width="0.3" />}
+        {opp && <polyline points={pts(opp)} fill="none" stroke="#ff8a5a" stroke-width="0.9" vector-effect="non-scaling-stroke" />}
+        <polyline points={pts(me)} fill="none" stroke="#2fd5ff" stroke-width="1.2" vector-effect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+}
+
+function LolCoach() {
+  const [w, reload] = useRpc('lol.weekly', {}, { events: ['game:data'] });
+  const [st] = useRpc('lol.session', {}, { events: ['game:data'] });
+  const adopt = async (g) => { await guard(() => rpc('lol.addGoal', { text: g.text, metric: g.metric, target: g.target }), 'Ziel übernommen'); reload(); };
+  const row = (label, o) => o && <div class="small"><b>{label}:</b> {o.games} Spiele · {o.winrate} % · {o.csPerMin} CS/min · Ø {o.deaths} Tode{o.earlyDeaths != null ? ` (früh ${o.earlyDeaths})` : ''}{o.vision != null ? ` · Vision ${o.vision}` : ''}</div>;
+  const bucket = (title, obj) => <div class="col" style={{ gap: 2 }}><span class="tiny muted">{title}</span><div class="row wrap gap-s">{Object.entries(obj || {}).map(([k, v]) => <span class="chip static" title={`${v.games} Spiele`}>{k}: {v.winrate != null ? v.winrate + ' %' : '–'}</span>)}</div></div>;
+  return (
+    <Panel icon={CalendarClock} title="Wochenbericht & Session" sub="Aus deinen gespeicherten Ranked-Spielen">
+      {!w?.week && !w?.previous ? <Empty>In den letzten zwei Wochen keine Ranked-Spiele gespeichert.</Empty> : <>
+        {row('Diese Woche', w.week)}{row('Letzte Woche', w.previous)}
+      </>}
+      {w?.goals?.length > 0 && <div class="col mt" style={{ gap: 2 }}><b class="small">Ziele diese Woche</b>{w.goals.map((g) => <div class="small">{g.text}: {g.measured ? `${g.met}/${g.measured} Spiele` : <span class="muted">noch nicht gemessen</span>}</div>)}</div>}
+      {w?.suggestions?.length > 0 && <div class="col mt" style={{ gap: 4 }}><b class="small">Vorschläge aus deinen Fehlermustern</b>{w.suggestions.map((g) => <div class="row small"><span class="grow">{g.text} <span class="muted">– {g.why}</span></span><button class="btn xs" onClick={() => adopt(g)}><Plus size={12} />Übernehmen</button></div>)}</div>}
+      {st && <div class="col mt" style={{ gap: 6, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+        <b class="small">Session & Tilt ({st.games} Spiele, {st.winrate ?? '–'} % insgesamt)</b>
+        {st.currentSession && <div class="small">Heute: {st.currentSession.wins}/{st.currentSession.games} Siege{st.currentSession.lossStreak >= 2 ? ` · ${st.currentSession.lossStreak} Niederlagen in Folge` : ''}</div>}
+        {bucket('Winrate nach … Niederlagen in Folge', { '0': st.afterLosses?.[0], '1': st.afterLosses?.[1], '2+': st.afterLosses?.[2] })}
+        {bucket('Spiel Nr. in der Session', st.gameInSession)}
+        {bucket('Tageszeit', st.timeOfDay)}
+        {st.findings?.map((f) => <div class="result-row" style={{ alignItems: 'flex-start', cursor: 'default' }}><TriangleAlert size={16} style={{ color: 'var(--orange)' }} /><div class="grow"><b class="small">{f.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{f.text}</div></div></div>)}
+        {st.games < 20 && <div class="tiny muted">Ab 20 Spielen zeigt JARVIS Muster; einzelne Werte erst ab 5 Spielen pro Gruppe.</div>}
+      </div>}
     </Panel>
   );
 }
@@ -824,8 +949,56 @@ function LolChampion({ params }) {
   );
 }
 
+const EDGE = { du: ['Du', 'var(--green)'], gegner: ['Gegner', 'var(--red, #e5484d)'], ausgeglichen: ['Ausgeglichen', 'var(--text-2)'] };
+const sgn = (v) => (v == null ? '–' : (v > 0 ? '+' : '') + v);
+
+/** Matchup-Karte: KI-Phasenwissen (pro Patch gespeichert) + eigene Bilanz + eigene Notizen. */
+export function MatchupCard({ mine, vs, role, compact = false, preset = null }) {
+  const [m, setM] = useState(preset);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const load = async (ai = true) => { setBusy(true); setM(await rpc('lol.matchup', { mine, vs, role, ai }).catch(() => null)); setBusy(false); };
+  useEffect(() => { if (vs && !(preset && preset.vs === vs && preset.mine === mine)) load(); else setM(preset); }, [mine, vs, role]);
+  useEvent('game:data', () => { if (vs) rpc('lol.matchup', { mine, vs, role, ai: !!m?.card }).then((x) => x && setM(x)).catch(() => {}); });
+  const add = async () => { if (!note.trim()) return; await guard(() => rpc('lol.addMatchupNote', { vs, text: note, mine: null }), 'Matchup-Notiz gespeichert'); setNote(''); };
+  if (!vs) return null;
+  const c = m?.card; const a = m?.stats?.all; const w = m?.stats?.withChampion;
+  return (
+    <div class="col" style={{ gap: 6, borderTop: '1px solid var(--line)', paddingTop: 8, marginTop: 8 }}>
+      <div class="row"><b class="grow">{mine ? `${mine} gegen ${vs}` : `Gegen ${vs}`}</b>{busy && <Spinner size={12} />}</div>
+      {c ? <>
+        <div class="small">{c.summary}</div>
+        <div class="col" style={{ gap: 3 }}>{(c.phases || []).map((ph) => <div class="row small" style={{ alignItems: 'flex-start', gap: 8 }}><span class="chip static" style={{ minWidth: 86, color: EDGE[ph.edge]?.[1] }}>{ph.phase}: {EDGE[ph.edge]?.[0] || ph.edge}</span><span class="grow" style={{ color: 'var(--text-2)' }}>{ph.tip}</span></div>)}</div>
+        {c.winCondition && <div class="small"><b>Win-Condition:</b> {c.winCondition}</div>}
+        {!compact && c.avoid?.length > 0 && <div class="small"><b>Vermeiden:</b> {c.avoid.join(' · ')}</div>}
+        {!compact && c.dangers?.length > 0 && <div class="small"><b>Gefährlich:</b> {c.dangers.join(' · ')}</div>}
+        {!compact && c.build && <div class="small"><b>Build:</b> {c.build}</div>}
+        <div class="tiny muted">{m.cardSource}{m.patch ? ` · Patch ${m.patch}` : ''}{c.confidence ? ` · Sicherheit: ${c.confidence}` : ''}</div>
+      </> : mine && !busy && m && <div class="tiny muted">{m.cardError ? 'Keine KI-Einschätzung: ' + m.cardError : 'Keine KI-Einschätzung (Gemini-Schlüssel fehlt).'}</div>}
+      <div class="small" style={{ borderTop: '1px dashed var(--line)', paddingTop: 6 }}><b>Deine Bilanz gegen {vs}:</b>{' '}
+        {a ? <>{a.wins}/{a.games} Siege · CS@10 {sgn(a.csDiff10)} · Gold@15 {sgn(a.goldDiff15)} · frühe Tode Ø {a.earlyDeaths ?? '–'}{a.level6Diff != null ? ` · Level 6 ${sgn(a.level6Diff)} Min.` : ''}{a.junglerInEarlyDeathsPct != null ? ` · Jungler bei ${a.junglerInEarlyDeathsPct} % deiner frühen Tode` : ''}{w && mine ? <span class="muted"> · mit {mine}: {w.wins}/{w.games}</span> : null}</> : <span class="muted">noch kein analysiertes Spiel</span>}
+      </div>
+      {m?.notes?.length > 0 && <div class="col" style={{ gap: 2 }}><b class="small">Deine Notizen</b>{m.notes.slice(0, compact ? 3 : 8).map((n) => <div class="row small"><span class="grow">• {n.text}{n.mineName ? <span class="tiny muted"> (mit {n.mineName})</span> : null}</span>{!compact && <button class="btn xs ghost" title="Löschen" onClick={() => guard(() => rpc('lol.removeMatchupNote', { id: n.id }))}><X size={11} /></button>}</div>)}</div>}
+      {!compact && <div class="row gap-s"><input class="inp grow" placeholder={`Notiz für ${vs}, z. B. „Level 1 nicht traden“`} value={note} onInput={(e) => setNote(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn xs" onClick={add}><Plus size={12} /></button></div>}
+    </div>
+  );
+}
+
+function MatchupLookup() {
+  const [champs] = useRpc('lol.champions', {}, { initial: [] });
+  const [mine, setMine] = useState(''); const [vs, setVs] = useState(''); const [go, setGo] = useState(null);
+  return (
+    <div class="mt">
+      <div class="row gap-s"><input class="inp grow" list="lol-champs" placeholder="Dein Champion" value={mine} onInput={(e) => setMine(e.currentTarget.value)} /><input class="inp grow" list="lol-champs" placeholder="Gegner" value={vs} onInput={(e) => setVs(e.currentTarget.value)} /><button class="btn xs" disabled={!vs.trim()} onClick={() => setGo({ mine: mine.trim() || null, vs: vs.trim() })}><Search size={12} />Matchup</button></div>
+      <datalist id="lol-champs">{champs.map((c) => <option value={c} />)}</datalist>
+      {go && <MatchupCard mine={go.mine} vs={go.vs} />}
+    </div>
+  );
+}
+
 function LolChampSelect() {
   const [cs, setCs] = useState(null);
+  const [pick, setPick] = useState(null);
   useEffect(() => { rpc('lol.champselect').then((x) => setCs(x?.active ? x : x?.last ? { ...x.last, last: x.last } : x)).catch(() => {}); }, []);
   useEvent('lol:champselect', (x) => setCs((prev) => (x?.active ? x : prev?.myChampion ? { ...prev, active: false, last: { ...prev, at: new Date().toISOString() } } : x)));
   return (
@@ -836,7 +1009,10 @@ function LolChampSelect() {
         <div class="small muted mt">Gegner: {cs.enemies?.length ? cs.enemies.join(', ') : 'noch verdeckt'}</div>
         {cs.advice ? <div class="md small mt" dangerouslySetInnerHTML={{ __html: renderMarkdown(cs.advice) }} /> : cs.active && cs.myChampion && cs.enemies?.length ? <div class="row small mt"><Spinner /> JARVIS denkt über das Matchup nach …</div> : null}
         {cs.tips?.length > 0 && <div class="col mt" style={{ gap: 3 }}><b class="small">Tipps gegen die Gegner (Data Dragon)</b>{cs.tips.map((t) => <div class="small muted">• {t}</div>)}</div>}
+        {cs.enemies?.length > 0 && <div class="row wrap gap-s mt"><span class="tiny muted">Matchup-Karte:</span>{cs.enemies.map((e) => <button class={'chip' + ((pick || cs.laneGuess) === e ? ' active' : '')} onClick={() => setPick(e)}>{e}{cs.laneGuess === e ? ' · Lane?' : ''}</button>)}</div>}
+        {(pick || cs.laneGuess) && <MatchupCard mine={cs.myChampion} vs={pick || cs.laneGuess} role={cs.role} preset={!pick && cs.matchup?.vs === cs.laneGuess ? cs.matchup : null} />}
       </>}
+      <MatchupLookup />
     </Panel>
   );
 }
@@ -972,7 +1148,7 @@ export const WIDGETS = {
   map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-companion': TarkovCompanion, 'tarkov-needed': TarkovNeeded, 'tarkov-hideout': TarkovHideout, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
   timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
-  'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes,
+  'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
 };
 export { nextScheduled };

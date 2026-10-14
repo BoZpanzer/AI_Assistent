@@ -212,8 +212,20 @@ test('LoL-Jungle-Analyse nach dem Spiel: gegnerischer Jungler, Ganks an mir, eig
   const deaths = [{ min: 6, pos: { x: 12800, y: 2500 }, assists: [7] }, { min: 11, pos: { x: 9000, y: 5800 } }];
   const names = { 107: 'Lee Sin', 109: 'Caitlyn', 102: 'Vi', 222: 'Jinx' };
   const { game, timeline } = fullGame(1, { deaths, posFor, extra, gold: 1500 });
-  const a = analyzeGame(game, timeline, 'me', { name: (id) => names[id] || null });
-  assert.equal(a.v, 2);
+  const item = (id) => ({ 3031: { name: 'Infinity Edge', complete: true }, 1055: { name: 'Dorans Klinge', complete: false } })[id] || null;
+  const a = analyzeGame(game, timeline, 'me', { name: (id) => names[id] || null, item });
+  assert.equal(a.v, 3);
+  // Lane: Level-Zeitpunkte aus der XP interpoliert (400 XP/Min.), CS-Kurve, erstes fertiges Item
+  assert.deepEqual([a.levels.me[2], a.levels.me[3], a.levels.me[6], a.levels.me.estimated], [0.7, 1.7, 6, true]);
+  assert.equal(a.levels.opp[6], 6);
+  assert.equal(a.csCurve.me.length, 20); assert.equal(a.csCurve.me[9], 60); assert.equal(a.csCurve.opp[9], 75);
+  assert.deepEqual(a.items, [{ min: 8.4, id: 3031, name: 'Infinity Edge' }]); assert.equal(a.firstItemMin, 8.4);
+  // Karten: Pfade 1–14 und Todesorte
+  assert.equal(a.paths.enemyJungler.length, 14); assert.deepEqual(a.paths.enemyJungler[2], [3, 4000, 11000]);
+  assert.equal(a.paths.blue, true);
+  assert.deepEqual(a.deathsDetail[0].pos, [12800, 2500]); assert.equal(a.deathsDetail[0].sec, 360);
+  const { levelTimes } = require('../src/main/services/gaming/lolanalysis');
+  assert.equal(levelTimes([], [{ type: 'LEVEL_UP', participantId: 4, level: 6, timestamp: 372000 }], 4)[6], 6.2, 'LEVEL_UP-Ereignis hat Vorrang');
   assert.deepEqual(a.deathsDetail.map((d) => [d.min, d.jungler, d.gold]), [[6, true, 1500], [11, false, 1500]]);
   assert.deepEqual(a.deathsDetail[0].by.sort(), ['Caitlyn', 'Lee Sin']);
   assert.equal(a.enemyJungle.champion, 'Lee Sin');
@@ -239,6 +251,8 @@ test('LoL-Jungle-Analyse nach dem Spiel: gegnerischer Jungler, Ganks an mir, eig
   const p = patterns(list);
   const ids = p.findings.map((x) => x.id);
   assert.ok(ids.includes('ganked'), ids.join(','));
+  assert.equal(p.deathPoints.length, 8); assert.equal(p.averages.level6Diff, 0);
+  assert.equal(p.averages.csEarly, 6); assert.equal(p.averages.csMid, 6);
   assert.ok(ids.includes('gold-deaths'), ids.join(','));
   assert.equal(p.averages.gankDeathPct, 50);
 });
@@ -276,4 +290,122 @@ test('LoL live: neutrale Werte statt Anweisungen, Kill-Stand + eigene Tode, Noti
     assert.deepEqual(L.notesFor({ playedAt: new Date(Date.now() - 5 * 3600_000).toISOString(), durationMin: 30 }), [], 'Notizen gehören nur zum passenden Spiel');
     assert.throws(() => L.addLiveNote('  '), /Leere Notiz/);
   } finally { cleanup(); }
+});
+
+test('LoL-Matchup-Karte: KI-Phasen (einmal pro Patch gespeichert), eigene Bilanz gegen den Champion, eigene Notizen', async () => {
+  const card = { summary: 'Sett gewinnt früh, Aatrox skaliert besser.', phases: [{ phase: 'Level 1–3', edge: 'du', tip: 'Früh Druck machen' }, { phase: 'Lategame', edge: 'gegner', tip: 'Teamfights meiden, Splitpush' }], winCondition: 'Früh Vorsprung holen', avoid: ['In Q3 laufen'], dangers: ['Q3-Knockup'], build: 'Grievous Wounds', confidence: 'mittel' };
+  const ddragon = async (url) => {
+    if (url.endsWith('versions.json')) return new Response(JSON.stringify(['16.20.1']));
+    if (url.includes('champion.json')) return new Response(JSON.stringify({ data: { Sett: { id: 'Sett', key: '875', name: 'Sett', tags: ['Fighter'] }, Aatrox: { id: 'Aatrox', key: '266', name: 'Aatrox', tags: ['Fighter'] }, MonkeyKing: { id: 'MonkeyKing', key: '62', name: 'Wukong', tags: ['Fighter'] } } }));
+    throw new Error('offline');
+  };
+  const { core, cleanup, fake } = tempCore({ fetch: ddragon, script: [{ text: JSON.stringify(card) }] });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
+    const L = core.gaming.league;
+    // zwei analysierte Spiele gegen Aatrox (eins mit Sett), eins gegen Wukong
+    const put = (mid, champ, vs, win, csDiff10, deaths) => { core.db.run("INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,'me',?,?)", mid, new Date().toISOString(), JSON.stringify({ win, champion: champ })); L.setDeep(mid, { matchId: mid, hasTimeline: true, v: 3, win, champion: champ, opponent: { champion: vs }, csDiff10, goldDiff15: csDiff10 * 20, earlyDeaths: deaths.length, deathsDetail: deaths, levels: { me: { 6: 7 }, opp: { 6: 6.5 } } }); };
+    put('EUW1_1', 'Sett', 'Aatrox', true, 12, [{ min: 5, jungler: true }]);
+    put('EUW1_2', 'Darius', 'Aatrox', false, -20, [{ min: 4, jungler: false }, { min: 9, jungler: true }]);
+    put('EUW1_3', 'Sett', 'MonkeyKing', true, 5, []);
+    const st = await L.matchupStats('Aatrox', 'Sett');
+    assert.deepEqual([st.all.games, st.all.wins, st.all.csDiff10, st.all.earlyDeaths, st.all.level6Diff, st.all.junglerInEarlyDeathsPct], [2, 1, -4, 1.5, 0.5, 67]);
+    assert.deepEqual([st.withChampion.games, st.withChampion.wins], [1, 1]);
+    assert.equal((await L.matchupStats('Wukong')).all.games, 1, 'Wukong = MonkeyKing (Data-Dragon-ID)');
+
+    // Notiz per Chat-Werkzeug (matchup-Parameter) → erscheint in der Karte
+    const out = await core.orchestrator.execute('lol_note', { text: 'Level 1 nicht traden, erst ab Sheen', matchup: 'aatrox' }, { conversationId: 'x', channel: 'voice' });
+    assert.equal(out.response.matchupNote, true);
+    const m = await core.gaming.lolflow.matchup({ mine: 'Sett', vs: 'Aatrox', role: 'Top' });
+    assert.equal(m.card.winCondition, 'Früh Vorsprung holen'); assert.equal(m.patch, '16.20');
+    assert.match(m.cardSource, /KI/);
+    assert.equal(m.notes[0].text, 'Level 1 nicht traden, erst ab Sheen');
+    assert.equal(m.stats.all.games, 2);
+    const req = fake.requests.at(-1);
+    assert.equal(req.config.responseMimeType, 'application/json');
+    assert.match(JSON.stringify(req.contents), /Sett.*gegen Aatrox/);
+    // zweiter Aufruf: aus dem Speicher, kein neuer Gemini-Aufruf
+    const n = fake.requests.length;
+    await core.gaming.lolflow.matchup({ mine: 'Sett', vs: 'Aatrox', role: 'Top' });
+    assert.equal(fake.requests.length, n, 'pro Matchup und Patch nur einmal bezahlen');
+    L.removeMatchupNote(m.notes[0].id);
+    assert.equal((await L.matchupNotes('Aatrox')).length, 0);
+  } finally { cleanup(); }
+});
+
+test('LoL-Coaching: Tilt nach Niederlagen-Serien, Pause-Hinweis, Ziel-Vorschläge, Wochenbericht', () => {
+  const { sessionStats, breakHint, suggestGoals, weekly, goalMet } = require('../src/main/services/gaming/lolcoach');
+  // 30 Spiele in Sessions à 3, jeweils: Sieg, Niederlage, Niederlage → danach (in neuer Session) …
+  const games = []; const base = Date.UTC(2026, 8, 1, 16);
+  // Muster: Nach 2 Niederlagen in Folge wird fast nur verloren
+  const seq = ['W', 'W', 'L', 'L', 'L', 'L', 'L', 'W', 'W', 'W'];
+  for (let s = 0; s < 4; s++) seq.forEach((r, i) => games.push({ playedAt: new Date(base + s * 86400000 + i * 40 * 60000).toISOString(), win: r === 'W', duration: 1800 }));
+  const st = sessionStats(games);
+  assert.equal(st.games, 40);
+  assert.equal(st.afterLosses[2].games, 16); assert.equal(st.afterLosses[2].winrate, 25); assert.equal(st.winrate, 50);
+  assert.ok(st.findings.some((f) => f.id === 'tilt-streak'), JSON.stringify(st.findings));
+  assert.equal(st.gameInSession['5+'].games, 24);
+  assert.equal(sessionStats(games.slice(0, 9)).findings.length, 0, 'zu wenig Spiele → keine Behauptung');
+  // aktuelle Session mit 2 Niederlagen → Pause-Hinweis
+  const now = Date.now();
+  const live = [...games, { playedAt: new Date(now - 70 * 60000).toISOString(), win: false, duration: 1800 }, { playedAt: new Date(now - 35 * 60000).toISOString(), win: false, duration: 1800 }];
+  const hint = breakHint(sessionStats(live));
+  assert.match(hint, /2 Niederlagen in Folge.*Kurze Pause\?/);
+  assert.equal(breakHint(sessionStats(games)), null, 'keine laufende Session → kein Hinweis');
+
+  const pat = { findings: [{ id: 'ganked' }, { id: 'midgame-farm' }, { id: 'control-wards' }], averages: { earlyDeaths: 2.4 } };
+  const sug = suggestGoals(pat, { csPerMin: 6.3, vision: 20, avgD: 6 });
+  assert.deepEqual(sug.map((x) => [x.metric, x.target]), [['earlyDeaths', 1], ['csPerMin', 7], ['vision', 24]]);
+  assert.equal(goalMet({ metric: 'earlyDeaths', target: 1 }, {}, { earlyDeaths: 1 }), true);
+  const w = weekly([{ win: true, csPerMin: 7, deaths: 3, vision: 30, deep: { hasTimeline: true, earlyDeaths: 0 } }, { win: false, csPerMin: 6, deaths: 7, deep: { hasTimeline: true, earlyDeaths: 3 } }], [], [{ text: 'Max. 1 Tod vor Minute 14', metric: 'earlyDeaths', target: 1 }], pat, { csPerMin: 6.3, vision: 20 });
+  assert.deepEqual([w.week.games, w.week.winrate, w.week.earlyDeaths], [2, 50, 1.5]);
+  assert.deepEqual([w.goals[0].met, w.goals[0].measured], [1, 2]);
+  assert.ok(!w.suggestions.some((x) => x.metric === 'earlyDeaths'), 'schon gesetztes Ziel nicht nochmal vorschlagen');
+  const { parseGoal } = require('../src/main/services/gaming/league');
+  assert.deepEqual(parseGoal('Max. 1 Tod vor Minute 14'), { metric: 'earlyDeaths', target: 1 });
+  assert.deepEqual(parseGoal('max. 4 Tode'), { metric: 'deaths', target: 4 });
+});
+
+test('LoL-Nachbesprechung mit Debrief-Fragen, Wochenbericht einmal pro Woche, Replay-API nur nach Einschalten', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lol-cfg-'));
+  fs.mkdirSync(path.join(dir, 'Config'));
+  fs.writeFileSync(path.join(dir, 'Config', 'game.cfg'), '[General]\r\nWindowMode=2\r\n[HUD]\r\nShowTimestamps=0\r\n');
+  const { core, cleanup } = tempCore({ script: [{ text: JSON.stringify({ review: 'Fokus: Wellen vor dem Recall pushen.', questions: ['Warum warst du in Minute 6 im Fluss?', 'Was hättest du mit 1500 Gold kaufen können?'] }) }] });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
+    core.settings.update({ gaming: { leagueDir: dir } });
+    const L = core.gaming.league;
+    const played = new Date(Date.now() - 40 * 60000).toISOString();
+    const m = { matchId: 'EUW1_77', playedAt: played, duration: 1800, champion: 'Jinx', win: false, kills: 2, deaths: 6, assists: 3, csPerMin: 6.1, vision: 18 };
+    core.db.run("INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,'me',?,?)", m.matchId, played, JSON.stringify(m));
+    L.setDeep(m.matchId, { matchId: m.matchId, hasTimeline: true, v: 3, win: false, champion: 'Jinx', earlyDeaths: 2, deathsDetail: [{ min: 6, zone: 'Fluss', by: ['Lee Sin'], jungler: true, gold: 1500, sec: 361, pos: [9000, 5800] }], playedAt: played, durationMin: 30 });
+    L.addGoal({ text: 'Max. 1 Tod vor Minute 14' });
+    const r = await core.gaming.lolflow.review({ match: m });
+    assert.match(r.summary, /Wellen vor dem Recall/);
+    assert.match(r.summary, /Ziel max\. 1 Tode vor Min\. 14: verfehlt \(2\)/);
+    assert.equal(r.questions.length, 2);
+    L.answerDebrief(m.matchId, 0, 'Wollte den Drachen checken, ohne Ward');
+    const det = L.deepDetail(m.matchId);
+    assert.equal(det.debrief.answers[0], 'Wollte den Drachen checken, ohne Ward');
+    assert.deepEqual(L.patterns(5).recent[0].debrief, [{ q: 'Warum warst du in Minute 6 im Fluss?', a: 'Wollte den Drachen checken, ohne Ward' }]);
+
+    // Wochenbericht: letzte Woche gespielt → einmal, nicht doppelt
+    const lastWeek = new Date(Date.now() - 8 * 86400000);
+    core.db.run("INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,'me',?,?)", 'EUW1_5', lastWeek.toISOString(), JSON.stringify({ ...m, matchId: 'EUW1_5', win: true }));
+    const nextMonday = new Date(); nextMonday.setDate(nextMonday.getDate() + ((8 - nextMonday.getDay()) % 7 || 7));
+    const rep = core.gaming.lolflow.weeklyCheck(nextMonday);
+    assert.match(rep || '', /Letzte Woche/);
+    assert.equal(core.gaming.lolflow.weeklyCheck(nextMonday), null, 'nur einmal pro Woche');
+
+    // Replay: ohne EnableReplayApi kein Start, Einschalten nur über enableReplayApi (mit Sicherung)
+    assert.equal(L.replayApiEnabled().enabled, false);
+    assert.deepEqual(await L.replayJump(m.matchId, 361), { ok: false, needsEnable: true, file: path.join(dir, 'Config', 'game.cfg') });
+    const en = L.enableReplayApi();
+    assert.equal(en.changed, true);
+    const cfg = fs.readFileSync(path.join(dir, 'Config', 'game.cfg'), 'utf8');
+    assert.match(cfg, /\[General\]\r\nEnableReplayApi=1\r\nWindowMode=2/);
+    assert.ok(fs.existsSync(path.join(dir, 'Config', 'game.cfg.jarvis-bak')));
+    assert.equal(L.enableReplayApi().changed, false, 'nicht doppelt eintragen');
+    await assert.rejects(L.replayJump(m.matchId, 361, { sleep: async () => {} }), /League-Client läuft nicht/);
+  } finally { cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

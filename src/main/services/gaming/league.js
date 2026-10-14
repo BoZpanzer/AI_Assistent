@@ -59,6 +59,7 @@ class League {
     try {
       const all = await this.liveGet('allgamedata');
       const me = all.activePlayer || {};
+      if (!me.riotId && !me.summonerName) throw new Error('Zuschauer/Replay – kein eigenes Match');
       const myId = me.riotId || me.summonerName;
       const players = all.allPlayers || [];
       const self = players.find((p) => (p.riotId || p.summonerName) === myId) || {};
@@ -126,6 +127,50 @@ class League {
     this.db.run("INSERT INTO game_state(key,value,updated_at) VALUES('lol:notes',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", JSON.stringify(list.slice(-60)), nowIso());
     return note;
   }
+  // ---------- Matchups ----------
+  /** Champion-Name/-ID vereinheitlichen („Lee Sin“, „LeeSin“, „Wukong“/„MonkeyKing“ → gleicher Schlüssel). */
+  async keyer() {
+    const k = (x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '');
+    let list = []; try { list = (await this.champions()).value || []; } catch { list = []; }
+    const map = new Map(); for (const c of list) { map.set(k(c.id), k(c.id)); map.set(k(c.name), k(c.id)); }
+    return (n) => map.get(k(n)) || k(n);
+  }
+  async champKey(n) { return (await this.keyer())(n); }
+  readList(key) { try { return JSON.parse(this.db.get('SELECT value FROM game_state WHERE key=?', key)?.value || '[]'); } catch { return []; } }
+  writeList(key, list) { this.db.run('INSERT INTO game_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at', key, JSON.stringify(list), nowIso()); }
+
+  /** Eigene Matchup-Notiz („gegen Darius: Level 1 nicht traden“) – erscheint beim nächsten Mal in der Championauswahl. */
+  async addMatchupNote(vs, text, mine = null) {
+    const t = String(text || '').trim().slice(0, 300);
+    if (!t || !vs) throw new Error('Champion und Notiz nötig');
+    const list = this.readList('lol:matchupnotes');
+    const note = { id: id('mn'), at: nowIso(), vs: await this.champKey(vs), vsName: String(vs).slice(0, 40), mine: mine ? await this.champKey(mine) : null, mineName: mine ? String(mine).slice(0, 40) : null, text: t };
+    list.push(note); this.writeList('lol:matchupnotes', list.slice(-400));
+    this.bus.emit('game:data', { game: 'league' });
+    return note;
+  }
+  async matchupNotes(vs, mine = null) {
+    const v = await this.champKey(vs); const m = mine ? await this.champKey(mine) : null;
+    return this.readList('lol:matchupnotes').filter((n) => n.vs === v && (!n.mine || !m || n.mine === m)).reverse();
+  }
+  removeMatchupNote(nid) { this.writeList('lol:matchupnotes', this.readList('lol:matchupnotes').filter((n) => n.id !== nid)); this.bus.emit('game:data', { game: 'league' }); return true; }
+
+  /** Eigene Bilanz gegen einen Champion als direkter Lane-Gegner (aus den Timeline-Analysen). */
+  async matchupStats(vs, mine = null) {
+    const K = await this.keyer(); const v = K(vs); const m = mine ? K(mine) : null;
+    const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT 300');
+    const all = []; for (const r of rows) { const d = this.getDeep(r.match_id); if (d?.opponent?.champion && K(d.opponent.champion) === v) all.push(d); }
+    const sum = (list) => {
+      if (!list.length) return null;
+      const av = (f) => { const a = list.map(f).filter((x) => x != null && Number.isFinite(x)); return a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 10) / 10 : null; };
+      const early = list.reduce((a, g) => a + (g.deathsDetail || []).filter((d) => d.min < 14).length, 0);
+      const jg = list.reduce((a, g) => a + (g.deathsDetail || []).filter((d) => d.min < 14 && d.jungler).length, 0);
+      return { games: list.length, wins: list.filter((g) => g.win).length, csDiff10: av((g) => g.csDiff10), goldDiff15: av((g) => g.goldDiff15), earlyDeaths: av((g) => g.earlyDeaths), level6Diff: av((g) => (g.levels?.me?.[6] != null && g.levels?.opp?.[6] != null ? g.levels.me[6] - g.levels.opp[6] : null)), junglerInEarlyDeathsPct: early ? Math.round(jg / early * 100) : null, champions: [...new Set(list.map((g) => g.champion).filter(Boolean))] };
+    };
+    const same = m ? all.filter((d) => d.champion && K(d.champion) === m) : null;
+    return { vs, all: sum(all), withChampion: m ? sum(same) : null };
+  }
+
   /** Notizen in einem Zeitfenster (für die Nachbesprechung eines Spiels). */
   liveNotes(fromIso, toIso) {
     let list = []; try { list = JSON.parse(this.db.get("SELECT value FROM game_state WHERE key='lol:notes'")?.value || '[]'); } catch { list = []; }
@@ -164,7 +209,7 @@ class League {
     for (const d of dirs) {
       try {
         const [, , port, password, protocol] = fs.readFileSync(path.join(d, 'lockfile'), 'utf8').trim().split(':');
-        if (port && password) { creds = { port: Number(port), password, protocol: protocol || 'https' }; break; }
+        if (port && password) { creds = { port: Number(port), password, protocol: protocol || 'https' }; this.leagueDirFound = d; break; }
       } catch { /* not here */ }
     }
     if (!creds && process.platform === 'win32') creds = await this.lcuFromProcess();
@@ -177,6 +222,7 @@ class League {
         { windowsHide: true, timeout: 8000 }, (err, out) => {
           const s = String(out || '');
           const port = s.match(/--app-port=(\d+)/)?.[1]; const password = s.match(/--remoting-auth-token=([\w-]+)/)?.[1];
+          const inst = s.match(/--install-directory=([^"]+?)"?\s+"?--/)?.[1]; if (inst) this.leagueDirFound = inst.replace(/[\\/]+$/, '');
           resolve(!err && port && password ? { port: Number(port), password, protocol: 'https' } : null);
         });
     });
@@ -200,6 +246,92 @@ class League {
       req.on('error', (e) => { this._lcu = null; reject(e); });
     });
   }
+  /** Lokale HTTPS-Anfrage (League-Client oder Replay-API auf 127.0.0.1, selbstsigniertes Riot-Zertifikat). */
+  localReq({ port, path: p, method = 'GET', body, auth, timeout = 5000 }) {
+    return new Promise((resolve, reject) => {
+      const data = body === undefined ? null : JSON.stringify(body);
+      const req = https.request({ host: '127.0.0.1', port, path: p, method, rejectUnauthorized: false, timeout,
+        headers: { Accept: 'application/json', ...(auth ? { Authorization: 'Basic ' + Buffer.from('riot:' + auth).toString('base64') } : {}), ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) } }, (res) => {
+        let txt = ''; res.setEncoding('utf8');
+        res.on('data', (x) => { txt += x; if (txt.length > 2e6) req.destroy(); });
+        res.on('end', () => {
+          if (res.statusCode >= 400) return reject(Object.assign(new Error(`HTTP ${res.statusCode}`), { status: res.statusCode, body: txt.slice(0, 300) }));
+          try { resolve(txt ? JSON.parse(txt) : null); } catch { resolve(txt); }
+        });
+      });
+      req.on('timeout', () => req.destroy(new Error('timeout')));
+      req.on('error', reject);
+      if (data) req.write(data);
+      req.end();
+    });
+  }
+  async lcuPost(apiPath, body = {}) {
+    const c = await this.lcuCreds();
+    if (!c) throw new Error('League-Client läuft nicht');
+    return this.localReq({ port: c.port, path: apiPath, method: 'POST', body, auth: c.password });
+  }
+
+  // ---------- Replays: zu einem Zeitpunkt springen (offizielle Replay-API, nur nach dem Spiel) ----------
+  gameCfgPath() {
+    const path = require('node:path');
+    const dir = this.settings.get('gaming').leagueDir || this.leagueDirFound;
+    return dir ? path.join(dir, 'Config', 'game.cfg') : null;
+  }
+  replayApiEnabled() {
+    const f = this.gameCfgPath(); if (!f) return { known: false, enabled: false };
+    try { return { known: true, enabled: /^\s*EnableReplayApi\s*=\s*1\s*$/mi.test(require('node:fs').readFileSync(f, 'utf8')), file: f }; } catch { return { known: false, enabled: false, file: f }; }
+  }
+  /** Schaltet in game.cfg die Replay-API ein (nur nach ausdrücklicher Bestätigung in der Oberfläche; Sicherung als game.cfg.jarvis-bak). */
+  enableReplayApi() {
+    const fs = require('node:fs');
+    const f = this.gameCfgPath();
+    if (!f) throw new Error('League-Ordner unbekannt – einmal den League-Client starten oder den Ordner in den Einstellungen angeben.');
+    let txt = ''; try { txt = fs.readFileSync(f, 'utf8'); } catch { throw new Error('game.cfg nicht gefunden: ' + f); }
+    if (/^\s*EnableReplayApi\s*=\s*1\s*$/mi.test(txt)) return { enabled: true, changed: false, file: f };
+    fs.writeFileSync(f + '.jarvis-bak', txt);
+    const nl = txt.includes('\r\n') ? '\r\n' : '\n';
+    if (/^[ \t]*EnableReplayApi[ \t]*=[^\r\n]*/mi.test(txt)) txt = txt.replace(/^[ \t]*EnableReplayApi[ \t]*=[^\r\n]*/mi, 'EnableReplayApi=1');
+    else if (/^\[General\][ \t]*(?=\r?$)/mi.test(txt)) txt = txt.replace(/^\[General\][ \t]*(?=\r?$)/mi, '[General]' + nl + 'EnableReplayApi=1');
+    else txt = txt + (txt.endsWith(nl) || !txt ? '' : nl) + '[General]' + nl + 'EnableReplayApi=1' + nl;
+    fs.writeFileSync(f, txt);
+    return { enabled: true, changed: true, file: f, backup: f + '.jarvis-bak' };
+  }
+  replayReq(method, p, body) { return this.localReq({ port: 2999, path: p, method, body, timeout: 2500 }); }
+
+  /**
+   * Replay eines Spiels öffnen und zu einer Spielsekunde springen (Standard: 15 s vor dem Ereignis).
+   * Ablauf: läuft das Replay schon → nur springen. Sonst über den League-Client herunterladen und starten,
+   * auf die Replay-API warten, dann springen. Fortschritt als Ereignis 'lol:replay'.
+   */
+  async replayJump(gameId, sec, { lead = 15, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), waitSec = 150 } = {}) {
+    const st = this.replayApiEnabled();
+    if (!st.enabled) return { ok: false, needsEnable: true, file: st.file || null };
+    const t = Math.max(0, Math.round(Number(sec) || 0) - lead);
+    const emit = (phase, extra = {}) => this.bus.emit('lol:replay', { gameId: String(gameId), phase, ...extra });
+    const jump = async () => { await this.replayReq('POST', '/replay/playback', { time: t, paused: false, speed: 1 }); emit('playing', { time: t }); return { ok: true, time: t }; };
+    if (this.replayGameId === String(gameId)) { try { await this.replayReq('GET', '/replay/playback'); return await jump(); } catch { this.replayGameId = null; } }
+    const gid = String(gameId).split('_').pop();
+    let meta = await this.lcuGet(`/lol-replays/v1/metadata/${encodeURIComponent(gid)}`).catch(() => null);
+    if (!meta) throw new Error('League-Client läuft nicht – für Replays muss der Client offen sein.');
+    if (['incompatible', 'missingOrExpired', 'unsupported', 'lost', 'error'].includes(meta.state)) throw new Error(meta.state === 'incompatible' ? 'Das Replay stammt von einem älteren Patch und lässt sich nicht mehr abspielen.' : 'Für dieses Spiel gibt es kein Replay mehr (Riot hält Replays nur kurz bzw. bis zum nächsten Patch).');
+    if (meta.state === 'download') { emit('downloading'); await this.lcuPost(`/lol-replays/v1/rofls/${encodeURIComponent(gid)}/download`, { componentType: 'replay-button_match-history' }); }
+    for (let i = 0; i < 90 && meta?.state !== 'watch'; i++) {
+      await sleep(1000);
+      meta = await this.lcuGet(`/lol-replays/v1/metadata/${encodeURIComponent(gid)}`).catch(() => meta);
+      if (meta?.state === 'downloading') emit('downloading', { progress: meta.downloadProgress ?? null });
+      if (['incompatible', 'missingOrExpired', 'error', 'lost'].includes(meta?.state)) throw new Error('Replay-Download fehlgeschlagen (' + meta.state + ').');
+    }
+    if (meta?.state !== 'watch') throw new Error('Replay ist noch nicht bereit – gleich nochmal versuchen.');
+    emit('starting');
+    await this.lcuPost(`/lol-replays/v1/rofls/${encodeURIComponent(gid)}/watch`, { componentType: 'replay-button_match-history' });
+    this.replayGameId = String(gameId);
+    for (let i = 0; i < waitSec; i++) {
+      await sleep(1000);
+      try { const pb = await this.replayReq('GET', '/replay/playback'); if (pb && pb.length > 0) { await sleep(1500); return await jump(); } } catch { /* lädt noch */ }
+    }
+    throw new Error('Das Replay ist gestartet, aber die Replay-API antwortet nicht. Ist „EnableReplayApi=1“ in der game.cfg (League einmal neu starten)?');
+  }
+
   async clientAvailable() { try { await this.lcuGet('/lol-summoner/v1/current-summoner'); return true; } catch { return false; } }
 
   /**
@@ -280,6 +412,8 @@ class League {
   async deepAnalyze(mid, { me } = {}) {
     const champs = await this.champions().then((r) => r.value).catch(() => []);
     const name = (cid) => champs.find((c) => String(c.key) === String(cid))?.id || null;
+    const items = await this.items().then((r) => r.value).catch(() => ({}));
+    const item = (iid) => items[String(iid)] || null;
     let game = null; let tl = null; let puuid = null; let source = null;
     const gameId = String(mid).split('_').pop();
     if (await this.lcuCreds().catch(() => null)) {
@@ -298,7 +432,7 @@ class League {
       source = 'Riot-API';
     }
     if (!game) return null;
-    const a = analyzeGame(game, tl, puuid, { name });
+    const a = analyzeGame(game, tl, puuid, { name, item });
     if (!a) return null;
     a.matchId = mid; a.champion = a.champion || name(a.championId); if (a.opponent) a.opponent.champion = a.opponent.champion || name(a.opponent.championId);
     a.source = source; a.analyzedAt = nowIso();
@@ -311,7 +445,7 @@ class League {
   /** Fehlende Tiefenanalysen der letzten Ranked-Spiele nachholen (Client offen oder Riot-Schlüssel). */
   async deepSync({ limit = 20 } = {}) {
     const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT ?', limit);
-    const todo = rows.filter((r) => { const d = this.getDeep(r.match_id); return !d?.hasTimeline || (d.v || 1) < 2; }).map((r) => r.match_id);
+    const todo = rows.filter((r) => { const d = this.getDeep(r.match_id); return !d?.hasTimeline || (d.v || 1) < 3; }).map((r) => r.match_id);
     if (!todo.length) return { analyzed: 0, missing: 0 };
     const canClient = !!(await this.lcuCreds().catch(() => null));
     if (!canClient && !this.hasKey()) return { analyzed: 0, missing: todo.length, reason: 'Client geschlossen' };
@@ -328,7 +462,44 @@ class League {
   patterns(n = 20) {
     const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT ?', n);
     const list = rows.map((r) => this.getDeep(r.match_id)).filter(Boolean);
-    return { ...patterns(list), recent: list.slice(0, 5).map((g) => ({ matchId: g.matchId, playedAt: g.playedAt, champion: g.champion, vs: g.opponent?.champion || null, win: g.win, kda: `${g.kills}/${g.deaths}/${g.assists}`, earlyDeaths: g.earlyDeaths, csAt10: g.csAt10, csDiff10: g.csDiff10, goldDiff15: g.goldDiff15, deaths: (g.deathsDetail || []).map((d) => `${d.min}. Min ${d.zone}${d.by?.length ? ' durch ' + d.by.join(' + ') : ''}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (${d.enemies} Gegner)` : ''}${d.jungler ? ' [Jungler]' : ''}${d.gold >= 1300 ? ` [${d.gold} Gold]` : ''}`), objectives: g.objectives, enemyJungle: g.enemyJungle || null, jungle: g.jungle || null, firstBackMin: g.firstBackMin ?? null, wardsBefore14: g.wardsBefore14 ?? null, notes: this.notesFor(g).map((x) => x.text) })), analyzedOf: rows.length };
+    return { ...patterns(list), recent: list.slice(0, 5).map((g) => ({ matchId: g.matchId, playedAt: g.playedAt, champion: g.champion, vs: g.opponent?.champion || null, win: g.win, kda: `${g.kills}/${g.deaths}/${g.assists}`, earlyDeaths: g.earlyDeaths, csAt10: g.csAt10, csDiff10: g.csDiff10, goldDiff15: g.goldDiff15, deaths: (g.deathsDetail || []).map((d) => `${d.min}. Min ${d.zone}${d.by?.length ? ' durch ' + d.by.join(' + ') : ''}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (${d.enemies} Gegner)` : ''}${d.jungler ? ' [Jungler]' : ''}${d.gold >= 1300 ? ` [${d.gold} Gold]` : ''}`), objectives: g.objectives, enemyJungle: g.enemyJungle || null, jungle: g.jungle || null, firstBackMin: g.firstBackMin ?? null, wardsBefore14: g.wardsBefore14 ?? null, notes: this.notesFor(g).map((x) => x.text), debrief: (() => { const d = this.debrief(g.matchId); return d ? d.questions.map((q, i) => (d.answers[i] ? { q, a: d.answers[i] } : null)).filter(Boolean) : []; })() })), analyzedOf: rows.length, session: (() => { try { const x = this.sessionStats(); return { findings: x.findings, afterLosses: x.afterLosses, gameInSession: x.gameInSession, timeOfDay: x.timeOfDay }; } catch { return null; } })() };
+  }
+  // ---------- Debrief: 2–3 Fragen nach dem Spiel, Antworten fließen in die Analyse ----------
+  debrief(mid) { try { return JSON.parse(this.db.get('SELECT value FROM game_state WHERE key=?', 'lol:debrief:' + mid)?.value || 'null'); } catch { return null; } }
+  setDebrief(mid, v) { this.db.run('INSERT INTO game_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at', 'lol:debrief:' + mid, JSON.stringify(v), nowIso()); }
+  setDebriefQuestions(mid, questions) { const q = (questions || []).map((x) => String(x).slice(0, 240)).filter(Boolean).slice(0, 3); if (q.length) this.setDebrief(mid, { questions: q, answers: {}, at: nowIso() }); return q; }
+  answerDebrief(mid, index, text) {
+    const d = this.debrief(mid); if (!d?.questions?.[index]) throw new Error('Frage nicht gefunden');
+    d.answers[index] = String(text || '').trim().slice(0, 500); this.setDebrief(mid, d); this.bus.emit('game:data', { game: 'league' }); return d;
+  }
+
+  // ---------- Session/Tilt und Wochenbericht ----------
+  sessionStats() {
+    const { sessionStats } = require('./lolcoach');
+    return sessionStats(this.db.all('SELECT summary, played_at FROM lol_matches ORDER BY played_at DESC LIMIT 400').map((r) => { const x = JSON.parse(r.summary); return { playedAt: r.played_at, win: x.win, duration: x.duration }; }));
+  }
+  weekly(now = new Date()) {
+    const { weekly } = require('./lolcoach');
+    const day = (now.getDay() + 6) % 7; const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+    const from = new Date(monday.getTime() - 7 * 86400000);
+    const rows = this.db.all('SELECT match_id, summary, played_at FROM lol_matches WHERE played_at >= ? ORDER BY played_at DESC', from.toISOString()).map((r) => ({ ...JSON.parse(r.summary), playedAt: r.played_at, deep: this.getDeep(r.match_id) }));
+    const cur = rows.filter((r) => Date.parse(r.playedAt) >= monday.getTime()); const prev = rows.filter((r) => Date.parse(r.playedAt) < monday.getTime());
+    return { from: monday.toISOString(), previousFrom: from.toISOString(), ...weekly(cur, prev, this.goals(), this.patterns(20), this.stats(20).current) };
+  }
+
+  /** Tief analysierte Spiele (für die Spielanalyse-Auswahl). */
+  deepGames(limit = 20) {
+    return this.db.all('SELECT match_id, played_at FROM lol_matches ORDER BY played_at DESC LIMIT ?', limit).map((r) => {
+      const d = this.getDeep(r.match_id);
+      return d?.hasTimeline ? { matchId: r.match_id, playedAt: r.played_at, champion: d.champion, vs: d.opponent?.champion || null, win: d.win, kda: `${d.kills}/${d.deaths}/${d.assists}`, role: d.roleDe } : null;
+    }).filter(Boolean);
+  }
+  /** Ein Spiel mit allem für die Detailansicht: Analyse, Notizen, Debrief-Antworten, Build-Vergleich. */
+  deepDetail(matchId) {
+    const d = this.getDeep(matchId); if (!d) return null;
+    const same = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT 60').map((r) => this.getDeep(r.match_id)).filter((g) => g && g.champion === d.champion && g.firstItemMin != null && g.matchId !== matchId);
+    const firstItemAvg = same.length >= 2 ? Math.round(same.reduce((a, g) => a + g.firstItemMin, 0) / same.length * 10) / 10 : null;
+    return { ...d, notes: this.notesFor(d), debrief: this.debrief(matchId), firstItemAvg, firstItemGames: same.length };
   }
   notesFor(g) {
     const start = Date.parse(g.playedAt); const dur = Number(g.duration || 0) || Number(g.durationMin || 0) * 60;
@@ -449,6 +620,14 @@ class League {
       return Object.values(j.data).map((c) => ({ id: c.id, key: c.key, name: c.name, title: c.title, tags: c.tags, blurb: c.blurb }));
     });
   }
+  /** Items (Data Dragon): Name und ob es ein fertiges Item ist (keine Weiterentwicklung, ≥ 2000 Gold, keine Stiefel). */
+  async items() {
+    const v = await this.ddVersion();
+    return this.cache.wrap('lol:dd:items:' + v, 'Data Dragon ' + v, 7 * 86400000, async () => {
+      const j = await (await this.fetch(`${DD}/cdn/${v}/data/de_DE/item.json`)).json();
+      return Object.fromEntries(Object.entries(j.data || {}).map(([k, it]) => [k, { name: it.name, complete: !(it.into || []).length && (it.gold?.total || 0) >= 2000 && !(it.tags || []).includes('Boots') && it.gold?.purchasable !== false }]));
+    });
+  }
   async champion(name) {
     const v = await this.ddVersion();
     const list = (await this.champions()).value;
@@ -474,7 +653,8 @@ class League {
 /** „7 CS/min“, „max. 5 Tode“, „Vision 25“ → messbares Ziel. */
 function parseGoal(text) {
   const t = String(text || '').toLowerCase().replace(',', '.');
-  let m = t.match(/(\d+(?:\.\d+)?)\s*cs/); if (m) return { metric: 'csPerMin', target: Number(m[1]) };
+  let m = /(früh|vor min|vor minute)/.test(t) && t.match(/(\d+)\s*(?:frühe\s*)?(?:tode|tod)/); if (m) return { metric: 'earlyDeaths', target: Number(m[1]) };
+  m = t.match(/(\d+(?:\.\d+)?)\s*cs/); if (m) return { metric: 'csPerMin', target: Number(m[1]) };
   m = t.match(/(\d+)\s*(?:tode|deaths|tod)/) || t.match(/(?:tode|deaths)\D{0,12}(\d+)/); if (m) return { metric: 'deaths', target: Number(m[1]) };
   m = t.match(/vision\D{0,12}(\d+)/) || t.match(/(\d+)\s*vision/); if (m) return { metric: 'vision', target: Number(m[1]) };
   return null;

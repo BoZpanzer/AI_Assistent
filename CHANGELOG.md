@@ -2,6 +2,19 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.24.0 – LoL-Coach: Matchup-Karte, Replay-Sprünge, Spielanalyse, Wochenbericht
+
+- **Matchup-Karte in der Championauswahl:** wer auf Level 1–3, 6, im Mid- und Lategame stärker ist, Win-Condition, was du vermeiden solltest, gefährliche Fähigkeiten und ein Build-Hinweis. Das ist KI-Champion-Wissen, das einmal pro Matchup und Patch erzeugt und dann gespeichert wird. Dazu kommen deine eigene Bilanz gegen den Champion (CS/Gold-Differenz, frühe Tode, Jungler-Beteiligung, Level 6) und deine eigenen Notizen. Der Lane-Gegner wird automatisch gewählt, wenn er eindeutig ist (Bot/Support), sonst tippst du auf einen Gegner. Ein Matchup lässt sich auch jederzeit von Hand nachschlagen.
+- **Matchup-Notizen:** „Jarvis, notier für Darius: Level 1 nicht traden“ – die Notiz erscheint bei jedem künftigen Spiel gegen Darius.
+- **Spielanalyse pro Spiel:** Jungle-Pfade (du, gegnerischer und eigener Jungler, Minute 1–14) und deine Tode auf der Karte, Level-2/3/6-Zeitpunkte gegen deinen Lane-Gegner, CS-Kurve Minute für Minute, Item-Timings gegen deinen Schnitt auf dem Champion, deine Notizen aus dem Spiel.
+- **Replay-Sprünge:** Klick auf einen Tod → JARVIS lädt das Replay über den League-Client und springt 15 Sekunden davor. Dafür muss in League einmalig die Replay-API eingeschaltet werden (ein Klick, mit Bestätigung und Sicherung der game.cfg).
+- **Todes-Karte** über alle analysierten Spiele in der Fehleranalyse.
+- **Kurz nachgedacht:** Nach jedem Spiel stellt JARVIS 2–3 konkrete Fragen zu Momenten aus den Daten; deine Antworten fließen in die Fehleranalyse ein.
+- **Tilt & Session:** Winrate nach Niederlagen-Serien, nach Spielanzahl am Stück und nach Tageszeit. Nur wenn deine eigenen Zahlen nach zwei Niederlagen deutlich schlechter sind, schlägt JARVIS eine Pause vor.
+- **Wochenbericht** (montags): letzte Woche gegen diese, Zielerreichung pro Spiel und Ziel-Vorschläge aus deinen Fehlermustern zum Übernehmen. Neues messbares Ziel: „max. 1 Tod vor Minute 14“.
+- Neue Fehlermuster: „Später Level 6 als dein Gegner“ und „Farm bricht nach der Lane-Phase ein“. Bereits analysierte Spiele werden automatisch neu ausgewertet.
+- Im Chat/per Sprache: „Wie spiele ich Sett gegen Aatrox?“, „Zeig mir meinen zweiten Tod“, „Wie lief meine Woche?“, „Setz mir ein Ziel …“.
+
 ## 3.23.0 – LoL-Coach: Jungle-Analyse, Notizen im Spiel, mehr Spielinfos
 
 - **Jungle-Analyse nach jedem Spiel** (aus der Riot-Timeline): gegnerischer Jungler mit Startseite (Min. 3–6), erster erfolgreicher Gank (Minute, Lane, Opfer), Ganks vor Min. 14 und wie viele davon dich getroffen haben.

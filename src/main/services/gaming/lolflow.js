@@ -18,7 +18,10 @@ class LolFlow {
     this.s = s; this.timer = null; this.phase = null; this.champ = null; this.lastSelectKey = ''; this.adviceKey = ''; this.busy = false; this.reviewPending = null;
     s.bus.on('game:client', ({ league }) => (league ? this.start() : this.stop()));
     s.bus.on('settings:changed', ({ keys }) => { if (keys.includes('gaming')) this.reconsider(); });
+    this.weeklyTimer = setTimeout(() => { try { this.weeklyCheck(); } catch (e) { log.debug('weekly', e); } }, 60000); this.weeklyTimer.unref?.();
+    this.weeklyEvery = setInterval(() => { try { this.weeklyCheck(); } catch (e) { log.debug('weekly', e); } }, 3 * 3600_000); this.weeklyEvery.unref?.();
   }
+  dispose() { clearTimeout(this.weeklyTimer); clearInterval(this.weeklyEvery); this.stop(); }
 
   cfg() { return this.s.settings.get('gaming') || {}; }
   wanted() { const c = this.cfg(); return c.lolChampSelect !== false || c.lolReview !== false; }
@@ -76,9 +79,19 @@ class LolFlow {
     for (const e of enemies.slice(0, 5)) {
       try { const c = await L.champion(e); if (c?.enemytips?.[0]) tips.push(`${c.name}: ${c.enemytips[0]}`); } catch { /* ignore */ }
     }
-    this.champ = { active: true, myChampion, locked, role, enemies, tips, advice: this.champ?.adviceKey === key ? this.champ.advice : null };
+    // Wahrscheinlicher Lane-Gegner: nur wenn eindeutig (Bot → einziger Schütze, Support → einziger Supporter)
+    const want = role === 'ADC' ? 'Marksman' : role === 'Support' ? 'Support' : null;
+    const cands = want ? enemies.filter((e) => champs.find((c) => c.name === e)?.tags?.[0] === want) : [];
+    const laneGuess = cands.length === 1 ? cands[0] : null;
+    this.champ = { active: true, myChampion, locked, role, enemies, tips, laneGuess, advice: this.champ?.adviceKey === key ? this.champ.advice : null, matchup: this.champ?.matchup?.key === `${myChampion}|${laneGuess}` ? this.champ.matchup : null };
     this.remember();
     this.s.bus.emit('lol:champselect', this.champ);
+    if (myChampion && laneGuess && !this.champ.matchup && this.cfg().lolMatchupCard !== false) {
+      this.matchup({ mine: myChampion, vs: laneGuess, role }).then((mu) => {
+        if (this.lastSelectKey !== key || !this.champ) return;
+        this.champ = { ...this.champ, matchup: { key: `${myChampion}|${laneGuess}`, ...mu } }; this.remember(); this.s.bus.emit('lol:champselect', this.champ);
+      }).catch((e) => log.debug('matchup', e));
+    }
     if (myChampion && enemies.length && this.s.gemini.hasKey()) this.advise(key, myChampion, role, enemies).catch((e) => log.debug('advice', e));
   }
 
@@ -100,6 +113,35 @@ class LolFlow {
     this.champ = { ...this.champ, advice, adviceKey: key };
     this.remember();
     this.s.bus.emit('lol:champselect', this.champ);
+  }
+
+  /**
+   * Matchup-Karte: Spielphasen (wer ist wann stärker), Win-Condition, Gefahren, Build-Hinweis (KI-Champion-Wissen,
+   * pro Patch einmal erzeugt und gespeichert) + deine eigene Bilanz in dem Matchup + deine eigenen Notizen.
+   * Nur für Championauswahl und Nachbereitung – nicht als Anweisung im laufenden Spiel.
+   */
+  async matchup({ mine, vs, role = null, ai = true }) {
+    const L = this.s.gaming.league;
+    if (!vs) throw new Error('Gegner-Champion fehlt');
+    const [stats, notes] = await Promise.all([L.matchupStats(vs, mine), L.matchupNotes(vs, mine)]);
+    let card = null; let patch = null; let cardError = null;
+    if (mine && ai) {
+      try { patch = String(await L.ddVersion()).split('.').slice(0, 2).join('.'); } catch { patch = null; }
+      const K = await L.keyer();
+      const ck = `lol:matchup:${patch || 'x'}:${K(mine)}:${K(vs)}:${role || ''}`;
+      card = this.s.gaming.cache.get(ck)?.value || null;
+      if (!card && this.s.gemini.hasKey()) {
+        try {
+          card = await this.s.gemini.generate({ feature: 'lol', model: this.s.gemini.requireModel('fast'), temperature: 0.3, json: true, schema: MATCHUP_SCHEMA,
+            system: 'Du bist ein erfahrener League-of-Legends-Coach. Deutsch, knapp, konkret. Nur allgemein bekanntes Champion- und Matchup-Wissen (Stärken je Spielphase, Fähigkeiten, typische Spielweise). Keine erfundenen Zahlen, Winrates oder Patch-Details. Bist du dir bei einem Punkt unsicher, lass ihn weg und setze confidence entsprechend.',
+            contents: [{ role: 'user', parts: [{ text: `Matchup: Ich spiele ${mine}${role ? ' (' + role + ')' : ''} gegen ${vs}${patch ? ` (Patch ${patch})` : ''}. Beschreibe für jede Phase (Level 1–3, Level 6, Midgame, Lategame), wer im Vorteil ist (du/gegner/ausgeglichen) und was das für mich heißt – z. B. ob es okay ist, früh zu verlieren, oder ob ich früh Druck machen muss. Dazu Win-Condition, was ich vermeiden sollte, gefährlichste Fähigkeiten des Gegners und ein kurzer Item-/Runen-Hinweis.` }] }],
+          });
+          if (typeof card === 'string') card = JSON.parse(card);
+          if (card?.phases) this.s.gaming.cache.set(ck, card, 'Gemini (Champion-Wissen' + (patch ? ', Patch ' + patch : '') + ')', 30 * 86400000);
+        } catch (e) { cardError = e.message; card = null; }
+      }
+    }
+    return { mine, vs, role, patch, card, cardSource: card ? 'KI-Champion-Wissen – kann nach Patches abweichen' : null, cardError, stats, notes };
   }
 
   remember() { if (this.champ?.myChampion) this.s.gaming.cache.set('lol:lastchamp', { ...this.champ, active: false, at: nowIso() }, 'League-Client (lokal)', 365 * 86400000); }
@@ -141,7 +183,8 @@ class LolFlow {
     if (Date.now() - Date.parse(m.playedAt) - m.duration * 1000 > 3 * 3600_000 && !force) return null; // nur frische Spiele
     try { await L.syncFromClient(); } catch { /* ignore */ }
     const avg = L.stats(20).current;
-    const tips = reviewTips(m, avg, L.goals());
+    deep = deep || L.getDeep(m.matchId);
+    const tips = reviewTips(m, avg, L.goals(), deep);
     let summary = `**${m.win ? 'Sieg' : 'Niederlage'}** mit ${m.champion} · ${m.kills}/${m.deaths}/${m.assists} · ${m.csPerMin} CS/min${m.vision != null ? ` · Vision ${m.vision}` : ''} · ${Math.round(m.duration / 60)} min`;
     deep = deep || L.getDeep(m.matchId);
     if (deep?.hasTimeline) {
@@ -157,28 +200,78 @@ class LolFlow {
     const start = Date.parse(m.playedAt);
     const notes = Number.isFinite(start) ? L.liveNotes(new Date(start - 5 * 60000).toISOString(), new Date(start + (m.duration + 600) * 1000).toISOString()) : [];
     if (notes.length) summary += '\n\n**Deine Notizen im Spiel:**\n' + notes.map((n) => `- ${n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')} ` : ''}${n.text}`).join('\n');
+    // Build-Timing gegen den eigenen Schnitt auf dem Champion
+    if (deep?.firstItemMin != null) {
+      const det = L.deepDetail(m.matchId);
+      if (det?.firstItemAvg != null) summary += `\n- Erstes fertiges Item: ${deep.firstItemMin}. Min.${deep.items?.[0]?.name ? ` (${deep.items[0].name})` : ''} · dein Schnitt auf ${m.champion}: ${det.firstItemAvg}. Min.`;
+    }
+    if (deep?.levels?.me?.[6] != null && deep?.levels?.opp?.[6] != null) {
+      const d6 = Math.round((deep.levels.me[6] - deep.levels.opp[6]) * 10) / 10;
+      if (Math.abs(d6) >= 0.3) summary += `\n- Level 6: ${deep.levels.me[6]}. Min., ${deep.opponent?.champion || 'dein Gegner'} ${deep.levels.opp[6]}. Min. (${d6 > 0 ? d6 + ' Min. später' : Math.abs(d6) + ' Min. früher'})`;
+    }
+    let questions = [];
     if (this.cfg().lolReviewAi !== false && this.s.gemini.hasKey()) {
       try {
-        const ai = await this.s.gemini.generate({ feature: 'lol',
+        const res = await this.s.gemini.generate({ feature: 'lol', json: true, schema: REVIEW_SCHEMA,
           model: this.s.gemini.requireModel('fast'), temperature: 0.4,
           system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 4 Sätze. Nutze NUR die gelieferten Zahlen und Notizen, erfinde nichts. Wenn Notizen da sind, verknüpfe sie mit den Zahlen (z. B. Notiz „Jungler kam bot“ + Tod mit Jungler-Beteiligung).',
-          contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort/beteiligten Gegnern/Gold in der Tasche, Lane-Differenzen, Objectives, gegnerischer Jungler, eigenes Jungling): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives, enemyJungle: deep.enemyJungle, jungle: deep.jungle, wardsBefore14: deep.wardsBefore14, firstBackMin: deep.firstBackMin })}\n` : ''}${notes.length ? `Notizen, die ich mir im Spiel gemacht habe (meine eigene Wahrnehmung): ${JSON.stringify(notes.map((n) => ({ min: n.gameSec != null ? Math.round(n.gameSec / 60) : null, text: n.text })))}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel.` }] }],
+          contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort/beteiligten Gegnern/Gold in der Tasche, Lane-Differenzen, Objectives, gegnerischer Jungler, eigenes Jungling): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives, enemyJungle: deep.enemyJungle, jungle: deep.jungle, wardsBefore14: deep.wardsBefore14, firstBackMin: deep.firstBackMin })}\n` : ''}${notes.length ? `Notizen, die ich mir im Spiel gemacht habe (meine eigene Wahrnehmung): ${JSON.stringify(notes.map((n) => ({ min: n.gameSec != null ? Math.round(n.gameSec / 60) : null, text: n.text })))}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel (review). Stelle außerdem 2–3 kurze, konkrete Reflexionsfragen zu Momenten aus den Daten (z. B. zu einem bestimmten Tod mit Minute), die ich in einem Satz beantworten kann (questions).` }] }],
         });
-        if (ai) summary += '\n\n' + ai.trim();
+        const ai = typeof res === 'string' ? res : res?.review;
+        if (ai) summary += '\n\n' + String(ai).trim();
+        questions = L.setDebriefQuestions(m.matchId, Array.isArray(res?.questions) ? res.questions : []);
       } catch (e) { log.debug('ai review', e); }
     }
     const title = `${m.champion} · ${m.win ? 'Sieg' : 'Niederlage'}`;
     this.s.db.run('INSERT OR REPLACE INTO game_reviews(id,game,ref,title,summary,tips,source,created_at) VALUES(?,?,?,?,?,?,?,?)', id('rv'), 'league', m.matchId, title, summary, JSON.stringify(tips), 'League-Client (lokal)', nowIso());
     this.s.notifications.push({ category: 'gaming', origin: 'client', game: 'league', dedupeKey: 'review:' + m.matchId, title: 'Nachbesprechung: ' + title, body: tips[0] || 'Gutes Spiel – Details im Gaming-Bereich.' });
-    this.s.bus.emit('lol:review', { title, summary, win: m.win, matchId: m.matchId });
+    this.s.bus.emit('lol:review', { title, summary, win: m.win, matchId: m.matchId, questions });
+    // Pause vorschlagen, wenn die eigene Statistik nach Niederlagen-Serien deutlich schlechter ist
+    try {
+      const { breakHint } = require('./lolcoach');
+      const hint = this.cfg().lolBreakHint !== false ? breakHint(L.sessionStats()) : null;
+      if (hint) this.s.notifications.push({ category: 'gaming', origin: 'client', game: 'league', dedupeKey: 'lolbreak:' + m.matchId, title: 'Kurze Pause?', body: hint });
+    } catch (e) { log.debug('break', e); }
     this.s.bus.emit('game:data', { game: 'league' });
-    return { title, summary, tips };
+    return { title, summary, tips, questions };
+  }
+
+  /** Wochenbericht einmal pro Woche (ab Montag) als Nachbesprechung + Benachrichtigung, wenn letzte Woche gespielt wurde. */
+  weeklyCheck(now = new Date()) {
+    if (this.cfg().lolWeekly === false) return null;
+    const L = this.s.gaming.league;
+    const w = L.weekly(now);
+    const key = 'lolweekly:' + w.from.slice(0, 10);
+    if (!w.previous || this.s.db.get("SELECT 1 x FROM game_reviews WHERE game='league' AND ref=?", key)) return null;
+    const p = w.previous; const g = w.goals.filter((x) => x.measured);
+    const lines = [`**Letzte Woche:** ${p.games} Ranked · ${p.winrate} % Siege · ${p.csPerMin} CS/min · Ø ${p.deaths} Tode${p.earlyDeaths != null ? ` (davon vor Min. 14: ${p.earlyDeaths})` : ''}${p.vision != null ? ` · Vision ${p.vision}` : ''}`];
+    if (g.length) lines.push('**Ziele (diese Woche bisher):** ' + g.map((x) => `${x.text}: ${x.met}/${x.measured}`).join(' · '));
+    if (w.suggestions.length) lines.push('**Vorschläge für neue Ziele:**\n' + w.suggestions.map((x) => `- ${x.text} – ${x.why}`).join('\n'));
+    const summary = lines.join('\n\n');
+    this.s.db.run('INSERT OR REPLACE INTO game_reviews(id,game,ref,title,summary,tips,source,created_at) VALUES(?,?,?,?,?,?,?,?)', id('rv'), 'league', key, 'Wochenbericht', summary, JSON.stringify(w.suggestions.map((x) => x.text)), 'Gespeicherte Ranked-Spiele', nowIso());
+    this.s.notifications.push({ category: 'gaming', origin: 'client', game: 'league', dedupeKey: key, title: 'LoL-Wochenbericht', body: `${p.games} Spiele, ${p.winrate} % Siege${w.suggestions[0] ? ' · Vorschlag: ' + w.suggestions[0].text : ''}` });
+    this.s.bus.emit('game:data', { game: 'league' });
+    return summary;
   }
 
   reviews(limit = 10) {
     return this.s.db.all("SELECT * FROM game_reviews WHERE game='league' ORDER BY created_at DESC LIMIT ?", limit).map((r) => ({ id: r.id, ref: r.ref, title: r.title, summary: r.summary, tips: safeJson(r.tips, []), source: r.source, createdAt: r.created_at }));
   }
 }
+
+const REVIEW_SCHEMA = { type: 'object', required: ['review', 'questions'], properties: { review: { type: 'string' }, questions: { type: 'array', items: { type: 'string' } } } };
+const MATCHUP_SCHEMA = {
+  type: 'object', required: ['summary', 'phases', 'winCondition', 'confidence'],
+  properties: {
+    summary: { type: 'string', description: 'ein Satz: Charakter des Matchups' },
+    phases: { type: 'array', items: { type: 'object', required: ['phase', 'edge', 'tip'], properties: { phase: { type: 'string', enum: ['Level 1–3', 'Level 6', 'Midgame', 'Lategame'] }, edge: { type: 'string', enum: ['du', 'gegner', 'ausgeglichen'] }, tip: { type: 'string' } } } },
+    winCondition: { type: 'string' },
+    avoid: { type: 'array', items: { type: 'string' } },
+    dangers: { type: 'array', items: { type: 'string' } },
+    build: { type: 'string' },
+    confidence: { type: 'string', enum: ['hoch', 'mittel', 'niedrig'] },
+  },
+};
 
 /** Jungle-/Gank-Fakten aus der Timeline-Analyse (nach dem Spiel). */
 function jungleFacts(d) {
@@ -200,7 +293,7 @@ function jungleFacts(d) {
 }
 
 /** Rule-based, number-backed hints (no invented data). */
-function reviewTips(m, avg, goals = []) {
+function reviewTips(m, avg, goals = [], deep = null) {
   const t = [];
   if (avg) {
     if (m.csPerMin < avg.csPerMin - 0.8) t.push(`Farm unter deinem Schnitt (${m.csPerMin} vs. Ø ${avg.csPerMin} CS/min).`);
@@ -216,9 +309,10 @@ function reviewTips(m, avg, goals = []) {
   for (const g of goals) {
     if (g.metric === 'csPerMin' && g.target != null) t.push(`Ziel CS/min ${g.target}: ${m.csPerMin >= g.target ? 'erreicht ✓' : 'verfehlt (' + m.csPerMin + ')'}`);
     if (g.metric === 'deaths' && g.target != null) t.push(`Ziel max. ${g.target} Tode: ${m.deaths <= g.target ? 'erreicht ✓' : 'verfehlt (' + m.deaths + ')'}`);
+    if (g.metric === 'earlyDeaths' && g.target != null && deep?.earlyDeaths != null) t.push(`Ziel max. ${g.target} Tode vor Min. 14: ${deep.earlyDeaths <= g.target ? 'erreicht ✓' : 'verfehlt (' + deep.earlyDeaths + ')'}`);
     if (g.metric === 'vision' && g.target != null && m.vision != null) t.push(`Ziel Vision ${g.target}: ${m.vision >= g.target ? 'erreicht ✓' : 'verfehlt (' + m.vision + ')'}`);
   }
   return t.slice(0, 6);
 }
 
-module.exports = { LolFlow, reviewTips, jungleFacts };
+module.exports = { LolFlow, reviewTips, jungleFacts, MATCHUP_SCHEMA };

@@ -75,7 +75,7 @@ const dist = (a, b) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity);
 const side = (pos) => (!pos || pos.x == null ? null : pos.y - pos.x > 0 ? 'top' : 'bot');
 const SIDE_DE = { top: 'Top-Seite', bot: 'Bot-Seite' };
 
-function analyzeGame(game, timeline, puuid, { name = () => null } = {}) {
+function analyzeGame(game, timeline, puuid, { name = () => null, item = () => null } = {}) {
   const g = normalizeGame(game, puuid);
   if (!g?.me) return null;
   const { me, parts } = g;
@@ -91,7 +91,7 @@ function analyzeGame(game, timeline, puuid, { name = () => null } = {}) {
     damageShare: round((me.damage / Math.max(1, team.reduce((a, p) => a + (p.damage || 0), 0))) * 100, 0),
     visionPerMin: round((me.vision || 0) / mins, 2), wardsPlaced: me.wardsPlaced ?? null, controlWards: me.controlWards ?? null,
     opponent: opp ? { championId: opp.championId, champion: opp.champion } : null,
-    hasTimeline: frames.length > 0, v: 2,
+    hasTimeline: frames.length > 0, v: 3,
   };
   if (!frames.length) return out;
 
@@ -179,6 +179,49 @@ function analyzeGame(game, timeline, puuid, { name = () => null } = {}) {
   out.firstBackMin = firstBuy ? round(firstBuy.timestamp / 60000, 1) : null;
   out.highGoldDeaths = out.deathsDetail.filter((d) => d.gold != null && d.gold >= 1300).length;
   if (ownJ && ownJ.id !== me.id) out.ownJungler = champ(ownJ);
+
+  // ---- Für Karten (Jungle-Pfad, Todes-Heatmap): Minuten-Positionen 1–14, gerundet
+  const P = (pos) => (pos && pos.x != null ? [Math.round(pos.x / 50) * 50, Math.round(pos.y / 50) * 50] : null);
+  const path = (pid) => { const a = []; for (let m = 1; m <= Math.min(14, Math.floor(mins)); m++) { const q = P(pf(atMinute(frames, m), pid)?.position); if (q) a.push([m, ...q]); } return a; };
+  out.paths = { me: path(me.id), enemyJungler: ej ? path(ej.id) : [], ownJungler: ownJ && ownJ.id !== me.id ? path(ownJ.id) : [], blue: me.teamId === 100 };
+  const myKills = kills.filter((k) => k.victimId === me.id);
+  out.deathsDetail = out.deathsDetail.map((d, i) => ({ ...d, pos: P(myKills[i]?.position), sec: Math.round((myKills[i]?.timestamp || 0) / 1000) }));
+
+  // ---- Lane: Level-2/3/6-Zeitpunkte und CS-Kurve gegen den direkten Gegner
+  out.levels = { me: levelTimes(frames, events, me.id), opp: opp ? levelTimes(frames, events, opp.id) : null };
+  const csAt = (pid, m) => { const f = pf(atMinute(frames, m), pid); return f ? (f.minionsKilled || 0) + (f.jungleMinionsKilled || 0) : null; };
+  out.csCurve = { me: [], opp: [] };
+  for (let m = 1; m <= Math.min(20, Math.floor(mins)); m++) { out.csCurve.me.push(csAt(me.id, m)); out.csCurve.opp.push(opp ? csAt(opp.id, m) : null); }
+  if (!opp) out.csCurve.opp = null;
+
+  // ---- Build: erstes fertiges Item (Data Dragon: keine Weiterentwicklung, ≥ 2000 Gold, keine Stiefel)
+  const buys = events.filter((e) => e.type === 'ITEM_PURCHASED' && e.participantId === me.id);
+  const done = buys.map((e) => ({ e, it: item(e.itemId) })).filter((x) => x.it && x.it.complete);
+  out.items = done.slice(0, 3).map((x) => ({ min: round(x.e.timestamp / 60000, 1), id: x.e.itemId, name: x.it.name || null }));
+  out.firstItemMin = out.items[0]?.min ?? null;
+  return out;
+}
+
+/** XP-Schwellen für Level 2–6 (Summoner's Rift). */
+const XP_LEVEL = { 2: 280, 3: 660, 4: 1140, 5: 1720, 6: 2400 };
+/** Zeitpunkt (Minuten) für Level 2, 3 und 6: aus LEVEL_UP-Ereignissen, sonst aus der XP zwischen Minuten-Frames interpoliert. */
+function levelTimes(frames, events, pid) {
+  const out = {};
+  for (const lv of [2, 3, 6]) {
+    const e = events.find((x) => x.type === 'LEVEL_UP' && x.participantId === pid && x.level >= lv);
+    if (e) { out[lv] = round(e.timestamp / 60000, 1); continue; }
+    let prev = null;
+    for (const f of frames) {
+      const q = pf(f, pid); if (!q || q.xp == null) continue;
+      if (q.xp >= XP_LEVEL[lv]) {
+        if (prev && q.xp > prev.xp) out[lv] = round((prev.t + (XP_LEVEL[lv] - prev.xp) / (q.xp - prev.xp) * (f.timestamp - prev.t)) / 60000, 1);
+        else out[lv] = round(f.timestamp / 60000, 1);
+        out.estimated = true;
+        break;
+      }
+      prev = { t: f.timestamp, xp: q.xp };
+    }
+  }
   return out;
 }
 
@@ -250,6 +293,24 @@ function patterns(list) {
   const vw = avg(wins.map((g) => g.visionPerMin).filter((v) => v != null)); const vl = avg(losses.map((g) => g.visionPerMin).filter((v) => v != null));
   if (wins.length >= 2 && losses.length >= 2 && vw && vl && vl < vw * 0.8) add(res.findings, 'vision-loss', 'Weniger Sicht in Niederlagen', `Vision pro Minute: ${round(vw, 2)} in Siegen, ${round(vl, 2)} in Niederlagen.`, { wins: round(vw, 2), losses: round(vl, 2) }, 1.2);
   if (A.kp != null && A.kp >= 60) add(res.strengths, 'kp', 'Hohe Kill-Beteiligung', `Ø ${A.kp} % Kill-Beteiligung.`, { kp: A.kp }, 1);
+  // Lane: Level-6-Zeitpunkt gegen den Gegner, Farm im Midgame (Min. 10–20) gegen die Lane-Phase
+  const l6 = tl.map((g) => (g.levels?.me?.[6] != null && g.levels?.opp?.[6] != null ? g.levels.me[6] - g.levels.opp[6] : null)).filter((v) => v != null);
+  if (l6.length >= 3) {
+    A.level6Diff = round(avg(l6), 1);
+    if (A.level6Diff >= 0.5) add(res.findings, 'level-behind', 'Später Level 6 als dein Gegner', `Im Schnitt erreichst du Level 6 ${A.level6Diff} Min. nach deinem Lane-Gegner (${l6.length} Spiele) – er hat sein Ultimate zuerst.`, { avgMin: A.level6Diff, games: l6.length }, 1.6);
+    if (A.level6Diff <= -0.5) add(res.strengths, 'level-ahead', 'Früher Level 6', `Im Schnitt ${Math.abs(A.level6Diff)} Min. vor deinem Lane-Gegner auf Level 6.`, { avgMin: A.level6Diff }, 0.8);
+  }
+  const farm = tl.filter((g) => g.csCurve?.me?.length >= 20 && !['UTILITY', 'JUNGLE'].includes(g.role)).map((g) => ({ early: g.csCurve.me[9] / 10, mid: (g.csCurve.me[19] - g.csCurve.me[9]) / 10 }));
+  if (farm.length >= 3) {
+    A.csEarly = round(avg(farm.map((f) => f.early)), 1); A.csMid = round(avg(farm.map((f) => f.mid)), 1);
+    if (A.csMid < A.csEarly - 1) add(res.findings, 'midgame-farm', 'Farm bricht nach der Lane-Phase ein', `Min. 0–10: ${A.csEarly} CS/min, Min. 10–20: nur ${A.csMid} CS/min. Nach dem ersten Turm gehen Wellen verloren.`, { early: A.csEarly, mid: A.csMid }, 1.7);
+  }
+  // Build-Timing pro Champion (erstes fertiges Item)
+  const byChamp = {};
+  for (const g of tl) if (g.firstItemMin != null && g.champion) (byChamp[g.champion] = byChamp[g.champion] || []).push(g.firstItemMin);
+  res.firstItemByChampion = Object.fromEntries(Object.entries(byChamp).map(([c, a]) => [c, { avg: round(avg(a), 1), games: a.length }]));
+  // Todes-Heatmap
+  res.deathPoints = tl.flatMap((g) => (g.deathsDetail || []).filter((d) => d.pos).map((d) => ({ x: d.pos[0], y: d.pos[1], min: d.min, win: g.win, blue: g.paths?.blue ?? null })));
   res.findings.sort((a, b) => b.weight - a.weight);
   res.focus = res.findings.slice(0, 3).map((f) => f.title);
   return res;
@@ -260,4 +321,4 @@ function majorRole(games) {
   return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 }
 
-module.exports = { analyzeGame, patterns, zone, normalizeGame, ROLE_DE, side, SIDE_DE };
+module.exports = { analyzeGame, patterns, zone, normalizeGame, ROLE_DE, side, SIDE_DE, levelTimes };

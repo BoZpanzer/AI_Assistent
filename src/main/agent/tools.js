@@ -326,8 +326,35 @@ function buildTools(s) {
   def({ name: 'league_live', mode: 'read', description: 'Aktuelles LoL-Match (Live Client Data API): Champion, KDA, CS, Gold, Level, Lane-Gegner, Kill-Stand, eigene Tode mit beteiligten Champions, Werte im Vergleich zu Schnitt/Zielen. Riot-Regeln im laufenden Spiel: nur einordnen und ggf. mehrere Optionen nennen – KEINE Anweisungen („geh jetzt ganken/recallen“), keine Power-Spike-Warnungen, keine Gegner-Cooldowns, Jungle-Timer oder Positionen des gegnerischen Junglers schätzen.', schema: { type: 'object', properties: {} },
     run: () => s.gaming.league.live() });
   def({ name: 'lol_note', mode: 'write', description: 'Notiz während oder direkt nach einem LoL-Spiel speichern („Jarvis, notier: Jungler kam zweimal bot“, „Lane gegen Darius war unspielbar“, „hab Flash verschwendet“). Wird mit Spielzeit gespeichert und fließt in die Nachbesprechung des Spiels ein. Kurz bestätigen, nicht kommentieren.',
-    schema: { type: 'object', required: ['text'], properties: { text: { type: 'string', description: 'die Notiz in den Worten des Nutzers' } } },
-    run: ({ text }) => { const n = s.gaming.league.addLiveNote(text); return { saved: true, gameTime: n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')}` : null, champion: n.champion }; } });
+    schema: { type: 'object', required: ['text'], properties: { text: { type: 'string', description: 'die Notiz in den Worten des Nutzers' },
+      matchup: { type: 'string', description: 'nur bei Matchup-Wissen („für Darius: …“, „gegen Aatrox immer …“): gegnerischer Champion – die Notiz erscheint dann bei jedem künftigen Spiel gegen ihn in der Championauswahl' },
+      myChampion: { type: 'string', description: 'optional: gilt nur, wenn ich diesen Champion spiele' } } },
+    run: async ({ text, matchup, myChampion }) => {
+      if (matchup) { const n = await s.gaming.league.addMatchupNote(matchup, text, myChampion || null); return { saved: true, matchupNote: true, vs: n.vsName, onlyWith: n.mineName }; }
+      const n = s.gaming.league.addLiveNote(text); return { saved: true, gameTime: n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')}` : null, champion: n.champion };
+    } });
+  def({ name: 'league_coaching', mode: 'read', description: 'LoL-Coaching außerhalb des Spiels: Wochenbericht (diese/letzte Woche, Zielerreichung, Ziel-Vorschläge aus den Fehlermustern) und Session-/Tilt-Statistik (Winrate nach Niederlagen-Serien, nach Spielanzahl am Stück, nach Tageszeit) sowie offene Debrief-Fragen zum letzten Spiel. Für „wie lief meine Woche“, „sollte ich aufhören“, „wann spiele ich am besten“.',
+    schema: { type: 'object', properties: {} },
+    run: () => { const L = s.gaming.league; const g = L.deepGames(1)[0]; return { weekly: L.weekly(), session: L.sessionStats(), goals: L.goals(), lastGameDebrief: g ? { matchId: g.matchId, ...(L.debrief(g.matchId) || {}) } : null }; } });
+  def({ name: 'league_goal', mode: 'write', description: 'LoL-Trainingsziel anlegen oder deaktivieren. Messbar formulieren: „7 CS/min“, „max. 4 Tode“, „max. 1 Tod vor Minute 14“, „Vision 30“ – wird nach jedem Spiel geprüft.',
+    schema: { type: 'object', properties: { add: { type: 'string', description: 'Zieltext' }, removeId: { type: 'string' } } },
+    run: ({ add, removeId }) => { const L = s.gaming.league; if (removeId) L.removeGoal(removeId); let gid = null; if (add) gid = L.addGoal({ text: add }); return { added: gid, goals: L.goals() }; } });
+  def({ name: 'lol_debrief', mode: 'write', description: 'Antworten des Nutzers auf die Reflexionsfragen nach dem letzten LoL-Spiel speichern (Reihenfolge wie die Fragen aus league_coaching.lastGameDebrief).',
+    schema: { type: 'object', required: ['answers'], properties: { matchId: { type: 'string' }, answers: { type: 'array', items: { type: 'string' } } } },
+    run: ({ matchId, answers }) => { const L = s.gaming.league; const mid = matchId || L.deepGames(1)[0]?.matchId; if (!mid) throw new Error('Kein analysiertes Spiel'); let d = null; answers.forEach((a, i) => { if (a && String(a).trim()) d = L.answerDebrief(mid, i, a); }); return { saved: true, debrief: d }; } });
+  def({ name: 'lol_replay', mode: 'write', description: 'Replay eines LoL-Spiels öffnen und 15 s vor einen Moment springen (z. B. einen Tod), damit der Nutzer ihn sich ansieht. Nur nach dem Spiel; startet das Replay über den League-Client. Ohne matchId: letztes Spiel. death = Nummer des Todes (1 = erster), sonst minute.',
+    schema: { type: 'object', properties: { matchId: { type: 'string' }, death: { type: 'integer' }, minute: { type: 'number' } } },
+    run: async ({ matchId, death, minute }) => {
+      const L = s.gaming.league; const mid = matchId || L.deepGames(1)[0]?.matchId; if (!mid) throw new Error('Kein analysiertes Spiel');
+      const d = L.getDeep(mid); const dd = death ? d?.deathsDetail?.[death - 1] : null;
+      const sec = dd ? (dd.sec || Math.round(dd.min * 60)) : minute != null ? Math.round(minute * 60) : null;
+      if (sec == null) throw new Error('Moment fehlt (death oder minute)');
+      const r = await L.replayJump(mid, sec);
+      return r.needsEnable ? { ok: false, hint: 'Die Replay-API ist in League noch aus. Der Nutzer kann sie in JARVIS unter Gaming → Spielanalyse mit einem Klick einschalten (ändert die game.cfg, mit Sicherung).' } : r;
+    } });
+  def({ name: 'lol_matchup', mode: 'read', description: 'LoL-Matchup-Karte: wer ist in welcher Phase stärker (Level 1–3, 6, Mid-, Lategame), Win-Condition, was vermeiden, gefährliche Fähigkeiten, Build-Hinweis (KI-Champion-Wissen, pro Patch gespeichert) + die eigene Bilanz des Nutzers gegen diesen Champion (CS/Gold-Differenz, frühe Tode, Jungler-Beteiligung) + seine eigenen Matchup-Notizen. Für „wie spiele ich X gegen Y“. Eigene Zahlen und Notizen haben Vorrang vor allgemeinem Wissen – Widersprüche ansprechen.',
+    schema: { type: 'object', required: ['vs'], properties: { vs: { type: 'string', description: 'gegnerischer Champion' }, mine: { type: 'string', description: 'eigener Champion' }, role: { type: 'string' } } },
+    run: ({ vs, mine, role }) => s.gaming.lolflow.matchup({ vs, mine, role }) });
   def({ name: 'league_champion', mode: 'read', description: 'Championinfos (Data Dragon, aktueller Patch): Fähigkeiten, Tipps.', schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
     run: async ({ name }) => (await s.gaming.league.champion(name)) || { error: 'Champion nicht gefunden' } });
 

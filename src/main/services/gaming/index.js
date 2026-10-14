@@ -44,14 +44,17 @@ const WIDGETS = {
   'lol-champselect': { title: 'Championauswahl', params: {} },
   'lol-review': { title: 'Nachbesprechung', params: {} },
   'lol-mistakes': { title: 'Fehleranalyse', params: {} },
+  'lol-game': { title: 'Spielanalyse', params: { matchId: { type: 'string', maxLength: 40 } } },
+  'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
   ask: { title: 'Frag JARVIS', params: {} },
   links: { title: 'Tools & Links', params: {} },
 };
 
+const ADDED = { league: ['lol-game', 'lol-coach'] };
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
-  league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-mistakes' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
+  league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-game' }, { type: 'lol-mistakes' }, { type: 'lol-coach' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
   rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
   generic: [{ type: 'ask' }, { type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
 };
@@ -81,7 +84,16 @@ class Gaming {
     const p = this.context.profile(gid);
     if (!p) return null;
     const base = LAYOUTS[p.integration] || LAYOUTS.generic;
-    const custom = safeJson(this.context.getState('layout:' + gid), null);
+    let custom = safeJson(this.context.getState('layout:' + gid), null);
+    // Neue Widgets einmalig auch in eigene Layouts aufnehmen (danach entscheidet der Nutzer selbst)
+    if (custom && ADDED[p.integration]) {
+      const seen = safeJson(this.context.getState('layout:added:' + gid), []) || [];
+      const add = ADDED[p.integration].filter((t) => !seen.includes(t));
+      if (add.length) {
+        custom = [...custom, ...add.filter((t) => !custom.some((w) => w.type === t)).map((type) => ({ type }))];
+        this.context.setState('layout:' + gid, custom); this.context.setState('layout:added:' + gid, [...seen, ...add]);
+      }
+    }
     let widgets = (custom || (p.designWidgets && p.integration === 'generic' ? p.designWidgets : p.kit && p.integration === 'generic' ? kitLayout(p) : base)).map((w) => ({ ...w, params: w.params || {} }));
     if (p.integration === 'generic' && !p.wiki) widgets = widgets.filter((w) => w.type !== 'wiki');
     const focus = this.focus && this.focus.game === gid ? this.focus : null;

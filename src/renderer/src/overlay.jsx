@@ -117,6 +117,13 @@ function App() {
         <Card icon={Swords} title={`Championauswahl${champ.myChampion ? ' · ' + champ.myChampion : ''}`} accent="#c8aa6e">
           {champ.enemies?.length > 0 && <div class="ov-dim">Gegner: {champ.enemies.join(', ')}</div>}
           {champ.advice ? <div class="ov-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(champ.advice) }} /> : champ.tips?.length ? <ul>{champ.tips.slice(0, 4).map((t) => <li>{t}</li>)}</ul> : <div class="ov-dim">Warte auf Picks …</div>}
+          {champ.matchup?.card && <div style={{ marginTop: 6 }}>
+            <b>Lane gegen {champ.matchup.vs}</b>
+            <ul>{(champ.matchup.card.phases || []).map((p) => <li>{p.phase}: {({ du: 'du', gegner: 'Gegner', ausgeglichen: 'ausgeglichen' })[p.edge] || p.edge} – {p.tip}</li>)}</ul>
+            {champ.matchup.card.winCondition && <div class="ov-dim">Win-Condition: {champ.matchup.card.winCondition}</div>}
+          </div>}
+          {champ.matchup?.stats?.all && <div class="ov-dim">Deine Bilanz: {champ.matchup.stats.all.wins}/{champ.matchup.stats.all.games} · CS@10 {champ.matchup.stats.all.csDiff10 > 0 ? '+' : ''}{champ.matchup.stats.all.csDiff10 ?? '–'}</div>}
+          {champ.matchup?.notes?.length > 0 && <ul>{champ.matchup.notes.slice(0, 3).map((n) => <li>📝 {n.text}</li>)}</ul>}
         </Card>
       )}
       {review && now - review.at < 30000 && (
