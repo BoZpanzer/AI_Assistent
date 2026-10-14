@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, safeStorage, shell, protocol, net, globalShortcut, session, powerMonitor, desktopCapturer, screen } = require('electron');
-const { Overlay } = require('./overlay');
+const { Overlay, MapCorner } = require('./overlay');
 const { createCore } = require('./app-core');
 const { registerIpc } = require('./ipc');
 const logger = require('./core/logger');
@@ -31,7 +31,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-let win = null; let tray = null; let core = null; let quitting = false; let overlay = null;
+let win = null; let tray = null; let core = null; let quitting = false; let overlay = null; let mapCorner = null;
 const startHidden = process.argv.includes('--hidden') && !process.argv.includes('--updated');
 const justUpdated = process.argv.includes('--updated');
 
@@ -88,6 +88,7 @@ const OVERLAY_SKIP = new Set(['voice:audio', 'chat:delta', 'message:update', 'st
 function send(type, data) {
   if (win && !win.isDestroyed()) win.webContents.send('evt', { type, data });
   if (overlay?.visible && !OVERLAY_SKIP.has(type)) overlay.send(type, data);
+  if (mapCorner?.visible && /^(game:|settings:)/.test(type)) mapCorner.send(type, data);
 }
 
 /** Screenshot of the display under the mouse cursor (only on explicit request). */
@@ -96,14 +97,17 @@ async function captureScreen() {
   const f = Math.min(1, 1920 / (disp.size.width * disp.scaleFactor));
   const size = { width: Math.round(disp.size.width * disp.scaleFactor * f), height: Math.round(disp.size.height * disp.scaleFactor * f) };
   const ov = overlay?.win && !overlay.win.isDestroyed() && overlay.visible ? overlay.win : null;
-  if (ov) { ov.setOpacity(0); await new Promise((r) => setTimeout(r, 60)); }
+  const mc = mapCorner?.win && !mapCorner.win.isDestroyed() && mapCorner.visible ? mapCorner.win : null;
+  if (ov) ov.setOpacity(0);
+  if (mc) mc.setOpacity(0);
+  if (ov || mc) await new Promise((r) => setTimeout(r, 60));
   try {
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size });
     const src = sources.find((x) => String(x.display_id) === String(disp.id)) || sources[0];
     if (!src || src.thumbnail.isEmpty()) throw new Error('Kein Bildschirmbild erhalten');
     const img = src.thumbnail;
     return { data: img.toJPEG(85), ...img.getSize() };
-  } finally { if (ov) overlay.applyBounds(); }
+  } finally { if (ov) overlay.applyBounds(); if (mc) mapCorner.applyBounds(); }
 }
 
 function showWindow(page) {
@@ -229,8 +233,8 @@ app.whenReady().then(async () => {
   registerIpc({ core, getWin: () => win, app, showWindow, overlay: () => overlay, quit: () => { quitting = true; app.quit(); }, relaunch: () => { quitting = true; app.relaunch(); app.quit(); } });
   forwardEvents();
   createWindow();
-  if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
-  if (isE2E) global.__jarvis = { win, core, overlay: () => overlay };
+  if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); mapCorner = new MapCorner({ core, preload: path.join(__dirname, 'preload.js'), isDev, overlay }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
+  if (isE2E) global.__jarvis = { win, core, overlay: () => overlay, mapCorner: () => mapCorner };
   if (isSmoke) runSmoke();
   buildTray();
   applyDesktopSettings();
@@ -290,7 +294,7 @@ async function runSmoke() {
 
 app.on('second-instance', () => { showWindow(); });
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); try { core?.stop(); } catch { /* ignore */ } });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); mapCorner?.destroy(); try { core?.stop(); } catch { /* ignore */ } });
 app.on('window-all-closed', () => { /* tray keeps running */ });
 process.on('uncaughtException', (e) => logger.scope('main').error('Unerwarteter Fehler', e));
 process.on('unhandledRejection', (e) => logger.scope('main').error('Unbehandelte Ablehnung', e));

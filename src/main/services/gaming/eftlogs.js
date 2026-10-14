@@ -63,7 +63,7 @@ function parseNotifications(text) {
 }
 
 class EftLogs {
-  constructor(s) { this.s = s; this.timer = null; this.offsets = new Map(); this.dir = undefined; this.lastError = null; this.location = null; this.shotsSeen = null; }
+  constructor(s) { this.s = s; this.timer = null; this.offsets = new Map(); this.dir = undefined; this.lastError = null; this.location = null; this.shotsSeen = null; this.pendingMove = new Map(); }
   cfg() { return this.s.settings.get('gaming') || {}; }
   enabled() { return this.cfg().eftLogWatch !== false; }
 
@@ -173,11 +173,51 @@ class EftLogs {
       if (this.shotsSeen.has(f)) continue;
       this.shotsSeen.add(f);
       const p = parseScreenshotName(f);
-      if (p) pos = p;
+      if (p) { pos = p; this.pendingMove.set(f, { size: -1, since: Date.now() }); }
     }
+    this.moveShots(dir);
     if (!pos) return null;
     const map = this.location?.map || this.s.gaming.lastMap('eft')?.map || null;
     return this.s.gaming.setEftPosition({ ...pos, map });
+  }
+
+  /** Eigener Ordner für Positions-Screenshots (Unterordner „JARVIS Positionen“). */
+  posDir(dir = this.shotsDir()) { return dir ? path.join(dir, 'JARVIS Positionen') : null; }
+
+  /**
+   * Gelesene Positions-Screenshots in den eigenen Ordner verschieben – erst, wenn Tarkov die Datei
+   * fertig geschrieben hat (Größe zweimal gleich, mind. 1,5 s alt). Nur Dateien mit Positionsangabe im Namen.
+   */
+  moveShots(dir) {
+    if (this.cfg().eftMoveShots === false || !this.pendingMove.size) return 0;
+    const dest = this.posDir(dir);
+    let moved = 0;
+    for (const [f, st] of this.pendingMove) {
+      const src = path.join(dir, f);
+      let size; try { size = fs.statSync(src).size; } catch { this.pendingMove.delete(f); continue; }
+      if (size !== st.size || Date.now() - st.since < 1500) { st.size = size; continue; }
+      try { fs.mkdirSync(dest, { recursive: true }); fs.renameSync(src, path.join(dest, f)); moved++; this.pendingMove.delete(f); } catch (e) {
+        if (Date.now() - st.since > 60000) this.pendingMove.delete(f); // gesperrt o. Ä. → aufgeben
+        log.debug('verschieben', e);
+      }
+    }
+    return moved;
+  }
+
+  /** Positions-Screenshots älter als N Tage löschen (nur im eigenen Ordner; 0 = behalten). */
+  cleanupShots(now = Date.now()) {
+    const days = Number(this.cfg().eftShotKeepDays ?? 7);
+    const dest = this.posDir();
+    if (!dest || !(days > 0)) return 0;
+    let n = 0;
+    let files = []; try { files = fs.readdirSync(dest); } catch { return 0; }
+    for (const f of files) {
+      if (!/\.(png|jpe?g|bmp)$/i.test(f) || !parseScreenshotName(f)) continue;
+      const fp = path.join(dest, f);
+      try { if (now - fs.statSync(fp).mtimeMs > days * 86400000) { fs.rmSync(fp, { force: true }); n++; } } catch { /* ignore */ }
+    }
+    if (n) log.info(`${n} alte Positions-Screenshots gelöscht`);
+    return n;
   }
 
   /** Beim Spielstart: Ordner suchen, ab jetzt mitlesen (auch was seit Spielstart schon im Log steht). */
@@ -191,13 +231,22 @@ class EftLogs {
     // Screenshots alle 2 s (Position soll schnell erscheinen), Logs alle 6 s
     const tick = () => {
       try { this.pollShots(); } catch (e) { log.debug('shots', e); }
+      if (n % 900 === 0) try { this.cleanupShots(); } catch { /* ignore */ }
       if (n++ % 3 === 0) this.poll().catch((e) => { this.lastError = e.message; log.debug('poll', e); });
     };
     tick();
     this.timer = setInterval(tick, 2000);
     log.info('Tarkov-Log wird mitgelesen: ' + this.dir);
   }
-  stop({ final = true } = {}) { if (this.timer) { clearInterval(this.timer); this.timer = null; if (final) this.poll().catch(() => {}); } }
+  stop({ final = true } = {}) {
+    if (!this.timer) return;
+    clearInterval(this.timer); this.timer = null;
+    if (final) {
+      this.poll().catch(() => {});
+      // restliche Screenshots noch verschieben, dann alte aufräumen
+      setTimeout(() => { try { const d = this.shotsDir(); if (d) { for (const st of this.pendingMove.values()) st.since = 0; this.moveShots(d); this.moveShots(d); } this.cleanupShots(); } catch { /* ignore */ } }, 2000).unref?.();
+    }
+  }
   status() { return { enabled: this.enabled(), watching: !!this.timer, dir: this.dir || null, error: this.lastError, screenshots: this.shotsDir(), location: this.location }; }
 }
 

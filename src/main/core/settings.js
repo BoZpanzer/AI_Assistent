@@ -73,7 +73,7 @@ const SCHEMA = {
     gaming: { type: 'object', properties: {
       detection: { type: 'boolean' }, reduceWhileGaming: { type: 'boolean' },
       riotId: { type: 'string', maxLength: 60 }, leagueDir: { type: 'string', maxLength: 500 }, riotRegion: { type: 'string', enum: ['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1'] },
-      lolLiveCoach: { type: 'boolean' }, autoDesign: { type: 'boolean' }, eftLogWatch: { type: 'boolean' }, eftDir: { type: 'string', maxLength: 400 }, eftScreenshotsDir: { type: 'string', maxLength: 400 }, lolObjectives: { type: 'boolean' }, lolObjectiveTimes: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['dragon', 'grubs', 'herald', 'atakhan', 'baron'].map((k) => [k, { type: 'number', minimum: 0, maximum: 3600 }])) }, favorites: { type: 'array', items: { type: 'string' } },
+      lolLiveCoach: { type: 'boolean' }, autoDesign: { type: 'boolean' }, eftLogWatch: { type: 'boolean' }, eftDir: { type: 'string', maxLength: 400 }, eftScreenshotsDir: { type: 'string', maxLength: 400 }, eftMoveShots: { type: 'boolean' }, eftFaction: { type: 'string', enum: ['pmc', 'scav', 'all'] }, eftShotKeepDays: { type: 'number', minimum: 0, maximum: 365 }, lolObjectives: { type: 'boolean' }, lolObjectiveTimes: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['dragon', 'grubs', 'herald', 'atakhan', 'baron'].map((k) => [k, { type: 'number', minimum: 0, maximum: 3600 }])) }, favorites: { type: 'array', items: { type: 'string' } },
       lolChampSelect: { type: 'boolean' }, lolReview: { type: 'boolean' }, steamDir: { type: 'string', maxLength: 500 }, steamId: { type: 'string', maxLength: 20 }, steamAutoImport: { type: 'boolean' }, steamMinMinutes: { type: 'number', minimum: 0, maximum: 100000 }, lolReviewAi: { type: 'boolean' }, tarkovTrackerSync: { type: 'boolean' } } },
     // Screen analysis & in-game overlay
     screen: { type: 'object', properties: {
@@ -81,7 +81,7 @@ const SCHEMA = {
     overlay: { type: 'object', properties: {
       mode: { type: 'string', enum: ['auto', 'always', 'off'] }, hotkey: { type: 'string', maxLength: 40 }, interactHotkey: { type: 'string', maxLength: 40 },
       position: { type: 'string', enum: ['left', 'right'] }, opacity: { type: 'number', minimum: 0.4, maximum: 1 }, scale: { type: 'number', minimum: 0.7, maximum: 1.5 },
-      showMap: { type: 'boolean' }, speakAnswers: { type: 'boolean' } } },
+      showMap: { type: 'boolean' }, speakAnswers: { type: 'boolean' }, mapCorner: { type: 'boolean' }, mapSize: { type: 'number', minimum: 200, maximum: 600 }, mapZoom: { type: 'boolean' } } },
     // Phone (Telegram bot)
     telegram: { type: 'object', properties: {
       enabled: { type: 'boolean' }, forwardMode: { type: 'string', enum: ['off', 'idle', 'always'] }, idleMinutes: { type: 'number', minimum: 1, maximum: 240 },
@@ -124,9 +124,9 @@ const DEFAULTS = {
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
   google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
-  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [], lolChampSelect: true, lolReview: true, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: true, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '' },
+  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, favorites: [], lolChampSelect: true, lolReview: true, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: true, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc' },
   screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.' },
-  overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false },
+  overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false, mapCorner: true, mapSize: 320, mapZoom: true },
   telegram: { enabled: false, forwardMode: 'idle', idleMinutes: 10, chats: [], allowConfirm: true },
   pc: { enabled: true, allowPower: true, apps: [] },
   ollama: { enabled: false, url: 'http://127.0.0.1:11434', model: '', notWhileGaming: true },

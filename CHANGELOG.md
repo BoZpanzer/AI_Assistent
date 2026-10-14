@@ -2,6 +2,14 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.21.0 – Tarkov-Eck-Karte, Exits nach PMC/Scav, Schlüssel im Backup
+
+- **Tarkov-Karte oben links:** Solange Tarkov läuft, zeigt ein kleines Overlay-Fenster oben links die aktuelle Raid-Karte. Darauf sind die Exits, Transits, deine Marker und deine Position aus dem letzten Screenshot. Nach einem Screenshot zoomt die Karte 5 Minuten lang auf dich. Größe, Zoom und Ein/Aus stellst du unter Einstellungen → Overlay ein. Steht das große Overlay auch links, rutscht es darunter.
+- **Exits für PMC oder Scav:** Auf der Karte und im Overlay wählst du PMC, Scav oder Alle. Gemeinsame Exits erscheinen immer. Die Farben zeigen die Art: grün = normal, orange = Flare, lila = Co-op, blau = Fahrzeug (V-Ex), türkis = Transit. Die Art erkennt JARVIS aus dem Exit-Namen, weil tarkov.dev sie nicht eigens angibt.
+- **Positions-Screenshots in eigenem Ordner:** Nach dem Lesen wandern sie nach „Screenshots\JARVIS Positionen“ und werden nach 7 Tagen gelöscht. Beides lässt sich einstellen, deine anderen Screenshots bleiben unberührt. Am Positionspfeil steht jetzt, wie alt die Position ist, nach ein paar Minuten wird er blasser.
+- **API-Schlüssel im Backup:** Mit einem eigenen Backup-Passwort landen alle Schlüssel (Gemini, Riot, Google, TarkovTracker, Campus Dual …) verschlüsselt in jeder Sicherung, lokal und in Drive. So lassen sie sich auf jedem PC wiederherstellen; beim Wiederherstellen fragt JARVIS nach dem Passwort. Ohne das Passwort sind sie nicht lesbar. Zusätzlich gibt es „Schlüssel exportieren/importieren“ als Datei.
+- **Einstellungen exportieren/importieren:** Alle Einstellungen (ohne Schlüssel) als JSON-Datei sichern und wieder einspielen. Beim Import wird jedes Feld geprüft.
+
 ## 3.20.0 – Tarkov: eigene Position auf der Karte, Raid-Planer
 
 - **Deine Position auf der Karte:** Drück im Raid die Screenshot-Taste (Standard: Druck). Tarkov schreibt die Position und Blickrichtung in den Dateinamen des Screenshots, und JARVIS zeigt dich als gelben Pfeil auf der Karte und auf der Mini-Karte im Overlay. Das ist dasselbe Prinzip wie bei TarkovMonitor und tarkov.dev, es wird nur der Dateiname gelesen. Die Karte springt automatisch zur Raid-Karte, die JARVIS aus dem Spiel-Log erkennt. Mit „Position“ in der Kartenleiste schaltest du das Mitspringen aus.

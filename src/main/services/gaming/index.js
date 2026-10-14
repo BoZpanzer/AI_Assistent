@@ -6,7 +6,7 @@ const { id, nowIso, safeJson, truncate } = require('../../core/util');
 const { validate } = require('../../core/validate');
 const { GameContext } = require('./context');
 const { GameCache } = require('./cache');
-const { Tarkov } = require('./tarkov');
+const { Tarkov, exitKind } = require('./tarkov');
 const { TarkovMaps } = require('./tarkovmaps');
 const { League } = require('./league');
 const { Wiki } = require('./wiki');
@@ -173,6 +173,30 @@ class Gaming {
     this.bus.emit('game:position', { game: 'eft', ...pos });
     return pos;
   }
+  /**
+   * Daten für die Eck-Karte im Overlay: aktuelle Raid-Karte, Exits (für PMC oder Scav, Art erkannt),
+   * Transits, eigene Marker und Position – alles in Bildkoordinaten 0..1 (nur tarkov.dev-Karten).
+   */
+  async eftOverlayMap() {
+    const lm = this.lastMap('eft');
+    const map = lm.map;
+    if (!map || !lm.hasImage) return { map, hasImage: false };
+    const af = safeJson(this.context.getState(`calib:eft:${map}`), null)?.affine;
+    const faction = this.settings.get('gaming')?.eftFaction || 'pmc';
+    const dim = this.db.get('SELECT width, height FROM game_maps WHERE game=? AND name=?', 'eft', map) || {};
+    const out = { map, hasImage: true, faction, width: dim.width || 1000, height: dim.height || 1000, markers: lm.markers, position: lm.position, exits: [], transits: [], calibrated: Array.isArray(af) };
+    if (!Array.isArray(af)) return out;
+    const n = (p) => ({ x: af[0] * p.x + af[1] * p.z + af[2], y: af[3] * p.x + af[4] * p.z + af[5] });
+    try {
+      const m = (await this.tarkov.map(map, this.tracker?.tdMode?.()))?.value;
+      out.name = m?.name || map;
+      out.exits = (m?.extracts || []).filter((e) => e.position && (faction === 'all' || e.faction === faction || e.faction === 'shared' || !e.faction))
+        .map((e) => ({ ...n(e.position), name: e.name, faction: e.faction || 'shared', kind: exitKind(e.name) }));
+      out.transits = (m?.transits || []).filter((t) => t.position).map((t) => ({ ...n(t.position), name: t.description || 'Transit' }));
+    } catch (e) { out.error = e.message; }
+    return out;
+  }
+
   /** Letzte bekannte Position (nur die letzten 20 Minuten). */
   eftPosition() {
     const p = safeJson(this.context.getState('eft:position'), null);

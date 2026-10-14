@@ -377,6 +377,9 @@ function EftLogField({ canWrite, configured }) {
       {g.eftLogWatch !== false && <Field label="Position auf der Karte (Screenshots)" hint={st?.screenshots ? 'Im Raid die Screenshot-Taste drücken (Standard: Druck) – JARVIS zeigt dich mit Blickrichtung auf der Karte und im Overlay' : 'Tarkov-Screenshot-Ordner nicht gefunden (Dokumente\\Escape from Tarkov\\Screenshots) – bitte wählen'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.eftScreenshotsDir || st?.screenshots || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) { await upd({ gaming: { eftScreenshotsDir: f } }); reload(); } }}><FolderOpen size={14} /></button></div>
       </Field>}
+      {g.eftLogWatch !== false && <Field label="Positions-Screenshots in eigenen Ordner" hint="werden nach dem Lesen in „Screenshots\\JARVIS Positionen“ verschoben – dein Screenshot-Ordner bleibt sauber">
+        <div class="row gap-s"><span class="tiny muted">löschen nach</span><input class="inp" type="number" min="0" max="365" title="0 = nie löschen" style={{ width: 60 }} value={g.eftShotKeepDays ?? 7} onChange={(e) => upd({ gaming: { eftShotKeepDays: Math.max(0, Number(e.currentTarget.value) || 0) } })} /><span class="tiny muted">Tagen</span><Toggle checked={g.eftMoveShots !== false} onChange={(v) => upd({ gaming: { eftMoveShots: v } })} /></div>
+      </Field>}
     </>
   );
 }
@@ -390,6 +393,9 @@ function OverlayCard({ s }) {
       <Field label={`Deckkraft · ${Math.round((o.opacity ?? 0.92) * 100)}%`}><input class="range" type="range" min="0.4" max="1" step="0.05" value={o.opacity ?? 0.92} onChange={(e) => upd({ overlay: { opacity: Number(e.currentTarget.value) } })} /></Field>
       <Field label={`Größe · ${Math.round((o.scale ?? 1) * 100)}%`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={o.scale ?? 1} onChange={(e) => upd({ overlay: { scale: Number(e.currentTarget.value) } })} /></Field>
       <Field label="Mini-Karte anzeigen"><Toggle checked={o.showMap !== false} onChange={(v) => upd({ overlay: { showMap: v } })} /></Field>
+      <Field label="Tarkov: Karte oben links" hint="Raid-Karte mit Exits (PMC/Scav), Transits, Markern und deiner Position – erscheint, solange Tarkov läuft"><Toggle checked={o.mapCorner !== false} onChange={(v) => upd({ overlay: { mapCorner: v } })} /></Field>
+      {o.mapCorner !== false && <Field label={`… Größe · ${o.mapSize || 320} px`}><input class="range" type="range" min="200" max="600" step="20" value={o.mapSize || 320} onChange={(e) => upd({ overlay: { mapSize: Number(e.currentTarget.value) } })} /></Field>}
+      {o.mapCorner !== false && <Field label="… auf deine Position zoomen" hint="nach einem Screenshot 5 Minuten lang"><Toggle checked={o.mapZoom !== false} onChange={(v) => upd({ overlay: { mapZoom: v } })} /></Field>}
       <Field label="Overlay ein/aus (Hotkey)"><input class="inp" value={o.hotkey} onChange={(e) => upd({ overlay: { hotkey: e.currentTarget.value } })} /></Field>
       <Field label="Overlay bedienen (Hotkey)" hint="Macht es 20 s lang klickbar"><input class="inp" value={o.interactHotkey} onChange={(e) => upd({ overlay: { interactHotkey: e.currentTarget.value } })} /></Field>
       <div class="hr" />
@@ -460,13 +466,52 @@ function Data() {
       <Field label="Datenordner" wide><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={info?.dataDir || ''} /><button class="btn icon xs" onClick={() => rpc('shell.openPath', { which: 'data' })}><FolderOpen size={14} /></button></div></Field>
       <div class="row gap-s">
         <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.backup')); if (r) { toast('Sicherung erstellt'); reload(); } }}><Download size={12} />Sicherung erstellen</button>
-        <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.restore', {})); if (r?.staged && await ask('Sicherung geprüft. JARVIS jetzt neu starten und wiederherstellen?' + (r.secretsNote ? ' ' + r.secretsNote : ''), '', { confirmOnly: true, okLabel: 'Neu starten' })) rpc('app.relaunch'); }}><Upload size={12} />Wiederherstellen…</button>
+        <button class="btn xs" onClick={async () => {
+          let r = await guard(() => rpc('system.restore', {}));
+          if (r?.needsPassword) {
+            const pw = await ask(`Die Sicherung enthält ${r.keysInBackup} Schlüssel (passwortgeschützt). Backup-Passwort eingeben, um sie zu übernehmen:`, '', { password: true });
+            if (!pw) return;
+            r = await guard(() => rpc('system.restore', { file: r.file, password: pw }));
+          }
+          if (r?.staged && await ask('Sicherung geprüft. JARVIS jetzt neu starten und wiederherstellen?' + (r.secretsNote ? ' ' + r.secretsNote : ''), '', { confirmOnly: true, okLabel: 'Neu starten' })) rpc('app.relaunch');
+        }}><Upload size={12} />Wiederherstellen…</button>
       </div>
+      <KeysBackupField />
       <DriveBackupField s={s} />
       <div class="tiny muted mt">Automatische Tagessicherungen (7 Tage): {backups.filter((b) => b.auto).length} · zuletzt {backups[0] ? ago(backups[0].at) : '—'} · vor jeder Schema-Migration wird zusätzlich gesichert.</div>
       <div class="hr" />
       <UpdateSection s={s} />
     </Panel>
+  );
+}
+
+/** API-Schlüssel passwortgeschützt mitsichern + Einstellungen exportieren/importieren. */
+function KeysBackupField() {
+  const [st, reload] = useRpc('keys.status', {}, { events: ['settings:changed'] });
+  const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
+  const save = async () => {
+    if (pw !== pw2) return toast('Die Passwörter stimmen nicht überein', 'error');
+    const r = await guard(() => rpc('keys.setBackupPassword', { password: pw }), 'Backup-Passwort gespeichert – Schlüssel sind ab jetzt in jeder Sicherung');
+    if (r) { setPw(''); setPw2(''); reload(); }
+  };
+  return (
+    <div class="mt" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+      <Field label="API-Schlüssel in Sicherungen" hint={st?.backupPassword ? `aktiv – ${st.count} Schlüssel werden in jeder Sicherung (lokal + Drive) mit deinem Backup-Passwort verschlüsselt mitgesichert` : 'Schlüssel (Gemini, Riot, Google, TarkovTracker, Campus Dual …) verschlüsselt mitsichern – auf jedem PC mit dem Passwort wiederherstellbar'}>
+        {st?.backupPassword ? <button class="btn xs ghost" onClick={async () => { if (await ask('Backup-Passwort entfernen? Neue Sicherungen enthalten dann keine Schlüssel mehr.', '', { confirmOnly: true, okLabel: 'Entfernen' })) { await guard(() => rpc('keys.setBackupPassword', { password: '' })); reload(); } }}>Ausschalten</button> : <span class="tiny muted">aus</span>}
+      </Field>
+      {!st?.backupPassword && <div class="row gap-s">
+        <input class="inp" type="password" autocomplete="new-password" placeholder="Backup-Passwort (mind. 8 Zeichen)" value={pw} onInput={(e) => setPw(e.currentTarget.value)} />
+        <input class="inp" type="password" autocomplete="new-password" placeholder="wiederholen" value={pw2} onInput={(e) => setPw2(e.currentTarget.value)} />
+        <button class="btn xs primary" disabled={pw.length < 8 || !pw2} onClick={save}><KeyRound size={12} />Aktivieren</button>
+      </div>}
+      <div class="tiny muted mt">Ohne das Passwort kann niemand die Schlüssel lesen – auch nicht mit Zugriff auf dein Drive. Merk es dir gut: Vergessen = Schlüssel neu eintragen.</div>
+      <div class="row gap-s mt" style={{ flexWrap: 'wrap' }}>
+        <button class="btn xs" onClick={async () => { const p = st?.backupPassword ? '' : await ask('Passwort für die Schlüsseldatei (mind. 8 Zeichen):', '', { password: true }); if (p === null) return; const r = await guard(() => rpc('keys.export', { password: p })); if (r) toast(`${r.count} Schlüssel exportiert`); }}><Download size={12} />Schlüssel exportieren…</button>
+        <button class="btn xs" onClick={async () => { const p = await ask('Passwort der Schlüsseldatei:', '', { password: true }); if (!p) return; const r = await guard(() => rpc('keys.import', { password: p })); if (r) { toast(`${r.count} Schlüssel übernommen`); setState({ secrets: r.secrets }); } }}><Upload size={12} />Schlüssel importieren…</button>
+        <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('settings.export')); if (r) toast('Einstellungen exportiert'); }}><Download size={12} />Einstellungen exportieren…</button>
+        <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('settings.import')); if (r) toast(`${r.count} Einstellungsbereiche übernommen`); }}><Upload size={12} />Einstellungen importieren…</button>
+      </div>
+    </div>
   );
 }
 

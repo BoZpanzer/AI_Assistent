@@ -381,3 +381,40 @@ test('Kostenbremse: Schätzung nach Modell, Eichen mit AI-Studio-Stand, Warnung 
     assert.throws(() => core.costGuard.calibrate('abc'), /Betrag/);
   } finally { cleanup(); }
 });
+
+test('Schlüssel-Sicherung: mit Passwort verschlüsselt im Backup, auf anderem PC mit Passwort wiederherstellbar; Einstellungen exportierbar', async () => {
+  const kv = require('../src/main/core/keyvault');
+  const b = kv.seal({ 'gemini.api_key': 'AIza-geheim-123', 'campusdual.cookies': '[]', 'backup.password': 'x' }, 'sehr-geheim');
+  assert.equal(b.count, 1, 'Sitzungs-Cookies und Backup-Passwort nicht enthalten');
+  assert.ok(!JSON.stringify(b).includes('AIza-geheim'), 'nichts im Klartext');
+  assert.deepEqual(kv.open(b, 'sehr-geheim'), { 'gemini.api_key': 'AIza-geheim-123' });
+  assert.throws(() => kv.open(b, 'falsch!!'), /Falsches Backup-Passwort/);
+  assert.throws(() => kv.seal({}, 'kurz'), /mindestens 8/);
+
+  const { core, cleanup } = tempCore();
+  const other = tempCore();
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-geheim-123');
+    core.secrets.set('riot.api_key', 'RGAPI-xyz');
+    core.secrets.set('backup.password', 'mein-backup-pw');
+    const zipFile = path.join(core.paths.data, 'b.zip');
+    core.system.createBackup(zipFile, { secrets: false }); // wie das Drive-Backup
+    const { unzipSync } = require('fflate');
+    const z = unzipSync(new Uint8Array(fs.readFileSync(zipFile)));
+    assert.ok(!z['secrets.json'], 'keine DPAPI-Datei im Drive-Backup');
+    assert.ok(z['keys.jarvis.json'], 'passwortgeschützte Schlüssel enthalten');
+    assert.ok(!Buffer.from(z['keys.jarvis.json']).toString().includes('RGAPI'));
+    // „anderer PC“: Wiederherstellen fragt nach dem Passwort und übernimmt die Schlüssel
+    const r1 = other.core.system.stageRestore(zipFile);
+    assert.equal(r1.needsPassword, true); assert.equal(r1.keysInBackup, 2);
+    assert.throws(() => other.core.system.stageRestore(zipFile, { password: 'falsch-falsch' }), /Falsches/);
+    const r2 = other.core.system.stageRestore(zipFile, { password: 'mein-backup-pw' });
+    assert.equal(r2.staged, true); assert.equal(r2.keysRestored, 2);
+    assert.equal(other.core.secrets.get('riot.api_key'), 'RGAPI-xyz');
+    // Einstellungen: Export-Inhalt lässt sich wieder einspielen (Schema-Prüfung)
+    core.settings.update({ nickname: 'Cheffe', gaming: { eftFaction: 'scav' } });
+    const { availableModels, ...settings } = core.settings.all();
+    other.core.settings.update(JSON.parse(JSON.stringify(settings)));
+    assert.equal(other.core.settings.get('nickname'), 'Cheffe'); assert.equal(other.core.settings.get('gaming').eftFaction, 'scav');
+  } finally { cleanup(); other.cleanup(); }
+});

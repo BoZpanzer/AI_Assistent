@@ -1148,5 +1148,41 @@ test('Tarkov-Position: Screenshot-Dateiname → Position + Blickrichtung auf der
     assert.equal(events.length, 1);
     assert.equal(core.gaming.lastMap('eft').position.map, 'customs');
     assert.equal(core.gaming.eftPosition().x, 163);
+    // Positions-Screenshot wandert (fertig geschrieben) in den eigenen Ordner, normale Screenshots bleiben
+    const posName = '2026-10-14[18-40]_163.0, 2.5, -35.0_0.0, 0.0, 0.0, 1.0_12.3 (0).png';
+    for (const st of L.pendingMove.values()) st.since = 0;
+    L.moveShots(shots); L.moveShots(shots);
+    assert.ok(fs.existsSync(path.join(shots, 'JARVIS Positionen', posName)));
+    assert.ok(!fs.existsSync(path.join(shots, posName))); assert.ok(fs.existsSync(path.join(shots, 'alt.png')));
+    // Aufräumen: älter als 7 Tage → weg
+    assert.equal(L.cleanupShots(Date.now() + 8 * 86400000), 1);
+    assert.ok(!fs.existsSync(path.join(shots, 'JARVIS Positionen', posName)));
   } finally { cleanup(); fs.rmSync(shots, { recursive: true, force: true }); }
+});
+
+test('Tarkov Eck-Karte: Exits nach PMC/Scav, Flare/Co-op/Auto erkannt, Transits, Position in Bildkoordinaten', async () => {
+  const { exitKind } = require('../src/main/services/gaming/tarkov');
+  assert.equal(exitKind('Railroad Passage (Flare)'), 'flare'); assert.equal(exitKind('Scav Co-Op Exfil'), 'coop'); assert.equal(exitKind('Crossroads V-Ex'), 'car'); assert.equal(exitKind('ZB-1011'), 'normal');
+  const { affineFor, SNAPSHOT } = require('../src/main/services/gaming/tarkovmaps');
+  const { core, cleanup } = tempCore();
+  try {
+    core.gaming.context.setState('calib:eft:customs', { affine: affineFor(SNAPSHOT.find((d) => d.id === 'customs')).affine, source: 'tarkov.dev' });
+    const dir = path.join(core.paths.data, 'maps', 'eft'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'customs.svg'), '<svg/>');
+    core.db.run("INSERT INTO game_maps(id,game,name,image_file,width,height,created_at) VALUES('m1','eft','customs','customs.svg',4096,2082,?)", new Date().toISOString());
+    core.gaming.setLastMap('eft', 'customs');
+    core.gaming.tarkov.map = async () => ({ value: { name: 'Zollgebiet', extracts: [
+      { name: 'ZB-1011', faction: 'pmc', position: { x: 163, y: 0, z: -35 } }, { name: 'Railroad (Flare)', faction: 'pmc', position: { x: 600, y: 0, z: 150 } },
+      { name: 'Scav-Ausgang', faction: 'scav', position: { x: 0, y: 0, z: 0 } }, { name: 'Smugglers (Co-op)', faction: 'shared', position: { x: 10, y: 0, z: 10 } }],
+      transits: [{ description: 'Transit nach Woods', position: { x: -250, y: 0, z: 150 } }] } });
+    let d = await core.gaming.eftOverlayMap();
+    assert.deepEqual(d.exits.map((e) => [e.name, e.kind]), [['ZB-1011', 'normal'], ['Railroad (Flare)', 'flare'], ['Smugglers (Co-op)', 'coop']], 'PMC + gemeinsame, keine Scav-Exits');
+    assert.ok(Math.abs(d.exits[0].x - 0.5) < 1e-6 && Math.abs(d.exits[0].y - 0.5) < 1e-6);
+    assert.equal(d.transits.length, 1); assert.equal(d.width, 4096);
+    core.settings.update({ gaming: { eftFaction: 'scav' } });
+    d = await core.gaming.eftOverlayMap();
+    assert.deepEqual(d.exits.map((e) => e.name), ['Scav-Ausgang', 'Smugglers (Co-op)']);
+    core.gaming.setEftPosition({ x: 163, y: 0, z: -35, fx: 0, fz: 1, map: 'customs' });
+    d = await core.gaming.eftOverlayMap();
+    assert.ok(Math.abs(d.position.nx - 0.5) < 1e-6);
+  } finally { cleanup(); }
 });

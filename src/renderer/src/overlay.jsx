@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useState, useRef } from 'preact/hooks';
 import { Timer, Trophy, Sparkles, Swords, Bell, Mic, Loader2, MapPin, Check, X } from 'lucide-preact';
 import { rpc, on, useRpc, useEvent } from './lib/api.js';
 import { renderMarkdown } from './lib/markdown.js';
@@ -16,6 +16,9 @@ function Card({ icon: Icon, title, children, accent, onClose }) {
     </div>
   );
 }
+
+/** „vor 40 s“ / „vor 3 min“ */
+const ageText = (s) => (s < 60 ? `vor ${Math.max(1, Math.round(s))} s` : `vor ${Math.round(s / 60)} min`);
 
 /** Objective-Timer: Spielzeit zwischen den Abfragen (alle 5 s) lokal weiterzählen. */
 function Objectives({ live, now }) {
@@ -104,12 +107,15 @@ function App() {
           {highlights.map((x) => <div class="ov-row"><span class="grow ov-ell">{x.name}</span><b>{x.value || x.statusLabel}</b></div>)}
         </Card>
       )}
-      {cfg?.overlay?.showMap !== false && mini?.hasImage && (
+      {cfg?.overlay?.showMap !== false && mini?.hasImage && !(active?.id === 'eft' && cfg?.overlay?.mapCorner !== false) && (
         <Card icon={MapPin} title={`Karte · ${mini.map}`}>
           <div class="ov-map">
             <img src={`app://jarvis/map-image/${encodeURIComponent(active.id)}/${encodeURIComponent(mini.map)}`} />
             {mini.markers.map((m) => <i class={`ov-pin mk-${m.category}`} style={{ left: m.x * 100 + '%', top: m.y * 100 + '%' }} title={m.label} />)}
-            {mini.position && <svg class="ov-me" width="18" height="18" viewBox="-9 -9 18 18" style={{ left: mini.position.nx * 100 + '%', top: mini.position.ny * 100 + '%', transform: `translate(-50%, -50%) rotate(${mini.position.angle + 90}deg)` }}><path d="M0 -8 L6 6 L0 3 L-6 6 Z" fill="#facc15" stroke="#000" stroke-width="1.2" /></svg>}
+            {mini.position && (() => { const age = (now - Date.parse(mini.position.at)) / 1000; if (age > 900) return null; const op = age < 120 ? 1 : age < 300 ? 0.6 : 0.35; return <>
+              <svg class="ov-me" width="18" height="18" viewBox="-9 -9 18 18" style={{ opacity: op, left: mini.position.nx * 100 + '%', top: mini.position.ny * 100 + '%', transform: `translate(-50%, -50%) rotate(${mini.position.angle + 90}deg)` }}><path d="M0 -8 L6 6 L0 3 L-6 6 Z" fill="#facc15" stroke="#000" stroke-width="1.2" /></svg>
+              <span class="ov-age" style={{ opacity: op, left: mini.position.nx * 100 + '%', top: `calc(${mini.position.ny * 100}% + 11px)` }}>{ageText(age)}</span>
+            </>; })()}
           </div>
         </Card>
       )}
@@ -119,5 +125,44 @@ function App() {
   );
 }
 
-render(<App />, document.getElementById('app'));
+/** Farben der Exit-Arten (auch auf der großen Karte gleich). */
+const EXIT_COLOR = { normal: '#22c55e', flare: '#f97316', coop: '#a855f7', car: '#3b82f6', transit: '#22d3ee' };
+
+/** Eck-Karte (oben links): Raid-Karte, Exits, Transits, Marker, eigene Position; zoomt auf dich, wenn die Position frisch ist. */
+function MapCorner() {
+  const [d, reload] = useRpc('tarkov.overlayMap', {}, { events: ['game:position', 'game:markers', 'settings:changed'] });
+  const [cfg] = useRpc('settings.get', {}, { events: ['settings:changed'] });
+  const now = useNow(1000);
+  const box = useRef(); const [bs, setBs] = useState({ w: 300, h: 280 });
+  useEffect(() => { const t = setInterval(reload, 60000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (!box.current) return; const ro = new ResizeObserver(([e]) => setBs({ w: e.contentRect.width, h: e.contentRect.height })); ro.observe(box.current); return () => ro.disconnect(); }, [d?.hasImage]);
+  if (!d?.hasImage) return <div class="mc"><div class="mc-head">JARVIS · Karte</div><div class="mc-empty">{d?.map ? 'Für diese Karte gibt es kein Kartenbild.' : 'Warte auf die Raid-Karte …'}</div></div>;
+  const pos = d.position;
+  const age = pos ? (now - Date.parse(pos.at)) / 1000 : Infinity;
+  const fresh = age < 300;
+  const zoom = cfg?.overlay?.mapZoom !== false && fresh ? 2.6 : 1;
+  // Zoom um die Position, ohne über den Kartenrand hinaus zu schieben
+  const cx = zoom > 1 ? Math.min(1 - 0.5 / zoom, Math.max(0.5 / zoom, pos.nx)) : 0.5;
+  const cy = zoom > 1 ? Math.min(1 - 0.5 / zoom, Math.max(0.5 / zoom, pos.ny)) : 0.5;
+  const tf = `scale(${zoom}) translate(${(0.5 - cx) * 100}%, ${(0.5 - cy) * 100}%)`;
+  const inv = 1 / zoom;
+  const fl = { pmc: 'PMC', scav: 'Scav', all: 'alle' }[d.faction] || 'PMC';
+  return (
+    <div class="mc">
+      <div class="mc-head"><b>{d.name || d.map}</b><span class="grow" />Exits: {fl}{pos && age < 900 ? <span class="mc-age"> · du {age < 60 ? 'gerade' : `vor ${Math.round(age / 60)} min`}</span> : null}</div>
+      <div class="mc-box" ref={box}>
+        <div class="mc-inner" style={(() => { const a = (d.width || 1) / (d.height || 1); const w = Math.min(bs.w, bs.h * a); const h = w / a; return { width: w, height: h, left: (bs.w - w) / 2, top: (bs.h - h) / 2, transform: tf }; })()}>
+          <img src={`app://jarvis/map-image/eft/${encodeURIComponent(d.map)}`} />
+          {d.exits.map((e) => <i class="mc-dot" title={e.name} style={{ left: e.x * 100 + '%', top: e.y * 100 + '%', background: EXIT_COLOR[e.kind], transform: `translate(-50%, -50%) scale(${inv})`, borderRadius: e.faction === 'scav' ? '2px' : '50%' }} />)}
+          {d.transits.map((t) => <i class="mc-dot" title={t.name} style={{ left: t.x * 100 + '%', top: t.y * 100 + '%', background: EXIT_COLOR.transit, transform: `translate(-50%, -50%) rotate(45deg) scale(${inv})`, borderRadius: '1px' }} />)}
+          {(d.markers || []).map((m) => <i class={`mc-dot mk-${m.category}`} title={m.label} style={{ left: m.x * 100 + '%', top: m.y * 100 + '%', transform: `translate(-50%, -50%) scale(${inv * 0.8})` }} />)}
+          {pos && age < 900 && <svg class="mc-me" width="22" height="22" viewBox="-11 -11 22 22" style={{ left: pos.nx * 100 + '%', top: pos.ny * 100 + '%', opacity: age < 120 ? 1 : age < 300 ? 0.6 : 0.35, transform: `translate(-50%, -50%) scale(${inv}) rotate(${pos.angle + 90}deg)` }}><path d="M0 -9 L7 7 L0 3.5 L-7 7 Z" fill="#facc15" stroke="#000" stroke-width="1.4" /></svg>}
+        </div>
+      </div>
+      <div class="mc-legend"><i style={{ background: EXIT_COLOR.normal }} />Exit<i style={{ background: EXIT_COLOR.flare }} />Flare<i style={{ background: EXIT_COLOR.coop }} />Co-op<i style={{ background: EXIT_COLOR.car }} />Auto<i style={{ background: EXIT_COLOR.transit, borderRadius: 1 }} />Transit</div>
+    </div>
+  );
+}
+
+render(new URLSearchParams(location.search).get('view') === 'map' ? <MapCorner /> : <App />, document.getElementById('app'));
 void on; void Check;

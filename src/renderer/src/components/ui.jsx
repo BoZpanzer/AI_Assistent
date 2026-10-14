@@ -165,8 +165,8 @@ export function Spinner({ size = 16 }) {
 
 /* ---- Prompt / confirm replacements (window.prompt is not available in Electron) ---- */
 import { setState as _set } from '../lib/store.js';
-export function ask(title, value = '', { multiline = false, confirmOnly = false, danger = false, okLabel } = {}) {
-  return new Promise((resolve) => _set({ ask: { title, value, multiline, confirmOnly, danger, okLabel, resolve } }));
+export function ask(title, value = '', { multiline = false, confirmOnly = false, danger = false, okLabel, password = false } = {}) {
+  return new Promise((resolve) => _set({ ask: { title, value, multiline, confirmOnly, danger, okLabel, password, resolve } }));
 }
 export function AskHost() {
   const a = useStore((s) => s.ask);
@@ -179,7 +179,7 @@ export function AskHost() {
       actions={<><button class="btn sm ghost" onClick={() => done(null)}>Abbrechen</button><button class={`btn sm ${a.danger ? 'danger' : 'primary'}`} onClick={() => done(a.confirmOnly ? true : v)}>{a.okLabel || 'OK'}</button></>}>
       {!a.confirmOnly && (a.multiline
         ? <textarea class="ta" value={v} onInput={(e) => setV(e.currentTarget.value)} autofocus rows={5} />
-        : <input class="inp" value={v} onInput={(e) => setV(e.currentTarget.value)} autofocus onKeyDown={(e) => { if (e.key === 'Enter') done(v); }} />)}
+        : <input class="inp" type={a.password ? 'password' : 'text'} autocomplete={a.password ? 'off' : undefined} value={v} onInput={(e) => setV(e.currentTarget.value)} autofocus onKeyDown={(e) => { if (e.key === 'Enter') done(v); }} />)}
     </Modal>
   );
 }

@@ -1,4 +1,5 @@
 'use strict';
+const { seal, open } = require('../core/keyvault');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -51,6 +52,9 @@ class System {
     const files = { 'jarvis.sqlite3': new Uint8Array(fs.readFileSync(tmp)), 'manifest.json': Buffer.from(JSON.stringify({ app: 'JARVIS', version: this.s.version, schema: this.s.db.version, created: nowIso(), host: os.hostname() })) };
     const sec = path.join(this.s.paths.data, 'secrets.json');
     if (secrets && fs.existsSync(sec)) files['secrets.json'] = new Uint8Array(fs.readFileSync(sec));
+    // Mit Backup-Passwort: alle Schlüssel zusätzlich passwortgeschützt (auf jedem PC wiederherstellbar)
+    const bpw = this.s.secrets.get('backup.password');
+    if (bpw) { try { files['keys.jarvis.json'] = Buffer.from(JSON.stringify(seal(this.s.secrets.all(), bpw))); } catch (e) { log.warn('Schlüssel nicht gesichert', e); } }
     const mapsDir = path.join(this.s.paths.data, 'maps');
     if (fs.existsSync(mapsDir)) {
       for (const g of fs.readdirSync(mapsDir)) for (const f of fs.readdirSync(path.join(mapsDir, g))) files[`maps/${g}/${f}`] = new Uint8Array(fs.readFileSync(path.join(mapsDir, g, f)));
@@ -85,14 +89,15 @@ class System {
   }
 
   /** Validate a backup and stage it; applied on next start (before the DB opens). */
-  stageRestore(file) {
+  stageRestore(file, { password } = {}) {
     const buf = fs.readFileSync(file);
-    let dbBytes; let secrets = null;
+    let dbBytes; let secrets = null; let keysBundle = null;
     if (file.endsWith('.zip')) {
       const z = unzipSync(new Uint8Array(buf));
       const man = z['manifest.json'] ? JSON.parse(Buffer.from(z['manifest.json']).toString()) : null;
       if (!man || man.app !== 'JARVIS' || !z['jarvis.sqlite3']) throw new Error('Keine gültige JARVIS-Sicherung');
       dbBytes = Buffer.from(z['jarvis.sqlite3']); secrets = z['secrets.json'] ? Buffer.from(z['secrets.json']) : null;
+      keysBundle = z['keys.jarvis.json'] ? Buffer.from(z['keys.jarvis.json']).toString('utf8') : null;
     } else dbBytes = buf;
     const probe = path.join(os.tmpdir(), 'jarvis-restore-probe-' + crypto.randomBytes(4).toString('hex') + '.sqlite3');
     fs.writeFileSync(probe, dbBytes);
@@ -115,7 +120,16 @@ class System {
       if (readable) fs.writeFileSync(path.join(stage, 'secrets.json'), secrets);
       else secretsNote = 'Die Schlüssel in der Sicherung stammen von einem anderen PC/Windows-Konto – deine aktuellen Schlüssel bleiben erhalten.';
     }
-    return { staged: true, restartRequired: true, secretsNote };
+    // Passwortgeschützte Schlüssel: nur nötig, wenn die DPAPI-Schlüssel hier nicht lesbar sind (anderer PC)
+    let keysRestored = 0;
+    if (keysBundle && (!secrets || secretsNote)) {
+      if (!password) { fs.rmSync(stage, { recursive: true, force: true }); return { staged: false, needsPassword: true, keysInBackup: JSON.parse(keysBundle).count || 0 }; }
+      const keys = open(keysBundle, password);
+      for (const [k, v] of Object.entries(keys)) this.s.secrets.set(k, v);
+      keysRestored = Object.keys(keys).length;
+      secretsNote = `${keysRestored} Schlüssel aus der Sicherung übernommen.`;
+    }
+    return { staged: true, restartRequired: true, secretsNote, keysRestored };
   }
 
   /** Called at startup BEFORE the database is opened. */

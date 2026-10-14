@@ -169,4 +169,16 @@ class Tarkov {
   }
 }
 
-module.exports = { Tarkov, TARKOV_SOURCE: SOURCE };
+/**
+ * Art eines Exits aus seinem Namen (tarkov.dev liefert keine eigene Kennzeichnung):
+ * flare = Leuchtpatrone nötig, coop = Co-op (PMC+Scav), car = Fahrzeug (V-Ex, kostet Rubel), normal.
+ */
+function exitKind(name) {
+  const n = String(name || '');
+  if (/flare|leucht/i.test(n)) return 'flare';
+  if (/co-?op|koop/i.test(n)) return 'coop';
+  if (/\bv-?ex\b|vehicle|fahrzeug|\bcar\b|\bauto\b/i.test(n)) return 'car';
+  return 'normal';
+}
+
+module.exports = { Tarkov, TARKOV_SOURCE: SOURCE, exitKind };

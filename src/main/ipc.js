@@ -1,4 +1,5 @@
 'use strict';
+const keyvault = require('./core/keyvault');
 const path = require('node:path');
 const fs = require('node:fs');
 const { ipcMain, dialog, shell, clipboard } = require('electron');
@@ -337,6 +338,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     },
     'tarkov.raidPlan': ({ map } = {}) => { const c = s.gaming.eftProgress(); return s.gaming.tarkov.raidPlan({ map: map ? String(map) : undefined, ...c }); },
     'tarkov.position': () => s.gaming.eftPosition?.() || null,
+    'tarkov.overlayMap': () => s.gaming.eftOverlayMap(),
     'tarkov.quests': ({ map, q }) => s.gaming.tarkov.searchTasks(q, { map, limit: 30 }),
     'tarkov.items': ({ q, keysOnly }) => s.gaming.tarkov.items(q, { keysOnly, limit: 20 }),
     'tarkov.keys': ({ map }) => s.gaming.tarkov.keysForMap(map),
@@ -370,10 +372,54 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return r.canceled ? null : s.system.createBackup(r.filePath);
     },
     'system.backups': () => s.system.listBackups(),
-    'system.restore': async ({ file } = {}) => {
+    // --- Schlüssel & Einstellungen sichern ---
+    'keys.status': () => ({ backupPassword: s.secrets.has('backup.password'), count: Object.keys(s.secrets.status()).filter((k) => !keyvault.EXCLUDE.test(k)).length }),
+    'keys.setBackupPassword': ({ password } = {}) => {
+      const pw = String(password || '');
+      if (!pw) { s.secrets.delete('backup.password'); return { backupPassword: false }; }
+      keyvault.checkPassword(pw);
+      s.secrets.set('backup.password', pw);
+      return { backupPassword: true };
+    },
+    'keys.export': async ({ password } = {}) => {
+      const pw = String(password || '') || s.secrets.get('backup.password');
+      keyvault.checkPassword(pw);
+      const r = await dialog.showSaveDialog(getWin(), { defaultPath: `JARVIS-Schluessel-${new Date().toISOString().slice(0, 10)}.jarvis-keys`, filters: [{ name: 'JARVIS-Schlüssel', extensions: ['jarvis-keys'] }] });
+      if (r.canceled) return null;
+      const b = keyvault.seal(s.secrets.all(), pw);
+      fs.writeFileSync(r.filePath, JSON.stringify(b), { mode: 0o600 });
+      return { file: r.filePath, count: b.count };
+    },
+    'keys.import': async ({ password } = {}) => {
+      const f = (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Schlüssel', extensions: ['jarvis-keys', 'json'] }] }))?.[0];
+      if (!f) return null;
+      if (fs.statSync(f).size > 2 * 1024 * 1024) throw new Error('Datei zu groß');
+      const keys = keyvault.open(fs.readFileSync(f, 'utf8'), String(password || ''));
+      for (const [k, v] of Object.entries(keys)) if (!keyvault.EXCLUDE.test(k) && typeof v === 'string') s.secrets.set(k, v);
+      return { count: Object.keys(keys).length, secrets: s.secrets.status() };
+    },
+    'settings.export': async () => {
+      const r = await dialog.showSaveDialog(getWin(), { defaultPath: `JARVIS-Einstellungen-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] });
+      if (r.canceled) return null;
+      const { availableModels, ...settings } = s.settings.all();
+      fs.writeFileSync(r.filePath, JSON.stringify({ app: 'JARVIS', kind: 'settings', version: s.version, exported: new Date().toISOString(), settings }, null, 2));
+      return { file: r.filePath, count: Object.keys(settings).length };
+    },
+    'settings.import': async () => {
+      const f = (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Einstellungen', extensions: ['json'] }] }))?.[0];
+      if (!f) return null;
+      if (fs.statSync(f).size > 2 * 1024 * 1024) throw new Error('Datei zu groß');
+      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      if (j?.app !== 'JARVIS' || j.kind !== 'settings' || typeof j.settings !== 'object') throw new Error('Keine JARVIS-Einstellungsdatei');
+      const { availableModels, ...patch } = j.settings;
+      s.settings.update(patch); // prüft jedes Feld gegen das Schema
+      return { count: Object.keys(patch).length };
+    },
+    'system.restore': async ({ file, password } = {}) => {
       const f = file || (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3'] }] }))?.[0];
       if (!f) return null;
-      return s.system.stageRestore(f);
+      const r = s.system.stageRestore(f, { password: password ? String(password) : undefined });
+      return r.needsPassword ? { ...r, file: f } : r;
     },
     'system.legacy': () => s.system.legacyCandidates(),
     'system.importLegacy': ({ file }) => {

@@ -142,7 +142,7 @@ app.whenReady().then(async () => {
   await step('Tarkov-Karte: von tarkov.dev geladen (Fake), Exit an berechneter Position', async () => {
     const origMaps = core.gaming.tarkov.maps; const origFetch = core.gaming.tarkovMaps.fetch;
     try {
-    core.gaming.tarkov.maps = async () => ({ value: [{ name: 'Zollgebiet', normalizedName: 'customs', extracts: [{ name: 'Testexit', faction: 'pmc', position: { x: 166.5, y: 0, z: -35 } }], locks: [], transits: [], bosses: [], players: '8-12', raidDuration: 40 }], source: 'test', fetchedAt: new Date().toISOString() });
+    core.gaming.tarkov.maps = async () => ({ value: [{ name: 'Zollgebiet', normalizedName: 'customs', extracts: [{ name: 'Testexit', faction: 'pmc', position: { x: 166.5, y: 0, z: -35 } }, { name: 'Railroad (Flare)', faction: 'pmc', position: { x: 600, y: 0, z: 150 } }, { name: 'Scav-Ausgang', faction: 'scav', position: { x: -300, y: 0, z: -200 } }], locks: [], transits: [{ id: 't1', description: 'Transit nach Woods', position: { x: -250, y: 0, z: 150 } }], bosses: [], players: '8-12', raidDuration: 40 }], source: 'test', fetchedAt: new Date().toISOString() });
     core.gaming.tarkovMaps.fetch = async (url) => (/maps\.json$/.test(url) ? new Response('', { status: 503 }) : new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1062 535"><style>.l{fill:#1f5054}</style><g id="Ground_Level"><rect class="l" width="1062" height="535"/><circle cx="531" cy="267" r="40" fill="#c6c2c2"/></g><g id="Second_Floor"><rect width="1062" height="535" fill="red"/></g></svg>'));
     await nav('dashboard'); await nav('gaming'); await sleep(500);
     await js(`[...document.querySelectorAll('.map-tools .tool')].find(t=>t.textContent.includes('Karten laden'))?.click()`);
@@ -155,6 +155,18 @@ app.whenReady().then(async () => {
     // Position aus einem Screenshot → gelber Pfeil auf der Karte
     core.gaming.setEftPosition({ x: 400, y: 0, z: 100, fx: 0, fz: 1, map: 'customs' });
     await waitFor(() => js(`!!document.querySelector('.map-inner .marker svg path[fill="#facc15"]')`), 5000);
+    // Eck-Karte oben links, solange Tarkov läuft
+    core.gaming.context.running = ['eft'];
+    core.bus.emit('game:running', { running: ['eft'], started: ['eft'], stopped: [] });
+    const mc = global.__jarvis.mapCorner();
+    await waitFor(() => mc?.visible && mc.win && !mc.win.webContents.isLoading(), 8000);
+    await waitFor(() => mc.win.webContents.executeJavaScript(`!!document.querySelector('.mc-inner img') && document.querySelector('.mc-inner img').naturalWidth > 0 && !!document.querySelector('.mc-me')`), 8000);
+    const mcDots = await mc.win.webContents.executeJavaScript(`document.querySelectorAll('.mc-dot').length`);
+    if (mcDots < 1) throw new Error('Keine Exits auf der Eck-Karte');
+    await sleep(800);
+    fs.writeFileSync(path.join(SHOTS, '61c-overlay-mapcorner.png'), (await mc.win.webContents.capturePage()).toPNG());
+    core.gaming.context.running = [];
+    core.bus.emit('game:running', { running: [], started: [], stopped: ['eft'] });
     await shot('61b-gaming-tarkov-map');
     } finally { core.gaming.tarkov.maps = origMaps; core.gaming.tarkovMaps.fetch = origFetch; }
   });

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
 import { Map as MapIcon, Maximize2, Minimize2, Plus, Minus, Crosshair, Footprints, Package, TriangleAlert, Target, KeyRound, MapPin, Trash2, Undo2, Layers, Route, ImagePlus, Search, ExternalLink, Timer, NotebookPen, Globe, Bell, ListChecks, Trophy, RefreshCw, Swords, Eye, TrendingUp, TrendingDown, GraduationCap, Shield, BarChart3, Radio, Sparkles, X, Check, Ruler, Skull, Castle, FlaskConical, Hammer, Link as LinkIcon, MessageCircleQuestion, CalendarClock, SendHorizontal } from 'lucide-preact';
 import { rpc, useRpc, useEvent, cleanErr } from '../../lib/api.js';
-import { guard, toast, setState, getState } from '../../lib/store.js';
+import { guard, toast, setState, getState, useStore } from '../../lib/store.js';
 import { Panel, Checkbox, Empty, SourceTag, Spinner, useNow, ask, Select } from '../../components/ui.jsx';
 import { countdown, ago, fmtDateTime } from '../../lib/format.js';
 import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
@@ -42,6 +42,7 @@ function MapWidget({ game, params }) {
   const meta = (userMaps || []).find((m) => m.name === map);
   const [pos, setPos] = useState(null);
   const [follow, setFollow] = useState(true);
+  const nowT = useNow(5000);
   useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
   useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== map) setMap(p.map); });
   const [loadingMaps, setLoadingMaps] = useState(false);
@@ -95,8 +96,10 @@ function MapWidget({ game, params }) {
   }, [meta?.calibration, imgSize]);
   const [questMarks] = useRpc('tarkov.questMarkers', { map }, { enabled: isEft && showQuests && !!transform, deps: [map, showQuests, !!transform], events: ['game:progress'] });
   const questPins = isEft && showQuests && transform ? (questMarks?.markers || []).map((q) => ({ ...transform(q.x, q.z), category: 'quest', label: q.task.length > 22 ? q.task.slice(0, 21) + '…' : q.task, objective: q.objective, task: q.task, api: true })) : [];
+  const faction = useStore((x) => x.settings?.gaming?.eftFaction) || 'pmc';
   const apiPins = isEft && showApi && transform && apiMap?.map ? [
-    ...apiMap.map.extracts.filter((e) => e.position).map((e) => ({ ...transform(e.position.x, e.position.z), category: 'exit', label: e.name, api: true })),
+    ...apiMap.map.extracts.filter((e) => e.position && (faction === 'all' || !e.faction || e.faction === faction || e.faction === 'shared')).map((e) => { const kind = exitKind(e.name); return { ...transform(e.position.x, e.position.z), category: 'exit', label: e.name + (faction === 'all' && e.faction && e.faction !== 'shared' ? ` (${e.faction === 'pmc' ? 'PMC' : 'Scav'})` : ''), api: true, color: EXIT_COLOR[kind], kind }; }),
+    ...(apiMap.map.transits || []).filter((t) => t.position).map((t) => ({ ...transform(t.position.x, t.position.z), category: 'exit', label: 'Transit: ' + (t.description || ''), api: true, color: EXIT_COLOR.transit, kind: 'transit' })),
     ...(apiMap.map.locks || []).filter((l) => l.position && l.key).slice(0, 80).map((l) => ({ ...transform(l.position.x, l.position.z), category: 'key', label: l.key.shortName || l.key.name, api: true })),
   ] : [];
   const click = async (e) => {
@@ -151,6 +154,8 @@ function MapWidget({ game, params }) {
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
             {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
+            {isEft && transform && showApi && <div class="row" style={{ gap: 3, flexWrap: 'wrap' }} title="Welche Exits angezeigt werden">{[['pmc', 'PMC'], ['scav', 'Scav'], ['all', 'Alle']].map(([v, l]) => <span class={`chip ${faction === v ? 'active' : ''}`} style={{ fontSize: 10, padding: '1px 6px' }} onClick={() => guard(() => rpc('settings.update', { gaming: { eftFaction: v } }))}>{l}</span>)}</div>}
+            {isEft && transform && showApi && <div class="tiny muted" style={{ lineHeight: 1.5 }}>{Object.entries({ normal: 'Exit', flare: 'Flare', coop: 'Co-op', car: 'Auto', transit: 'Transit' }).map(([k, l]) => <span style={{ whiteSpace: 'nowrap', marginRight: 6 }}><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: EXIT_COLOR[k], marginRight: 3 }} />{l}</span>)}</div>}
             {isEft && <div class={`tool ${follow ? 'active' : ''}`} title="Karte wechselt automatisch zur Raid-Karte, sobald du im Spiel einen Screenshot machst (Position + Blickrichtung)" onClick={() => setFollow(!follow)}><Crosshair size={15} />Position{pos ? ' ✓' : ''}</div>}
             {isEft && transform && <div class={`tool ${showQuests ? 'active' : ''}`} title="Ziele deiner offenen Quests (ohne erledigte, bis zu deinem Level) – Quelle tarkov.dev" onClick={() => setShowQuests(!showQuests)}><Target size={15} />Questziele{showQuests && questMarks?.markers ? ` (${questMarks.markers.length})` : ''}</div>}
           </div>
@@ -160,12 +165,13 @@ function MapWidget({ game, params }) {
               <svg width={imgSize.w} height={imgSize.h} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {[...routes, ...(routeDraft ? [{ id: 'draft', points: routeDraft }] : [])].map((r) => <polyline points={r.points.map((p) => `${p.x * imgSize.w},${p.y * imgSize.h}`).join(' ')} fill="none" stroke={r.id === 'draft' ? '#facc15' : '#22d3ee'} stroke-width={4 / view.z} stroke-dasharray={`${12 / view.z} ${8 / view.z}`} />)}
               </svg>
-              {me && <div class="marker" title={`Du – Stand ${new Date(me.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} (letzter Screenshot)`} style={{ left: me.x * imgSize.w, top: me.y * imgSize.h, transform: `translate(-50%, -50%) scale(${1 / view.z})`, zIndex: 5 }} onClick={(e) => e.stopPropagation()}>
-                <svg width="30" height="30" viewBox="-15 -15 30 30" style={{ transform: `rotate(${me.angle + 90}deg)`, filter: 'drop-shadow(0 0 6px rgba(250,204,21,.9))' }}><circle r="13" fill="rgba(250,204,21,.18)" /><path d="M0 -11 L8 8 L0 4 L-8 8 Z" fill="#facc15" stroke="#000" stroke-width="1.5" /></svg>
+              {me && (nowT - Date.parse(me.at)) < 900000 && <div class="marker" title={`Du – Stand ${new Date(me.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} (letzter Screenshot)`} style={{ left: me.x * imgSize.w, top: me.y * imgSize.h, transform: `translate(-50%, -50%) scale(${1 / view.z})`, zIndex: 5 }} onClick={(e) => e.stopPropagation()}>
+                <svg width="30" height="30" viewBox="-15 -15 30 30" style={{ opacity: nowT - Date.parse(me.at) < 120000 ? 1 : nowT - Date.parse(me.at) < 300000 ? 0.6 : 0.35, transform: `rotate(${me.angle + 90}deg)`, filter: 'drop-shadow(0 0 6px rgba(250,204,21,.9))' }}><circle r="13" fill="rgba(250,204,21,.18)" /><path d="M0 -11 L8 8 L0 4 L-8 8 Z" fill="#facc15" stroke="#000" stroke-width="1.5" /></svg>
+                <div class="lbl" style={{ color: '#facc15' }}>{(() => { const s = (nowT - Date.parse(me.at)) / 1000; return s < 60 ? 'Du · gerade' : `Du · vor ${Math.round(s / 60)} min`; })()}</div>
               </div>}
               {all.map((m) => { const c = CATS.find((x) => x.id === m.category) || CATS[5]; return (
                 <div class="marker" style={{ left: m.x * imgSize.w, top: m.y * imgSize.h, transform: `translate(-50%, -100%) scale(${1 / view.z})`, transformOrigin: '50% 100%', opacity: m.api ? 0.85 : 1 }} onClick={(e) => { e.stopPropagation(); editMarker(m); }}>
-                  <div class={`pin ${c.cls}`} style={m.api ? { borderStyle: 'dashed' } : undefined}><c.icon size={13} /></div>
+                  <div class={`pin ${c.cls}`} style={m.api ? { borderStyle: 'dashed', ...(m.color ? { background: m.color } : {}) } : undefined}>{m.kind === 'transit' ? <Route size={13} /> : <c.icon size={13} />}</div>
                   {m.label && <div class="lbl">{m.label}</div>}
                 </div>); })}
             </div>
@@ -190,6 +196,9 @@ function MapWidget({ game, params }) {
 }
 
 // ---------------------------------------------------------------- Tarkov
+/** Exit-Art aus dem Namen (wie im Hauptprozess): Leuchtpatrone, Co-op, Fahrzeug, sonst normal. */
+const exitKind = (n) => (/flare|leucht/i.test(n) ? 'flare' : /co-?op|koop/i.test(n) ? 'coop' : /\bv-?ex\b|vehicle|fahrzeug|\bcar\b|\bauto\b/i.test(n) ? 'car' : 'normal');
+const EXIT_COLOR = { normal: '#22c55e', flare: '#f97316', coop: '#a855f7', car: '#3b82f6', transit: '#22d3ee' };
 /** Raid-Planer: offene, verfügbare Quests → beste Karte, Ziele, was mitnehmen. */
 function TarkovRaidPlan({ params }) {
   const [map, setMap] = useState(params.map || '');

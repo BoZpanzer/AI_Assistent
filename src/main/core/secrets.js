@@ -48,6 +48,8 @@ class Secrets {
     this.persist();
   }
   delete(key) { delete this.data[key]; this.persist(); }
+  /** Alle Werte – NUR für die passwortgeschützte Schlüssel-Sicherung im Hauptprozess. */
+  all() { return { ...this.data }; }
   /** Status for UI — never the values. */
   status() { return Object.fromEntries(Object.keys(this.data).map((k) => [k, true])); }
 }
