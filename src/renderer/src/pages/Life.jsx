@@ -6,7 +6,7 @@ import { ChatBar } from '../components/Shell.jsx';
 import { Panel, Spinner, Empty, Select, useNow } from '../components/ui.jsx';
 import { fmtDateTime, ago, countdown } from '../lib/format.js';
 
-const eur = (v) => (v == null ? '–' : `${Number(v).toFixed(2).replace('.', ',')} €`);
+const eur = (v) => (v == null ? '–' : `${Number(v).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
 const dmy = (d) => (d ? d.split('-').reverse().join('.') : '–');
 const CYCLE = { month: 'monatlich', year: 'jährlich', week: 'wöchentlich' };
 
@@ -18,6 +18,7 @@ export function Life() {
           <div class="w-6"><Transit /></div>
           <div class="w-6"><DeadlinesPanel /></div>
           <div class="w-6"><Finance /></div>
+          <div class="w-6"><MoneyPlan /></div>
           <div class="w-6"><Subscriptions /></div>
           <div class="w-6"><Shopping /></div>
           <div class="w-6"><Pantry /></div>
@@ -43,12 +44,46 @@ function Finance() {
   const pct = m.budget ? Math.min(100, Math.round(m.totalWithSubs / m.budget * 100)) : null;
   return (
     <Panel icon={Wallet} title="Ausgaben" sub={`${m.month.split('-').reverse().join('/')} · nur was du einträgst, bleibt auf deinem PC`}>
-      <div class="row wrap gap-s"><span class="chip static">Ausgegeben {eur(m.total)}</span><span class="chip static">Abos {eur(m.subscriptions)}/Monat</span>{m.budget ? <span class="chip static" style={{ color: m.left < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>Übrig {eur(m.left)}</span> : null}{m.forecast != null && <span class="chip static" title="Hochrechnung bis Monatsende (ohne Abos)">Prognose {eur(m.forecast)}</span>}</div>
+      {m.income ? <div class="row wrap gap-s mb" style={{ alignItems: 'baseline' }}><span style={{ fontSize: 22, fontWeight: 700, color: m.balance < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>{eur(m.balance)}</span><span class="small muted">frei bis Monatsende{m.perDay != null ? ` · ${eur(m.perDay)} pro Tag` : ''}</span></div> : null}
+      {m.income ? <div class="tiny muted mb">Einnahmen {eur(m.income)} − Fixkosten {eur(m.fixedOut)} − Abos {eur(m.subsThisMonth)} − Ausgaben {eur(m.total)}</div> : <div class="tiny muted mb">Trag deine festen Einnahmen ein (rechts), dann zeigt JARVIS, was bis Monatsende frei ist.</div>}
+      <div class="row wrap gap-s"><span class="chip static">Ausgegeben {eur(m.total)}</span><span class="chip static">Abos {eur(m.subscriptions)}/Monat</span>{m.budget ? <span class="chip static" style={{ color: m.left < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>Budget übrig {eur(m.left)}</span> : null}{m.forecast != null && <span class="chip static" title="Hochrechnung bis Monatsende (ohne Abos)">Prognose {eur(m.forecast)}</span>}</div>
       {pct != null && <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, marginTop: 8 }}><div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: pct >= 100 ? 'var(--red, #e5484d)' : pct >= 80 ? 'var(--orange)' : 'var(--cyan)' }} /></div>}
       {!m.budget && <div class="tiny muted mt">Monatsbudget in den Einstellungen setzen, dann zeigt JARVIS, was übrig ist.</div>}
       <div class="col mt" style={{ gap: 3 }}>{m.categories.map((c) => <div class="row small" style={{ gap: 8 }}><span style={{ width: 130 }}>{c.category}</span><div class="grow" style={{ height: 8, background: 'var(--line)', borderRadius: 4 }}><div style={{ width: (c.sum / max) * 100 + '%', height: '100%', background: 'var(--cyan)', borderRadius: 4 }} /></div><span style={{ width: 80, textAlign: 'right' }}>{eur(c.sum)}</span></div>)}</div>
       <div class="row gap-s mt"><input class="inp" style={{ width: 90 }} placeholder="€" inputmode="decimal" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp grow" placeholder="wofür? (z. B. Döner, Tanken)" value={f.note} onInput={(e) => setF({ ...f, note: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn xs" onClick={add}><Plus size={12} /></button></div>
       <div class="col mt" style={{ gap: 2, maxHeight: 160, overflow: 'auto' }}>{m.recent.map((x) => <div class="row small"><span class="tiny muted" style={{ width: 70 }}>{new Date(x.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span><span class="grow">{x.note || x.category}<span class="tiny muted"> · {x.category}</span></span><span>{eur(x.amount)}</span><button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeExpense', { id: x.id })).then(reload)}><X size={11} /></button></div>)}</div>
+    </Panel>
+  );
+}
+
+const CYC2 = { month: 'monatlich', quarter: 'vierteljährlich', year: 'jährlich' };
+function MoneyPlan() {
+  const [list, reload] = useRpc('life.recurring', {}, { events: ['life:data'], initial: [] });
+  const [m] = useRpc('life.month', {}, { events: ['life:data'] });
+  const [f, setF] = useState({ kind: 'income', name: '', amount: '', day: 1, cycle: 'month', month: '' });
+  const [once, setOnce] = useState({ amount: '', note: '' });
+  const add = async () => { if (!f.name || !f.amount) return; if (await guard(() => rpc('life.addRecurring', { ...f, day: Number(f.day), month: f.month ? Number(f.month) : null }), 'Gespeichert')) { setF({ ...f, name: '', amount: '' }); reload(); } };
+  const addOnce = async () => { if (!once.amount) return; if (await guard(() => rpc('life.addIncome', once), 'Einnahme erfasst')) setOnce({ amount: '', note: '' }); };
+  const row = (x) => { const due = m?.fixed?.find((y) => y.id === x.id); return (
+    <div class="row small mb" style={{ opacity: x.active ? 1 : 0.5 }}><span class="grow"><b>{x.name}</b> <span class="muted">{CYC2[x.cycle]} am {x.day}.{x.cycle !== 'month' && x.month ? ` (ab Monat ${x.month})` : ''}{x.category ? ' · ' + x.category : ''}</span>{due ? <span class="tiny" style={{ color: due.due ? 'var(--text-3)' : 'var(--cyan)' }}> · {due.due ? 'diesen Monat fällig gewesen' : 'kommt noch'}</span> : null}</span><span style={{ color: x.kind === 'income' ? 'var(--green)' : undefined }}>{x.kind === 'income' ? '+' : '−'}{eur(x.amount)}</span>
+      <button class="btn xs ghost" title={x.active ? 'Pausieren' : 'Aktivieren'} onClick={() => guard(() => rpc('life.updateRecurring', { id: x.id, active: !x.active })).then(reload)}>{x.active ? 'an' : 'aus'}</button>
+      <button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeRecurring', { id: x.id })).then(reload)}><Trash2 size={11} /></button></div>); };
+  const inc = list.filter((x) => x.kind === 'income'); const out = list.filter((x) => x.kind === 'expense');
+  return (
+    <Panel icon={Repeat} title="Einnahmen & Fixkosten" sub="Feste Posten mit Stichtag – zählen jeden Monat automatisch mit">
+      <b class="small">Einnahmen</b>{!inc.length && <div class="tiny muted mb">z. B. Vergütung, BAföG, Kindergeld</div>}{inc.map(row)}
+      <b class="small">Fixkosten</b>{!out.length && <div class="tiny muted mb">z. B. Miete, Versicherung, Handyvertrag</div>}{out.map(row)}
+      <div class="row wrap gap-s mt">
+        <Select style={{ width: 120 }} value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={[{ value: 'income', label: 'Einnahme' }, { value: 'expense', label: 'Fixkosten' }]} />
+        <input class="inp" style={{ width: 130 }} placeholder="Name" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} />
+        <input class="inp" style={{ width: 80 }} placeholder="€" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} />
+        <label class="tiny muted">am <input class="inp" type="number" min="1" max="31" style={{ width: 56 }} value={f.day} onInput={(e) => setF({ ...f, day: e.currentTarget.value })} />.</label>
+        <Select style={{ width: 140 }} value={f.cycle} onChange={(v) => setF({ ...f, cycle: v })} options={[{ value: 'month', label: 'monatlich' }, { value: 'quarter', label: 'vierteljährlich' }, { value: 'year', label: 'jährlich' }]} />
+        {f.cycle !== 'month' && <label class="tiny muted">Monat <input class="inp" type="number" min="1" max="12" style={{ width: 56 }} value={f.month} onInput={(e) => setF({ ...f, month: e.currentTarget.value })} /></label>}
+        <button class="btn xs" onClick={add}><Plus size={12} /></button>
+      </div>
+      <div class="row gap-s mt" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}><span class="small">Einmalig bekommen:</span><input class="inp" style={{ width: 80 }} placeholder="€" value={once.amount} onInput={(e) => setOnce({ ...once, amount: e.currentTarget.value })} /><input class="inp grow" placeholder="wofür? (z. B. Nebenjob, von Oma)" value={once.note} onInput={(e) => setOnce({ ...once, note: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && addOnce()} /><button class="btn xs" onClick={addOnce}><Plus size={12} /></button></div>
+      {m?.incomes?.length > 0 && <div class="col mt" style={{ gap: 2 }}>{m.incomes.map((x) => <div class="row small"><span class="tiny muted" style={{ width: 50 }}>{new Date(x.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span><span class="grow">{x.note || 'Einnahme'}</span><span style={{ color: 'var(--green)' }}>+{eur(x.amount)}</span><button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeIncome', { id: x.id }))}><X size={11} /></button></div>)}</div>}
     </Panel>
   );
 }

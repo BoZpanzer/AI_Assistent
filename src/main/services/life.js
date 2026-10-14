@@ -86,9 +86,57 @@ class Life {
     const isNow = y === now.getFullYear() && m === now.getMonth() + 1;
     const daysIn = new Date(y, m, 0).getDate(); const dayNo = isNow ? now.getDate() : daysIn;
     const forecast = isNow && dayNo >= 5 ? r2(total / dayNo * daysIn) : null;
+    // Feste Posten dieses Monats (mit Stichtag: schon fällig oder noch offen) + einmalige Einnahmen
+    const fixed = this.recurring().filter((x) => x.active && this.occurs(x, y, m)).map((x) => ({ ...x, dueDay: Math.min(x.day, daysIn), due: !isNow || Math.min(x.day, daysIn) <= dayNo }));
+    const once = this.db().all('SELECT * FROM incomes WHERE at>=? AND at<? ORDER BY at DESC', from.toISOString(), to.toISOString());
+    const income = r2(fixed.filter((x) => x.kind === 'income').reduce((a, x) => a + x.amount, 0) + once.reduce((a, x) => a + x.amount, 0));
+    const fixedOut = r2(fixed.filter((x) => x.kind === 'expense').reduce((a, x) => a + x.amount, 0));
+    const subsThisMonth = r2(this.subscriptions().filter((x) => x.active).reduce((a, x) => { const nc = new Date(x.nextCharge + 'T12:00:00'); return a + (x.cycle === 'month' || x.cycle === 'week' ? monthly(x) : (nc.getFullYear() === y && nc.getMonth() + 1 === m ? x.amount : 0)); }, 0));
+    // Saldo = was bis Monatsende noch frei ist: Einnahmen minus feste Posten, Abos und Ausgaben bisher
+    const balance = income ? r2(income - fixedOut - subsThisMonth - total) : null;
+    const perDay = balance != null && isNow ? r2(balance / Math.max(1, daysIn - dayNo + 1)) : null;
     return { month: `${y}-${String(m).padStart(2, '0')}`, total, subscriptions: subs, totalWithSubs: r2(total + subs), budget, left: budget != null ? r2(budget - total - subs) : null, forecast,
+      income, fixedOut, subsThisMonth, balance, perDay, fixed, incomes: once.map((x) => ({ id: x.id, amount: x.amount, note: x.note, at: x.at })),
       categories: Object.entries(byCat).map(([category, sum]) => ({ category, sum })).sort((a, b) => b.sum - a.sum), recent: rows.slice(0, 12).map((x) => ({ id: x.id, amount: x.amount, category: x.category, note: x.note, at: x.at })) };
   }
+
+  // ---------- Feste Einnahmen & Fixkosten, einmalige Einnahmen ----------
+  recurring() {
+    return this.db().all('SELECT * FROM recurring ORDER BY kind DESC, day, name').map((x) => ({ id: x.id, kind: x.kind, name: x.name, amount: x.amount, cycle: x.cycle, day: x.day, month: x.month, category: x.category, active: !!x.active, monthly: r2(x.cycle === 'year' ? x.amount / 12 : x.cycle === 'quarter' ? x.amount / 3 : x.amount) }));
+  }
+  addRecurring({ kind, name, amount, cycle = 'month', day = 1, month = null, category = '' } = {}) {
+    if (!['income', 'expense'].includes(kind)) throw new Error('Art: income oder expense');
+    const a = Number(String(amount).replace(',', '.'));
+    if (!name || !(a > 0 && a < 1e6)) throw new Error('Name und Betrag nötig');
+    if (!['month', 'quarter', 'year'].includes(cycle)) throw new Error('Rhythmus: month, quarter oder year');
+    const d = Math.max(1, Math.min(31, Math.round(Number(day) || 1)));
+    const mo = cycle === 'month' ? null : Math.max(1, Math.min(12, Math.round(Number(month) || new Date().getMonth() + 1)));
+    const cat = kind === 'expense' ? (CATEGORIES.includes(category) ? category : pickBy(CAT_WORDS, name, /miete|strom|internet|nebenkosten|wohn/i.test(name) ? 'Wohnen' : 'Sonstiges')) : String(category || '').slice(0, 40);
+    const rid = id('rc');
+    this.db().run('INSERT INTO recurring(id,kind,name,amount,cycle,day,month,category,active,created_at) VALUES(?,?,?,?,?,?,?,?,1,?)', rid, kind, String(name).slice(0, 60), r2(a), cycle, d, mo, cat, nowIso());
+    this.emit(); return this.recurring().find((x) => x.id === rid);
+  }
+  updateRecurring(rid, patch = {}) {
+    const c = this.db().get('SELECT * FROM recurring WHERE id=?', rid); if (!c) throw new Error('Eintrag nicht gefunden');
+    this.db().run('UPDATE recurring SET name=?, amount=?, day=?, active=? WHERE id=?', patch.name ?? c.name, patch.amount != null ? r2(Number(String(patch.amount).replace(',', '.'))) : c.amount, patch.day != null ? Math.max(1, Math.min(31, Math.round(patch.day))) : c.day, patch.active != null ? (patch.active ? 1 : 0) : c.active, rid);
+    this.emit(); return this.recurring().find((x) => x.id === rid);
+  }
+  removeRecurring(rid) { this.db().run('DELETE FROM recurring WHERE id=?', rid); this.emit(); return true; }
+  /** Fällt ein fester Posten in diesen Monat? (monatlich immer, vierteljährlich/jährlich ab Startmonat) */
+  occurs(x, y, m) {
+    if (x.cycle === 'month') return true;
+    if (x.cycle === 'year') return m === x.month;
+    if (x.cycle === 'quarter') return ((m - x.month) % 3 + 3) % 3 === 0;
+    return false;
+  }
+  addIncome({ amount, note = '', at } = {}) {
+    const a = Number(String(amount).replace(',', '.'));
+    if (!(a > 0 && a < 1e6)) throw new Error('Betrag ungültig');
+    const when = at ? new Date(at) : new Date(); if (isNaN(when)) throw new Error('Datum ungültig');
+    const iid = id('in'); this.db().run('INSERT INTO incomes(id,amount,note,at,created_at) VALUES(?,?,?,?,?)', iid, r2(a), String(note).slice(0, 120), when.toISOString(), nowIso());
+    this.emit(); return { id: iid, amount: r2(a), note, month: this.month() };
+  }
+  removeIncome(iid) { this.db().run('DELETE FROM incomes WHERE id=?', iid); this.emit(); return true; }
 
   // ---------- Abos ----------
   subscriptions() { return this.db().all('SELECT * FROM subscriptions ORDER BY next_charge').map((x) => ({ id: x.id, name: x.name, amount: x.amount, cycle: x.cycle, nextCharge: x.next_charge, cancelBy: x.cancel_by, remind: !!x.remind, active: !!x.active, monthly: r2(monthly(x)) })); }

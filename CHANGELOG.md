@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.32.0 – Feste Einnahmen, Fixkosten und Saldo
+
+- **Einnahmen & Fixkosten** (Alltag): feste Posten mit Stichtag, monatlich, vierteljährlich oder jährlich, z. B. Vergütung am 28., Kindergeld, Miete am 1., Haftpflicht jährlich im März. Sie zählen jeden Monat automatisch mit, mit Anzeige „schon fällig“ oder „kommt noch“. Per Sprache: „Jarvis, meine Miete ist 380 € am 1.“
+- **Einmalige Einnahmen:** „50 € von Oma bekommen“, „Nebenjob 120 €“.
+- **Saldo:** oben in den Ausgaben steht, was bis Monatsende frei ist (Einnahmen − Fixkosten − Abos − Ausgaben), und wie viel das pro Tag ist.
+- Beträge mit Tausenderpunkt.
+
 ## 3.31.1 – Neue Karte in der Spielanalyse
 
 - Die Karte in der LoL-Spielanalyse ist jetzt eine eigene Vektorkarte des Kluftes: Lanes, Fluss, Basen, Drache und Baron. Die Jungle-Pfade sind geglättet, beschriftet ist nur jede dritte Minute, Start und Ende sind markiert. Deine Tode erscheinen als rote Marker mit Minute und öffnen per Klick das Replay. Die echte Minimap lässt sich per Knopf darunterlegen.

@@ -212,4 +212,9 @@ module.exports = [
     CREATE INDEX ix_workouts ON workouts(ex_key, at);
     CREATE TABLE deadlines(id TEXT PRIMARY KEY, title TEXT NOT NULL, due_at TEXT NOT NULL, course TEXT NOT NULL DEFAULT '', source TEXT NOT NULL, ref TEXT, done INTEGER NOT NULL DEFAULT 0, reminded TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, UNIQUE(source, ref));
   `),
+  // v8 — feste Einnahmen/Fixkosten und einmalige Einnahmen
+  (db) => db.exec(`
+    CREATE TABLE recurring(id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('income','expense')), name TEXT NOT NULL, amount REAL NOT NULL, cycle TEXT NOT NULL DEFAULT 'month', day INTEGER NOT NULL DEFAULT 1, month INTEGER, category TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+    CREATE TABLE incomes(id TEXT PRIMARY KEY, amount REAL NOT NULL, note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, created_at TEXT NOT NULL);
+  `),
 ];

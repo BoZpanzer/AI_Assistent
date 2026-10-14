@@ -181,6 +181,9 @@ app.whenReady().then(async () => {
     const L = core.life;
     core.settings.update({ life: { budgetMonthly: 450 } });
     L.addExpense({ amount: 12.5, note: 'Döner' }); L.addExpense({ amount: 49, note: 'Deutschlandticket' }); L.addExpense({ amount: 63.4, note: 'Rewe Wocheneinkauf' });
+    L.addRecurring({ kind: 'income', name: 'Ausbildungsvergütung', amount: 1100, day: 28 }); L.addRecurring({ kind: 'income', name: 'Kindergeld', amount: 255, day: 5 });
+    L.addRecurring({ kind: 'expense', name: 'Miete', amount: 380, day: 1 }); L.addRecurring({ kind: 'expense', name: 'Handyvertrag', amount: 15, day: 10 });
+    L.addIncome({ amount: 50, note: 'von Oma' });
     L.addSubscription({ name: 'Spotify', amount: 10.99, nextCharge: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10), remind: true });
     L.addShopping(['Milch', 'Bananen', 'Nudeln', 'Klopapier']);
     L.addPantry([{ name: 'Passata' }, { name: 'Zwiebeln' }, { name: 'Joghurt', expires: new Date(Date.now() + 86400000).toISOString() }]);
@@ -188,7 +191,9 @@ app.whenReady().then(async () => {
     core.deadlines.add({ title: 'Praxisbericht abgeben', dueAt: new Date(Date.now() + 4 * 86400000).toISOString(), course: 'Praxisphase' });
     core.deadlines.add({ title: 'Abgabe Projektarbeit Datenbanken', dueAt: new Date(Date.now() + 12 * 86400000).toISOString() });
     await nav('life');
-    await waitFor(() => js(`document.body.textContent.includes('Einkaufsliste') && document.body.textContent.includes('Spotify') && document.body.textContent.includes('Bankdrücken') && document.body.textContent.includes('Kühlregal') && document.body.textContent.includes('Praxisbericht abgeben') && document.body.textContent.includes('Unterwegs')`), 8000);
+    await waitFor(() => js(`document.body.textContent.includes('Einkaufsliste') && document.body.textContent.includes('Spotify') && document.body.textContent.includes('Bankdrücken') && document.body.textContent.includes('Kühlregal') && document.body.textContent.includes('Praxisbericht abgeben') && document.body.textContent.includes('Unterwegs') && document.body.textContent.includes('frei bis Monatsende')`), 8000);
+    await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Einnahmen & Fixkosten')); p && p.scrollIntoView(); })()`); await sleep(300);
+    await shot('68c-alltag-geld');
     await shot('68-alltag');
     await js(`(() => { const p = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Fortschritt als geschätztes 1RM')); p && p.scrollIntoView(); })()`); await sleep(300);
     await shot('68b-alltag-training');

@@ -198,3 +198,31 @@ test('Unterwegs: Haltestelle, Abfahrten, Verbindung zum Termin mit Ort, „Los�
     assert.match(n.body, /STR 4 ab Leipzig, Hauptbahnhof um .*Gl\. 1 \(\+1\)/);
   } finally { cleanup(); }
 });
+
+test('Feste Einnahmen & Fixkosten: Stichtag, vierteljährlich/jährlich, einmalige Einnahmen, Saldo bis Monatsende', async () => {
+  const { core, cleanup } = tempCore();
+  try {
+    const L = core.life;
+    const now = new Date(2026, 9, 14, 12); // 14. Oktober 2026
+    L.addRecurring({ kind: 'income', name: 'Ausbildungsvergütung', amount: 1100, day: 28 });
+    L.addRecurring({ kind: 'expense', name: 'Miete', amount: 380, day: 1 });
+    L.addRecurring({ kind: 'expense', name: 'Haftpflicht', amount: 60, cycle: 'year', month: 3, day: 15 });
+    L.addRecurring({ kind: 'expense', name: 'Handyvertrag', amount: 30, cycle: 'quarter', month: 1, day: 5 });
+    assert.equal(L.recurring().find((x) => x.name === 'Miete').category, 'Wohnen');
+    assert.throws(() => L.addRecurring({ kind: 'x', name: 'a', amount: 1 }), /income oder expense/);
+    L.addIncome({ amount: 50, note: 'von Oma', at: new Date(2026, 9, 3).toISOString() });
+    L.addExpense({ amount: 120, note: 'Rewe', at: new Date(2026, 9, 5).toISOString() });
+    L.addSubscription({ name: 'Spotify', amount: 11, nextCharge: '2026-10-20' });
+    const m = L.month('2026-10', now);
+    assert.equal(m.income, 1150);
+    assert.equal(m.fixedOut, 410, 'Miete + Handy (Quartal ab Januar: Okt ja), Haftpflicht nur im März');
+    assert.equal(m.subsThisMonth, 11);
+    assert.equal(m.balance, 1150 - 410 - 11 - 120);
+    assert.equal(m.perDay, Math.round((1150 - 541) / 18 * 100) / 100, '18 Tage inkl. heute');
+    const vg = m.fixed.find((x) => x.name === 'Ausbildungsvergütung'); assert.equal(vg.due, false, 'kommt am 28. noch');
+    assert.equal(m.fixed.find((x) => x.name === 'Miete').due, true);
+    assert.equal(L.month('2026-03', now).fixedOut, 380 + 60, 'März: Miete + Haftpflicht (Handy: Jan/Apr/Jul/Okt)');
+    const out = await core.orchestrator.execute('recurring_money', { action: 'add', kind: 'income', name: 'Kindergeld', amount: 255, day: 5 }, { conversationId: 'x', channel: 'voice' });
+    assert.equal(out.response.monthly, 255);
+  } finally { cleanup(); }
+});
