@@ -1077,7 +1077,7 @@ test('Tarkov-Log: Quest-Meldungen → Spielstand → TarkovTracker (nur mit Schr
     assert.equal(core.gaming.progress.find('eft', 'quest', 'Debut').status, 'done');
     // Spielstart → Mitlesen an, Spielende → aus
     core.bus.emit('game:running', { running: ['eft'], started: ['eft'], stopped: [] });
-    await new Promise((r) => setTimeout(r, 30));
+    for (let i = 0; i < 100 && !core.gaming.eftLogs.status().watching; i++) await new Promise((r) => setTimeout(r, 20));
     assert.equal(core.gaming.eftLogs.status().watching, true); assert.equal(core.gaming.eftLogs.status().dir, dir);
     core.bus.emit('game:running', { running: [], started: [], stopped: ['eft'] });
     assert.equal(core.gaming.eftLogs.status().watching, false);

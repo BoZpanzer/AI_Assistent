@@ -45,7 +45,9 @@ class EftLogs {
   async gameDir() {
     if (this.dir !== undefined && this.dir) return this.dir;
     const ok = (d) => { try { return !!d && fs.existsSync(path.join(d, 'Logs')); } catch { return false; } };
-    const cands = [this.cfg().eftDir];
+    // eingestellter Ordner zuerst – dann keine Registry-/Steam-Suche nötig
+    if (ok(this.cfg().eftDir)) { this.dir = this.cfg().eftDir; return this.dir; }
+    const cands = [];
     if (process.platform === 'win32') {
       const steam = this.s.gaming.steam;
       for (const key of ['HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\EscapeFromTarkov', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\EscapeFromTarkov']) {
