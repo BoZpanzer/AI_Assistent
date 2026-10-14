@@ -2,6 +2,23 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.27.0 – Offizielle Schnittstellen: CS2, Assetto Corsa, PUBG, Stardew
+
+- **Counter-Strike 2 – Match-Nachbesprechung** über Valves offizielle Game State Integration. Nach einem Klick auf „Einrichten“ (mit Bestätigung) legt JARVIS die Valve-Konfigurationsdatei an. CS2 schickt dann nur deine eigenen Werte an deinen PC.
+  - Nach dem Match: jede Runde mit Seite, Kaufart (Eco/Force/Halb/Voll), Kills und Tod.
+  - Siege pro Kaufart, K/D pro Seite, Headshot-Quote.
+  - Auffälligkeiten, z. B. Vollkäufe ohne Kill oder verlorene Force-Buys.
+  - Im laufenden Match zeigt JARVIS nichts an.
+- **Assetto Corsa – Rundenanalyse** aus der offiziellen Telemetrie, nur lesend und nur während AC läuft.
+  - Bestzeit, Schnitt, Konstanz und Sektoren.
+  - Die 20 Streckenabschnitte, in denen du gegenüber deiner besten Runde am meisten Zeit verlierst, mit Kurvengeschwindigkeit.
+  - Bestzeiten pro Auto und Strecke landen im Spielstand.
+- **PUBG – Match-Nachbesprechung** über die offizielle PUBG-API (kostenloser Schlüssel).
+  - Platz, Kills, Schaden, Überlebenszeit, Tod mit Waffe und Distanz.
+  - Landung, Route und Kills auf der Kartenfläche.
+  - Muster wie häufige frühe Tode.
+- **Stardew Valley – Mein Hof:** liest deinen Spielstand (nur lesend): Datum, Geld, Freundschaften mit Herzen, Geburtstage der nächsten 7 Tage (aus dem Spielstand) und offene Bündel im Gemeinschaftszentrum.
+
 ## 3.26.0 – Wiederkehrende Timer und ARK-Zucht
 
 - **Wiederkehrende Timer** für alle Spiele: täglich, wöchentlich oder alle X Stunden, z. B. Allianz-Festung in RoK oder Gildentermine. Verpasste Termine werden übersprungen. Per Sprache: „Erinner mich jeden Montag um 20 Uhr an die Festung.“

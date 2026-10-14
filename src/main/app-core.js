@@ -39,6 +39,10 @@ const { GameNews } = require('./services/gaming/news');
 const { Deals } = require('./services/gaming/deals');
 const { Rok } = require('./services/gaming/rok');
 const { Ark } = require('./services/gaming/ark');
+const { Cs2 } = require('./services/gaming/cs2');
+const { AcTelemetry } = require('./services/gaming/actelemetry');
+const { Pubg } = require('./services/gaming/pubg');
+const { Stardew } = require('./services/gaming/stardew');
 const { GameBrainSync } = require('./services/gaming/brainsync');
 const { Steam } = require('./services/gaming/steam');
 const { GameDesigner } = require('./services/gaming/designer');
@@ -86,6 +90,10 @@ function createCore(opts) {
   s.gaming.deals = new Deals(s);
   s.gaming.rok = new Rok(s);
   s.gaming.ark = new Ark(s);
+  s.gaming.cs2 = new Cs2(s);
+  s.gaming.ac = new AcTelemetry(s);
+  s.gaming.pubg = new Pubg(s);
+  s.gaming.stardew = new Stardew(s);
   s.gaming.brainSync = new GameBrainSync(s);
   s.gaming.designer = new GameDesigner(s);
   s.gaming.eftLogs = new EftLogs(s);
@@ -129,7 +137,7 @@ function createCore(opts) {
   };
   s.stop = () => {
     s.stopped = true;
-    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

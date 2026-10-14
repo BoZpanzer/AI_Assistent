@@ -51,6 +51,10 @@ const WIDGETS = {
   deals: { title: 'Wunschliste im Angebot', params: {} },
   'rok-speedups': { title: 'Speedup-Rechner', params: {} },
   'ark-breeding': { title: 'Zucht & Prägung', params: {} },
+  'cs2-matches': { title: 'Match-Nachbesprechung', params: {} },
+  'racing-laps': { title: 'Rundenanalyse', params: {} },
+  'pubg-matches': { title: 'Match-Nachbesprechung', params: {} },
+  'stardew-farm': { title: 'Mein Hof', params: {} },
   'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
   ask: { title: 'Frag JARVIS', params: {} },
@@ -63,7 +67,7 @@ function extrasFor(p) {
   if (p.integration === 'league') return ['lol-game', 'lol-coach', 'playtime', 'news'];
   if (p.integration === 'tarkov') return ['playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
-  return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
+  return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), ...(p.id === 'cs2' ? ['cs2-matches'] : []), ...(p.id === 'assettocorsa' ? ['racing-laps'] : []), ...(p.id === 'pubg' ? ['pubg-matches'] : []), ...(p.id === 'stardew' ? ['stardew-farm'] : []), 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
 }
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],

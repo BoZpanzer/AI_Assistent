@@ -312,6 +312,7 @@ function DriveSource({ st }) {
 function GamingCard({ s, secrets }) {
   const g = s.gaming;
   const [riotKey, setRiotKey] = useState('');
+  const [pubgKey, setPubgKey] = useState('');
   const [installed, , st] = useRpc('game.installed', {}, { initial: [] });
   return (
     <Panel icon={Gamepad2} title="Gaming" sub="Spiele und Integrationen">
@@ -330,6 +331,12 @@ function GamingCard({ s, secrets }) {
       <Field label="Patch-Notes: KI-Kurzfassung" hint="Nur für Spiele der letzten 14 Tage, höchstens 6 pro Tag"><Toggle checked={g.patchSummaries !== false} onChange={(v) => upd({ gaming: { patchSummaries: v } })} /></Field>
       <Field label="„Wo war ich?“ beim Spielstart" hint="Kurzer Recap aus Notizen und Spielstand, wenn du ein Spiel ≥ 3 Tage nicht gespielt hast"><Toggle checked={g.gameRecap !== false} onChange={(v) => upd({ gaming: { gameRecap: v } })} /></Field>
       <Field label="Pausen-Erinnerung (Minuten am Stück)" hint="0 = aus"><input class="inp" type="number" min="0" max="600" step="15" style={{ width: 90 }} value={g.breakReminderMin ?? 0} onChange={(e) => upd({ gaming: { breakReminderMin: Math.max(0, Math.round(Number(e.currentTarget.value) || 0)) } })} /></Field>
+      <Field label="PUBG-API-Schlüssel" hint={secrets['pubg.api_key'] ? 'gespeichert' : 'kostenlos auf developer.pubg.com – für die Match-Nachbesprechung'}>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['pubg.api_key'] ? '••••••••' : 'eyJ…'} value={pubgKey} onInput={(e) => setPubgKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'pubg.api_key', value: pubgKey }), 'Gespeichert'); setPubgKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
+      </Field>
+      <Field label="PUBG-Spielername"><input class="inp" style={{ width: 200 }} value={g.pubgName || ''} onChange={(e) => upd({ gaming: { pubgName: e.currentTarget.value.trim() } })} /></Field>
+      <Field label="CS2: Spielzustand auswerten (Valve GSI)" hint="Einrichten auf der CS2-Seite"><Toggle checked={g.cs2Gsi !== false} onChange={(v) => upd({ gaming: { cs2Gsi: v } })} /></Field>
+      <Field label="Assetto Corsa: Telemetrie auswerten"><Toggle checked={g.acTelemetry !== false} onChange={(v) => upd({ gaming: { acTelemetry: v } })} /></Field>
       <Field label="ARK: Prägungs-Intervall (Stunden)" hint="Standard 8 h, auf Servern mit anderen Raten anpassen"><input class="inp" type="number" min="0.1" max="48" step="0.25" style={{ width: 90 }} value={g.arkCuddleHours ?? 8} onChange={(e) => upd({ gaming: { arkCuddleHours: Math.max(0.1, Number(e.currentTarget.value) || 8) } })} /></Field>
       <Field label="Steam-Wunschliste: Angebote melden" hint="Wunschliste muss öffentlich sein"><Toggle checked={g.wishlistAlerts !== false} onChange={(v) => upd({ gaming: { wishlistAlerts: v } })} /></Field>
       <Field label="Ab Rabatt (%)"><input class="inp" type="number" min="0" max="100" step="5" style={{ width: 90 }} value={g.wishlistMinDiscount ?? 30} onChange={(e) => upd({ gaming: { wishlistMinDiscount: Math.min(100, Math.max(0, Math.round(Number(e.currentTarget.value) || 0))) } })} /></Field>

@@ -266,3 +266,132 @@ test('Wiederkehrende Timer und ARK-Zucht: Prägung alle X h bis zur Reife, „Ge
     assert.ok(core.gaming.layout('ark_asa').widgets.some((w) => w.type === 'ark-breeding'));
   } finally { cleanup(); }
 });
+
+test('CS2 Game State Integration: Konfig nur auf Klick, nur eigene Werte, Runden mit Kaufart, Auswertung nach dem Match', async () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path'); const http = require('node:http');
+  const { core, cleanup } = tempCore();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs2-'));
+  try {
+    const C = core.gaming.cs2;
+    const cfgDir = path.join(dir, 'game', 'csgo', 'cfg'); fs.mkdirSync(cfgDir, { recursive: true });
+    core.gaming.steam.installed = async () => new Map([[730, { appid: 730, installdir: dir }]]);
+    let st = await C.status();
+    assert.equal(st.found, true); assert.equal(st.installed, false, 'ohne Klick keine Datei');
+    // Port 0 → freier Port für den Test
+    const fixedPort = 31700 + Math.floor(Math.random() * 500); C.port = () => fixedPort;
+    await C.install();
+    const file = path.join(cfgDir, 'gamestate_integration_jarvis.cfg');
+    const cfg = fs.readFileSync(file, 'utf8');
+    assert.match(cfg, /"uri" "http:\/\/127\.0\.0\.1:\d+\/cs2"/); assert.match(cfg, /"player_state" "1"/);
+    const token = cfg.match(/"token" "([0-9a-f]+)"/)[1];
+    const port = Number(cfg.match(/127\.0\.0\.1:(\d+)/)[1]);
+    const post = (body) => new Promise((res, rej) => { const r = http.request({ host: '127.0.0.1', port, path: '/cs2', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (x) => { x.resume(); x.on('end', res); }); r.on('error', rej); r.end(JSON.stringify(body)); });
+    const me = '76561198000000001';
+    const pkt = (round, phase, state, extra = {}) => ({ auth: { token }, provider: { steamid: me }, map: { name: 'de_mirage', mode: 'premier', phase: 'live', round, team_ct: { score: extra.ct ?? 0 }, team_t: { score: extra.t ?? 0 } }, round: { phase, ...(extra.win ? { win_team: extra.win } : {}) }, player: { steamid: extra.spectating || me, team: extra.side || 'CT', state: { health: 100, money: 800, equip_value: 0, round_kills: 0, round_killhs: 0, ...state }, match_stats: { kills: extra.k ?? 0, assists: 0, deaths: extra.d ?? 0 } } });
+    // 6 Runden: Eco verloren, Vollkäufe teils ohne Kill gestorben
+    const plan = [[800, 850, 0, true, 'T'], [3000, 4700, 2, false, 'CT'], [4500, 5200, 0, true, 'T'], [4000, 4900, 0, true, 'T'], [5000, 5100, 3, false, 'CT'], [4200, 5000, 0, true, 'T']];
+    for (let i = 0; i < plan.length; i++) {
+      const [money, equip, kills, died, win] = plan[i];
+      await post(pkt(i, 'freezetime', { money }));
+      await post(pkt(i, 'live', { money: 200, equip_value: equip }));
+      await post(pkt(i, 'over', { round_kills: kills, round_killhs: kills ? 1 : 0, health: died ? 0 : 50, equip_value: died ? 0 : equip }, { win }));
+      // Zuschauen eines Mitspielers nach dem Tod: wird ignoriert
+      await post(pkt(i, 'over', { round_kills: 9 }, { win, spectating: '76561198000000002' }));
+    }
+    await post({ ...pkt(6, 'over', {}, { ct: 2, t: 4, k: 5, d: 4 }), map: { name: 'de_mirage', mode: 'premier', phase: 'gameover', round: 6, team_ct: { score: 2 }, team_t: { score: 4 } } });
+    await new Promise((r) => setTimeout(r, 50));
+    const [m] = C.matches();
+    assert.equal(m.map, 'de_mirage'); assert.equal(m.result, 'Niederlage'); assert.equal(m.us, 2); assert.equal(m.them, 4);
+    assert.deepEqual(m.rounds.map((r) => [r.buy, r.kills, r.died, r.won]), [['eco', 0, true, false], ['voll', 2, false, true], ['voll', 0, true, false], ['voll', 0, true, false], ['voll', 3, false, true], ['voll', 0, true, false]]);
+    assert.ok(m.summary.findings.some((f) => /3× mit Vollkauf ohne Kill/.test(f)), JSON.stringify(m.summary.findings));
+    assert.ok(core.db.get("SELECT 1 x FROM notifications WHERE title LIKE 'CS2 de_mirage: Niederlage 2:4'"));
+    // falscher Token → ignoriert
+    await post({ ...pkt(0, 'freezetime', {}), auth: { token: 'x' } }); assert.equal(C.cur, null);
+    st = await C.status(); assert.equal(st.installed, true); assert.equal(st.listening, true);
+  } finally { core.gaming.cs2.stop(); cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Assetto Corsa: Runden aus der Telemetrie, Konstanz und Abschnitte mit Zeitverlust', () => {
+  const { analyze, fmtLap } = require('../src/main/services/gaming/actelemetry');
+  const { core, cleanup } = tempCore();
+  try {
+    const A = core.gaming.ac;
+    A.onSample({ t: 'static', car: 'ks_mazda_mx5_cup', track: 'magione' });
+    // 4 Runden à 100 s; Runde 3 ist im Abschnitt 40–45 % 1,5 s langsamer (Kurve 62 statt 80 km/h)
+    let lap = 0; let tAll = 0;
+    const lapTimes = [101000, 100000, 101500, 100400];
+    for (let L = 0; L < 4; L++) {
+      const T = lapTimes[L];
+      for (let i = 0; i <= 200; i++) {
+        const pos = i / 200; const conc = L === 2 ? Math.min(1, Math.max(0, (pos - 0.4) / 0.05)) * 1500 : 0; const cur = Math.round(pos * 100000 + (L === 2 ? 0 : (T - 100000) * pos) + conc);
+        const slow = L === 2 && pos >= 0.4 && pos < 0.45;
+        A.onSample({ t: 's', st: 2, lap, cur, last: L ? lapTimes[L - 1] : 0, best: 0, pit: 0, sec: pos < 0.5 ? 0 : 1, lsec: L ? 50000 : 0, pos, spd: slow ? 62 : 80, gas: 1, brk: 0, gear: 3 });
+      }
+      lap++; tAll += T;
+      A.onSample({ t: 's', st: 2, lap, cur: 100, last: T, best: 0, pit: 0, sec: 0, lsec: T - 50000, pos: 0.0005, spd: 80, gas: 1, brk: 0, gear: 3 });
+    }
+    A.onSample({ t: 's', st: 1, lap, cur: 0, last: 0, best: 0, pit: 0, sec: 0, lsec: 0, pos: 0.5, spd: 0, gas: 0, brk: 0, gear: 0 }); // Replay → ignoriert
+    const rec = A.finish();
+    assert.equal(rec.laps.length, 4);
+    assert.equal(rec.analysis.best, 100000); assert.equal(fmtLap(rec.analysis.best), '1:40.000');
+    assert.deepEqual(rec.laps[1].sectors, [50000, 50000]);
+    const worst = rec.analysis.sections.slice().sort((a, b) => (b.avgLossMs || 0) - (a.avgLossMs || 0))[0];
+    assert.ok(worst.from >= 35 && worst.to <= 50, JSON.stringify(worst));
+    assert.ok(rec.analysis.findings.some((f) => /Kurvenspeed/.test(f)), JSON.stringify(rec.analysis.findings));
+    assert.ok(rec.analysis.findings.some((f) => /Konstanz/.test(f)));
+    assert.equal(core.gaming.progress.list('assettocorsa')[0].value, '1:40.000');
+    assert.deepEqual(analyze([]), { laps: 0, valid: 0 });
+  } finally { cleanup(); }
+});
+
+test('PUBG: Telemetrie (Route, Landung, Tod) und Match-Abruf über die offizielle API', async () => {
+  const { analyzeTelemetry } = require('../src/main/services/gaming/pubg');
+  const me = 'account.me';
+  const ev = [
+    { _T: 'LogParachuteLanding', character: { accountId: me, location: { x: 400000, y: 300000 } } },
+    ...Array.from({ length: 30 }, (_, i) => ({ _T: 'LogPlayerPosition', elapsedTime: 60 + i * 5, character: { accountId: me, location: { x: 400000 + i * 1000, y: 300000 } } })),
+    { _T: 'LogPlayerKillV2', victim: { accountId: 'x', name: 'Gegner', location: { x: 410000, y: 300500 } }, finisher: { accountId: me, name: 'BoZ' } },
+    { _T: 'LogPlayerKillV2', victim: { accountId: me, location: { x: 429000, y: 300000 } }, finisher: { accountId: 'y', name: 'Sniper' }, finishDamageInfo: { damageCauserName: 'Kar98k', distance: 21000 } },
+  ];
+  const t = analyzeTelemetry(ev, me);
+  assert.deepEqual(t.landing, { x: 400000, y: 300000 });
+  assert.equal(t.route.length, 15, 'alle ~10 s ein Punkt');
+  assert.deepEqual(t.death, { x: 429000, y: 300000, by: 'Sniper', weapon: 'Kar98k', distanceM: 210 });
+  assert.equal(t.kills.length, 1);
+
+  const fetch = async (url, opts = {}) => {
+    if (url.includes('/players?')) { assert.equal(opts.headers.Authorization, 'Bearer KEY'); return new Response(JSON.stringify({ data: [{ id: me, relationships: { matches: { data: [{ id: 'm1' }] } } }] })); }
+    if (url.includes('/matches/m1')) return new Response(JSON.stringify({ data: { attributes: { mapName: 'Baltic_Main', gameMode: 'squad-fpp', duration: 1800, createdAt: '2026-10-13T20:00:00Z' } }, included: [{ type: 'participant', attributes: { stats: { playerId: me, winPlace: 12, kills: 1, damageDealt: 180.4, timeSurvived: 1100, walkDistance: 2500 } } }, { type: 'asset', attributes: { URL: 'https://telemetry-cdn.pubg.com/x.json' } }] }));
+    if (url.startsWith('https://telemetry-cdn')) return new Response(JSON.stringify(ev));
+    throw new Error('offline');
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  try {
+    assert.match((await core.gaming.pubg.sync()).skipped, /Schlüssel/);
+    core.secrets.set('pubg.api_key', 'KEY'); core.settings.update({ gaming: { pubgName: 'BoZ' } });
+    assert.equal((await core.gaming.pubg.sync()).added, 1);
+    const [m] = core.gaming.pubg.matches();
+    assert.deepEqual([m.map, m.mapSize, m.place, m.damage], ['Erangel', 816000, 12, 180]);
+    assert.equal(m.death.by, 'Sniper');
+    assert.equal((await core.gaming.pubg.sync()).added, 0, 'schon bekannt');
+    assert.ok(core.db.get("SELECT 1 x FROM notifications WHERE title='PUBG Erangel: Platz 12'"));
+  } finally { cleanup(); }
+});
+
+test('Stardew Valley: Spielstand lesen – Datum, Geld, Herzen, Geburtstage aus dem Spielstand, Bündel', () => {
+  const { parseSave, upcomingBirthdays } = require('../src/main/services/gaming/stardew');
+  const xml = `<?xml version="1.0"?><SaveGame xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><player><name>BoZ</name><farmName>Waldhof</farmName><money>12345</money>
+    <friendshipData><item><key><string>Abigail</string></key><value><Friendship><Points>1300</Points><GiftsThisWeek>1</GiftsThisWeek><Status>Friendly</Status></Friendship></value></item>
+    <item><key><string>Linus</string></key><value><Friendship><Points>260</Points><GiftsThisWeek>0</GiftsThisWeek><Status>Friendly</Status></Friendship></value></item></friendshipData></player>
+    <locations><GameLocation><characters><NPC xsi:type="Villager"><name>Abigail</name><birthday_Season>fall</birthday_Season><birthday_Day>13</birthday_Day></NPC><NPC xsi:type="Villager"><name>Linus</name><birthday_Season>winter</birthday_Season><birthday_Day>3</birthday_Day></NPC></characters></GameLocation>
+    <GameLocation xsi:type="CommunityCenter"><bundles><item><key><int>0</int></key><value><ArrayOfBoolean><boolean>true</boolean><boolean>true</boolean><boolean>false</boolean><boolean>false</boolean></ArrayOfBoolean></value></item><item><key><int>1</int></key><value><ArrayOfBoolean><boolean>true</boolean><boolean>true</boolean></ArrayOfBoolean></value></item></bundles></GameLocation></locations>
+    <currentSeason>fall</currentSeason><dayOfMonth>10</dayOfMonth><year>2</year>
+    <bundleData><item><key><string>Pantry/0</string></key><value><string>Spring Crops/O 465 20/24 1 0 188 1 0 190 1 0 192 1 0/0</string></value></item><item><key><string>Crafts Room/1</string></key><value><string>Exotic Foraging/O 235 5/88 1 0 90 1 0 78 1 0 420 1 0 422 1 0/1/2</string></value></item></bundleData></SaveGame>`;
+  const s = parseSave(xml);
+  assert.deepEqual([s.farmer, s.farm, s.money, s.year, s.season, s.day], ['BoZ', 'Waldhof', 12345, 2, 'fall', 10]);
+  assert.deepEqual(s.friends.map((f) => [f.name, f.hearts]), [['Abigail', 5], ['Linus', 1]]);
+  assert.deepEqual(s.bundles.map((b) => [b.roomDe, b.name, b.done, b.need, b.complete]), [['Vorratskammer', 'Spring Crops', 2, 4, false], ['Handwerksraum', 'Exotic Foraging', 2, 2, true]]);
+  const up = upcomingBirthdays(s, 7);
+  assert.deepEqual(up.map((b) => [b.name, b.inDays, b.hearts]), [['Abigail', 3, 5]]);
+  assert.equal(upcomingBirthdays(s, 30).length, 2, 'Linus am 3. Winter (21 Tage)');
+});

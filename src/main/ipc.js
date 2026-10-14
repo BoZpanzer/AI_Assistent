@@ -7,7 +7,7 @@ const logger = require('./core/logger');
 const { friendlyError } = require('./providers/gemini');
 const log = logger.scope('ipc');
 
-const ALLOWED_SECRETS = ['gemini.api_key', 'riot.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
+const ALLOWED_SECRETS = ['gemini.api_key', 'riot.api_key', 'pubg.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
 
 /**
  * Single RPC entry point. Only our own app:// frame may call; every method
@@ -302,6 +302,13 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.removeServer': ({ address }) => { const g = s.settings.get('gaming'); s.settings.update({ gaming: { servers: (g.servers || []).filter((x) => x.address !== address) } }); return true; },
     'deals.state': () => s.gaming.deals.state(),
     'deals.check': () => s.gaming.deals.check({ notify: false }),
+    'ac.sessions': () => s.gaming.ac.sessions(),
+    'pubg.matches': () => ({ matches: s.gaming.pubg.matches().slice(0, 20), stats: s.gaming.pubg.stats(), configured: !!s.gaming.pubg.key() && !!s.settings.get('gaming').pubgName }),
+    'pubg.sync': () => s.gaming.pubg.sync(),
+    'stardew.read': () => s.gaming.stardew.read(),
+    'cs2.status': () => s.gaming.cs2.status(),
+    'cs2.install': () => s.gaming.cs2.install(),
+    'cs2.matches': () => s.gaming.cs2.matches(),
     'ark.babies': ({ game }) => s.gaming.ark.state(game),
     'ark.add': ({ game, ...b }) => s.gaming.ark.add(game, b),
     'ark.imprinted': ({ game, id }) => s.gaming.ark.imprinted(game, id),

@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -1227,6 +1227,102 @@ function Deals() {
   );
 }
 
+function Cs2Matches() {
+  const [st, reloadSt] = useRpc('cs2.status', {}, { events: ['game:data'] });
+  const [list] = useRpc('cs2.matches', {}, { events: ['game:data'], initial: [] });
+  const [open, setOpen] = useState(0);
+  const install = async () => {
+    if (!(await ask('CS2-Spielzustand für JARVIS freigeben? JARVIS legt in deinem CS2-Ordner die offizielle Valve-Datei „gamestate_integration_jarvis.cfg“ an. CS2 schickt dann nur deine eigenen Werte an deinen PC (127.0.0.1). Danach CS2 neu starten.', '', { confirmOnly: true, okLabel: 'Einrichten' }))) return;
+    await guard(() => rpc('cs2.install'), 'Eingerichtet – CS2 neu starten'); reloadSt();
+  };
+  const col = (r) => (r.won ? 'var(--green)' : 'var(--red, #e5484d)');
+  return (
+    <Panel icon={Crosshair} title="Match-Nachbesprechung" sub="Valve Game State Integration – nur deine Werte, ausgewertet nach dem Match">
+      {st && !st.installed && <div class="notice small mb">{st.found ? <>Noch nicht eingerichtet. <button class="btn xs" onClick={install}>Einrichten</button></> : 'CS2 wurde in deiner Steam-Bibliothek nicht gefunden.'}</div>}
+      {!list.length && <Empty>Nach deinem nächsten Match (ab 5 Runden) erscheint hier die Auswertung: Runden, Kaufarten, Seiten, Auffälligkeiten.</Empty>}
+      {list.slice(0, 6).map((m, i) => <div class="mb">
+        <div class="row small" style={{ cursor: 'pointer' }} onClick={() => setOpen(open === i ? -1 : i)}><b class="grow">{m.map} · {m.result || '–'} {m.us != null ? `${m.us}:${m.them}` : ''}</b><span class="muted">{m.stats ? `${m.stats.kills}/${m.stats.assists}/${m.stats.deaths}` : ''}</span><span class="tiny muted" style={{ marginLeft: 8 }}>{ago(m.endedAt)}</span></div>
+        {open === i && <div class="col" style={{ gap: 4, marginTop: 4 }}>
+          <div class="row wrap" style={{ gap: 2 }}>{m.rounds.map((r) => <span title={`Runde ${r.n} · ${r.side} · ${r.buy || '?'} · ${r.kills} Kills${r.died ? ' · tot' : ''}`} style={{ width: 16, height: 22, borderRadius: 3, background: col(r), opacity: r.buy === 'eco' ? 0.45 : 0.9, fontSize: 9, color: '#000', display: 'grid', placeItems: 'center' }}>{r.kills || ''}</span>)}</div>
+          <div class="tiny muted">Grün = gewonnen, blass = Eco · Zahl = deine Kills</div>
+          <div class="small">{Object.entries(m.summary?.byBuy || {}).map(([k, v]) => `${k}: ${v.won}/${v.rounds}`).join(' · ')}{m.summary?.hsPct != null ? ` · ${m.summary.hsPct} % Headshots` : ''}</div>
+          {m.summary?.ct && m.summary?.t && <div class="small">CT: {m.summary.ct.won}/{m.summary.ct.rounds} Runden, {m.summary.ct.kills} K / {m.summary.ct.deaths} D · T: {m.summary.t.won}/{m.summary.t.rounds}, {m.summary.t.kills} K / {m.summary.t.deaths} D</div>}
+          {(m.summary?.findings || []).map((f) => <div class="small"><TriangleAlert size={12} style={{ color: 'var(--orange)' }} /> {f}</div>)}
+        </div>}
+      </div>)}
+    </Panel>
+  );
+}
+
+function RacingLaps() {
+  const [list] = useRpc('ac.sessions', {}, { events: ['game:data'], initial: [] });
+  const [open, setOpen] = useState(0);
+  const lap = (ms) => (ms == null ? '–' : `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`);
+  return (
+    <Panel icon={Timer} title="Rundenanalyse" sub="Offizielle Assetto-Corsa-Telemetrie – nur lesend, nur während AC läuft">
+      {!list.length && <Empty>Fahr ein paar Runden – danach zeigt JARVIS Bestzeit, Konstanz und wo du gegenüber deiner besten Runde Zeit verlierst.</Empty>}
+      {list.slice(0, 6).map((x, i) => { const a = x.analysis || {}; const maxLoss = Math.max(100, ...(a.sections || []).map((s) => s.avgLossMs || 0)); return <div class="mb">
+        <div class="row small" style={{ cursor: 'pointer' }} onClick={() => setOpen(open === i ? -1 : i)}><b class="grow">{x.track} · {x.car}</b><span>{lap(a.best)}</span><span class="tiny muted" style={{ marginLeft: 8 }}>{ago(x.endedAt)}</span></div>
+        {open === i && <div class="col" style={{ gap: 4, marginTop: 4 }}>
+          <div class="small">{a.valid}/{a.laps} gültige Runden · Schnitt {lap(a.avg)} · Konstanz ±{a.sd != null ? (a.sd / 1000).toFixed(2) : '–'} s{a.sectors?.length ? ' · Sektoren best/Ø: ' + a.sectors.map((s) => s ? `${lap(s.best)}/${lap(s.avg)}` : '–').join(' · ') : ''}</div>
+          {a.sections?.some((s) => s.avgLossMs != null) && <div><div class="tiny muted">Zeitverlust gegenüber deiner Bestzeit pro Abschnitt der Runde</div><div class="row" style={{ alignItems: 'flex-end', gap: 2, height: 46 }}>{a.sections.map((s) => <div title={`${s.from}–${s.to} %: ${s.avgLossMs != null ? (s.avgLossMs / 1000).toFixed(2) + ' s' : '–'}${s.minSpd != null ? ` · Kurve ${s.minSpd} km/h (best ${s.bestMinSpd})` : ''}`} style={{ flex: 1, height: Math.max(2, ((s.avgLossMs || 0) / maxLoss) * 42), background: (s.avgLossMs || 0) > 150 ? 'var(--orange)' : 'var(--cyan)', borderRadius: 2 }} />)}</div><div class="row tiny muted"><span class="grow">Start/Ziel</span><span>Runde →</span></div></div>}
+          {(a.findings || []).map((f) => <div class="small"><TriangleAlert size={12} style={{ color: 'var(--orange)' }} /> {f}</div>)}
+        </div>}
+      </div>; })}
+    </Panel>
+  );
+}
+
+function PubgMatches() {
+  const [d, reload] = useRpc('pubg.matches', {}, { events: ['game:data'] });
+  const [busy, setBusy] = useState(false); const [sel, setSel] = useState(0);
+  const sync = async () => { setBusy(true); await guard(() => rpc('pubg.sync')); setBusy(false); reload(); };
+  const list = d?.matches || []; const m = list[sel];
+  const size = m?.mapSize || Math.max(1, ...(m?.route || []).flatMap(([x, y]) => [x, y]));
+  const P = (x, y) => [(x / size) * 100, (y / size) * 100];
+  return (
+    <Panel icon={Crosshair} title="Match-Nachbesprechung" sub="Offizielle PUBG-API – nach dem Match" right={<button class="btn xs ghost" onClick={sync}>{busy ? <Spinner size={12} /> : <RefreshCw size={13} />}</button>}>
+      {d && !d.configured && <div class="notice small mb">PUBG-API-Schlüssel (kostenlos auf developer.pubg.com) und Spielername in Einstellungen → Gaming eintragen.</div>}
+      {d?.stats && <div class="row wrap gap-s mb"><span class="chip static">Ø Platz {d.stats.avgPlace}</span><span class="chip static">Ø {d.stats.avgKills} Kills</span><span class="chip static">Ø {d.stats.avgDamage} Schaden</span><span class="chip static">Top 10: {d.stats.top10}/{d.stats.matches}</span></div>}
+      {(d?.stats?.findings || []).map((f) => <div class="small mb"><TriangleAlert size={12} style={{ color: 'var(--orange)' }} /> {f}</div>)}
+      {!list.length && d?.configured && <Empty>Noch keine Matches geladen – nach dem nächsten Spiel holt JARVIS sie automatisch.</Empty>}
+      {list.length > 0 && <>
+        <Select value={String(sel)} onChange={(v) => setSel(Number(v))} options={list.map((x, i) => ({ value: String(i), label: `${x.map} · Platz ${x.place ?? '–'} · ${x.kills} Kills · ${ago(x.at)}` }))} />
+        {m && <div class="row wrap gap-s mt" style={{ alignItems: 'flex-start' }}>
+          <svg viewBox="0 0 100 100" style={{ width: 220, aspectRatio: '1', background: '#14211b', borderRadius: 8 }}>
+            {[25, 50, 75].map((v) => <g><line x1={v} x2={v} y1="0" y2="100" stroke="#ffffff14" stroke-width="0.3" /><line y1={v} y2={v} x1="0" x2="100" stroke="#ffffff14" stroke-width="0.3" /></g>)}
+            {m.route?.length > 1 && <polyline points={m.route.map(([x, y]) => P(x, y).join(',')).join(' ')} fill="none" stroke="#2fd5ff" stroke-width="0.7" />}
+            {m.landing && <circle cx={P(m.landing.x, m.landing.y)[0]} cy={P(m.landing.x, m.landing.y)[1]} r="1.8" fill="#7cf29a"><title>Landung</title></circle>}
+            {(m.kills || []).map((k) => <circle cx={P(k.x, k.y)[0]} cy={P(k.x, k.y)[1]} r="1.2" fill="#ffcc33"><title>Kill</title></circle>)}
+            {m.death && <text x={P(m.death.x, m.death.y)[0]} y={P(m.death.x, m.death.y)[1] + 1.2} font-size="4" text-anchor="middle" fill="#ff5a5a">✕</text>}
+          </svg>
+          <div class="col small grow" style={{ gap: 3, minWidth: 180 }}>
+            <div>Platz {m.place ?? '–'} · {m.kills} Kills ({m.headshots} HS) · {m.damage} Schaden</div>
+            <div>Überlebt {Math.floor(m.survived / 60)}:{String(m.survived % 60).padStart(2, '0')} · gelaufen {(m.walk / 1000).toFixed(1)} km{m.ride ? ` · gefahren ${(m.ride / 1000).toFixed(1)} km` : ''}</div>
+            {m.death && <div>Tod{m.death.by ? ` durch ${m.death.by}` : ''}{m.death.weapon ? ` · ${m.death.weapon}` : ''}{m.death.distanceM != null ? ` · ${m.death.distanceM} m` : ''}</div>}
+            <div class="tiny muted">Grün = Landung · Linie = deine Route · Gelb = Kills · ✕ = Tod</div>
+          </div>
+        </div>}
+      </>}
+    </Panel>
+  );
+}
+
+function StardewFarm() {
+  const [d, reload] = useRpc('stardew.read', {}, { events: ['game:data', 'game:running'] });
+  if (!d) return null;
+  return (
+    <Panel icon={Castle} title="Mein Hof" sub={d.found ? `Spielstand von ${fmtDateTime(d.savedAt)} – nur gelesen` : 'Stardew-Spielstand'} right={<button class="btn xs ghost" onClick={reload}><RefreshCw size={13} /></button>}>
+      {!d.found ? <Empty>Kein Spielstand gefunden. Stardew speichert beim Schlafengehen – danach steht er hier.</Empty> : <>
+        <div class="row wrap gap-s"><span class="chip static">{d.farm || 'Hof'} · {d.farmer}</span><span class="chip static">{d.day}. {d.seasonDe}, Jahr {d.year}</span><span class="chip static">{d.money.toLocaleString('de-DE')} g</span><span class="chip static">Bündel {d.bundlesDone}/{d.bundlesTotal}</span></div>
+        <div class="col mt" style={{ gap: 2 }}><b class="small">Geburtstage (nächste 7 Tage)</b>{!d.upcoming.length && <div class="small muted">Keine.</div>}{d.upcoming.map((b) => <div class="small">{b.inDays === 0 ? 'Heute' : b.inDays === 1 ? 'Morgen' : `in ${b.inDays} Tagen`}: <b>{b.name}</b> ({b.day}. {b.seasonDe}){b.hearts != null ? ` · ${b.hearts} ♥` : ''}</div>)}</div>
+        <div class="col mt" style={{ gap: 2 }}><b class="small">Freundschaften</b><div class="row wrap gap-s">{d.friends.slice(0, 12).map((f) => <span class="chip static" title={`${f.points} Punkte`}>{f.name} {f.hearts}♥</span>)}</div></div>
+        {d.bundlesOpen.length > 0 && <div class="col mt" style={{ gap: 2 }}><b class="small">Offene Bündel</b>{d.bundlesOpen.slice(0, 10).map((b) => <div class="small">{b.roomDe}: {b.name} – {b.done}/{b.need}</div>)}</div>}
+      </>}
+    </Panel>
+  );
+}
+
 function ArkBreeding({ game }) {
   const [list, reload] = useRpc('ark.babies', { game: game.id }, { events: ['game:data', 'game:timers'], initial: [] });
   const [f, setF] = useState({ name: '', species: '', matureIn: '', cuddleIn: '' });
@@ -1282,6 +1378,6 @@ export const WIDGETS = {
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
-  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding,
+  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm,
 };
 export { nextScheduled };
