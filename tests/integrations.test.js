@@ -1269,3 +1269,26 @@ test('Tarkov Item-Scanner: Ausschnitt → Gemini erkennt Item → Preise, Wert p
     assert.equal(r.need.quest, 1); assert.equal(r.need.questFir, 1);
   } finally { cleanup(); }
 });
+
+test('„Was ist das?“ in Tarkov: Mauszeiger-Ausschnitt zuerst, Hinweis nicht im Verlauf, Item-Wert erscheint als Karte', async () => {
+  const items = { data: { items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU', width: 2, height: 1, avg24hPrice: 400000, lastLowPrice: 390000, sellFor: [{ vendor: { name: 'Therapeut' }, priceRUB: 250000 }] }] } };
+  const script = [{ calls: [{ name: 'tarkov_item_value', args: { item: 'Graphikkarte' } }] }, { text: 'Graphikkarte: Flohmarkt 400.000 ₽, behalten für Gunsmith.' }];
+  const { core, fake, cleanup } = tempCore({ script, fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : { data: { tasks: [], hideoutStations: [] } }), { headers: { 'Content-Type': 'application/json' } }) });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
+    await core.gemini.discover();
+    core.platform.captureScreen = async () => ({ data: Buffer.from('FULL'), width: 1920, height: 1080 });
+    core.platform.captureAroundCursor = async () => ({ data: Buffer.from('CROP'), width: 640, height: 420 });
+    core.gaming.context.running = ['eft'];
+    const scans = []; core.bus.on('eft:scan', (d) => scans.push(d));
+    const msg = await core.screen.hotkeyQuestion();
+    assert.match(msg.content, /Graphikkarte/);
+    const parts = fake.requests[0].contents.find((c) => c.role === 'user' && c.parts.some((p) => p.inlineData)).parts;
+    const imgs = parts.filter((p) => p.inlineData).map((p) => Buffer.from(p.inlineData.data, 'base64').toString());
+    assert.deepEqual(imgs, ['CROP', 'FULL'], 'Ausschnitt zuerst');
+    assert.ok(parts.some((p) => /tarkov_item_value/.test(p.text || '')), 'Hinweis in der Anfrage');
+    const stored = core.conversations.messages(msg.conversationId || core.conversations.current().id, { limit: 10 }).find((m) => m.role === 'user');
+    assert.doesNotMatch(stored.content, /tarkov_item_value/, 'Hinweis nicht im gespeicherten Verlauf');
+    assert.equal(scans.at(-1).name, 'Graphikkarte'); assert.equal(scans.at(-1).perSlot, 200000);
+  } finally { core.gaming.context.running = []; cleanup(); }
+});

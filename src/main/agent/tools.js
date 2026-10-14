@@ -265,12 +265,15 @@ function buildTools(s) {
     run: async ({ map }) => { const c = s.gaming.eftProgress(); const r = await s.gaming.tarkov.raidPlan({ map, ...c }); if (map) s.gaming.pushWidget('eft', 'tarkov-raidplan', { map }); return { ...r, maps: r.maps.slice(0, 12), tasks: r.tasks?.slice(0, 25) }; } });
   def({ name: 'tarkov_item_value', mode: 'read', description: 'Escape from Tarkov: Was ist ein Item wert (Flohmarkt Ø24h, bester Händler, Wert pro Slot) und brauche ich es noch für offene Quests (FIR) oder mein Hideout? Für „lohnt sich X“, „brauch ich X“, „was ist X wert“.',
     schema: { type: 'object', required: ['item'], properties: { item: { type: 'string' } } },
-    run: async ({ item }) => {
+    run: async ({ item }, ctx = {}) => {
       const c = s.gaming.eftProgress();
       const p = await s.gaming.tarkov.itemPrices(item, c.gameMode);
       if (!p) return { notFound: item };
       const need = await s.gaming.tarkov.neededItems({ done: c.done, built: s.gaming.eftHideoutBuilt(), gameMode: c.gameMode }).then((x) => x.items.find((i) => i.name === p.name)).catch(() => null);
-      return { ...p, need: need ? { quest: need.quest, questFir: need.questFir, hideout: need.hideout, tasks: need.tasks, stations: need.stations } : 'nicht für offene Quests/Hideout gebraucht' };
+      const needOut = need ? { quest: need.quest, questFir: need.questFir, hideout: need.hideout, tasks: need.tasks.slice(0, 4), stations: need.stations.slice(0, 4) } : null;
+      // Aus „Was ist das?“ (Overlay): zusätzlich die Item-Karte mit Preisen im Overlay zeigen
+      if (ctx.channel === 'overlay') { const out = { state: 'done', ...p, recognized: item, need: needOut, at: new Date().toISOString() }; s.gaming.context.setState('eft:lastscan', out); s.bus.emit('eft:scan', out); }
+      return { ...p, need: needOut || 'nicht für offene Quests/Hideout gebraucht' };
     } });
   def({ name: 'tarkov_needed_items', mode: 'read', description: 'Escape from Tarkov: Liste der Items, die der Nutzer noch für offene Quests (mit Found in Raid) und nicht gebaute Hideout-Stufen braucht, plus Kappa-/Lightkeeper-Fortschritt.',
     schema: { type: 'object', properties: { kappaOnly: { type: 'boolean' }, limit: { type: 'integer' } } },

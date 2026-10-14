@@ -80,7 +80,7 @@ class Orchestrator {
    * Text turn. Streams via bus events: chat:delta / chat:card / chat:done.
    * @returns final assistant message
    */
-  async chat({ conversationId, text, attachments = [], images = [], channel = 'text' }) {
+  async chat({ conversationId, text, attachments = [], images = [], channel = 'text', hint = '' }) {
     const { conversations, gemini, bus } = this.s;
     const conv = conversationId ? conversations.get(conversationId) : conversations.current();
     if (!conv) throw new Error('Gespräch nicht gefunden');
@@ -102,7 +102,7 @@ class Orchestrator {
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       return conversations.messages(cid, { limit: 1 })[0];
     }
-    return this.run({ cid, msg, text, channel, images });
+    return this.run({ cid, msg, text, channel, images, hint });
   }
 
   /** Antwort auf eine fehlgeschlagene Nachricht neu erzeugen (gleiche Frage, gleiche Blase). */
@@ -120,7 +120,7 @@ class Orchestrator {
     return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id });
   }
 
-  async run({ cid, msg, text, channel, images = [], upTo }) {
+  async run({ cid, msg, text, channel, images = [], upTo, hint = '' }) {
     const { conversations, gemini, bus } = this.s;
     const ac = new AbortController();
     this.cancel(cid);
@@ -128,7 +128,7 @@ class Orchestrator {
     const contents = conversations.history(cid, 14, 24000, upTo);
     if (images.length) {
       const lastUser = [...contents].reverse().find((c) => c.role === 'user');
-      if (lastUser) for (const im of images.slice(0, 3)) lastUser.parts.unshift({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } });
+      if (lastUser) lastUser.parts.unshift(...images.slice(0, 3).map((im) => ({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } })));
     }
     const role = needsReasoning(text) ? 'reasoning' : 'fast';
     const model = gemini.model(role) || gemini.requireModel('fast');
@@ -136,7 +136,7 @@ class Orchestrator {
     // Wechselnder Kontext (Uhrzeit, Spiel, Gedächtnis) hängt nur an der neuesten Nutzernachricht (wird nicht gespeichert).
     const { stable, context } = this.systemSplit(channel, text);
     const lastUser = [...contents].reverse().find((c) => c.role === 'user');
-    if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts]; else contents.push({ role: 'user', parts: [{ text: context }] });
+    if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts, ...(hint ? [{ text: hint }] : [])]; else contents.push({ role: 'user', parts: [{ text: context }] });
     const cards = []; const sources = []; let full = '';
     bus.emit('orb:state', { state: 'thinking' });
     try {

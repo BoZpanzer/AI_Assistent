@@ -57,12 +57,19 @@ class ScreenVision {
 
   /** Hotkey flow: screenshot goes into the normal chat (all tools available). */
   async hotkeyQuestion(question) {
+    // Tarkov: zusätzlich ein Ausschnitt um den Mauszeiger – zeigt der auf ein Item, kommen gleich Wert und „behalten?“ mit
+    const ctx = this.s.gaming.context;
+    const tarkov = ctx.running.includes('eft') || ctx.state().active?.id === 'eft';
+    const crop = tarkov && this.s.platform.captureAroundCursor ? await this.s.platform.captureAroundCursor().catch(() => null) : null;
     const shot = await this.capture();
     const q = question || this.s.settings.get('screen')?.defaultQuestion || 'Was sehe ich hier? Hilf mir kurz und konkret.';
-    this.s.bus.emit('overlay:thinking', { question: q });
-    const msg = await this.s.orchestrator.chat({ text: q, images: [{ mimeType: 'image/jpeg', data: shot.data.toString('base64'), name: 'Bildschirm' }], channel: 'overlay' });
-    this.s.db.run('INSERT INTO screenshots(id,file,question,answer,game,created_at) VALUES(?,?,?,?,?,?)', shot.id, shot.file, q, msg?.content || '', this.s.gaming.context.state().active?.id || null, nowIso());
-    this.s.bus.emit('overlay:answer', { question: q, answer: msg?.content || '', cards: msg?.meta?.cards || [] });
+    const shown = q;
+    const hint = !crop ? '' : '(Bild 1: Ausschnitt um meinen Mauszeiger – das Ding in der Mitte meine ich. Bild 2: ganzer Bildschirm. Ist in der Mitte von Bild 1 ein Escape-from-Tarkov-Item, rufe tarkov_item_value mit dem Itemnamen auf und nenne kurz Flohmarkt, besten Händler, Wert pro Slot und ob ich es für Quests/Hideout behalten sollte. Sonst beantworte die Frage normal.)';
+    this.s.bus.emit('overlay:thinking', { question: shown });
+    const images = [...(crop ? [{ mimeType: 'image/jpeg', data: crop.data.toString('base64'), name: 'Mauszeiger' }] : []), { mimeType: 'image/jpeg', data: shot.data.toString('base64'), name: 'Bildschirm' }];
+    const msg = await this.s.orchestrator.chat({ text: q, images, channel: 'overlay', hint });
+    this.s.db.run('INSERT INTO screenshots(id,file,question,answer,game,created_at) VALUES(?,?,?,?,?,?)', shot.id, shot.file, shown, msg?.content || '', this.s.gaming.context.state().active?.id || null, nowIso());
+    this.s.bus.emit('overlay:answer', { question: shown, answer: msg?.content || '', cards: msg?.meta?.cards || [] });
     if (this.s.settings.get('overlay')?.speakAnswers) this.s.bus.emit('tts:speak', { text: String(msg?.content || '').replace(/[*#`|>_]/g, '').slice(0, 600) });
     return msg;
   }

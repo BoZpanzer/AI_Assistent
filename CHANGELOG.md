@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.22.1 – „Was ist das?“ erkennt in Tarkov auch den Item-Wert
+
+- **Eine Taste für beides:** Drückst du in Tarkov die „Was ist das?“-Taste, während der Mauszeiger auf einem Item liegt, schickt JARVIS zusätzlich einen Ausschnitt um den Mauszeiger mit. Ist dort ein Item, kommen Flohmarktpreis, bester Händler, Wert pro Slot und „für Quests/Hideout behalten?“ direkt mit: als Antwort und als Item-Karte im Overlay. Ist kein Item zu sehen, beantwortet JARVIS die Frage wie bisher.
+- Die eigene Scan-Taste bleibt als schnellerer Weg nur für den Wert erhalten. Wer sie nicht braucht, lässt sie in den Einstellungen leer.
+
 ## 3.22.0 – Tarkov: Raid-Begleiter, benötigte Items, Hideout, Item-Scanner, Goons
 
 Was TarkovMonitor, TarkovTracker und RatScanner können, steckt jetzt auf der Tarkov-Seite:
