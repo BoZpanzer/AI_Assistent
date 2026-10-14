@@ -1,0 +1,98 @@
+[
+  {
+    "baseMap": "customs",
+    "label": "Customs",
+    "file": "customs.webp",
+    "width": 2600,
+    "height": 1359,
+    "sha256": "801405e08fe6ecbb5c67a020a4c38117867d9914a15ac0c59a0a3e7c234e2cfc"
+  },
+  {
+    "baseMap": "reserve",
+    "label": "Reserve",
+    "file": "reserve.webp",
+    "width": 2600,
+    "height": 1540,
+    "sha256": "15508f629e065b13ecf591c812e4048c8555ca7dd0b1bd361bcc45ce3703640a"
+  },
+  {
+    "baseMap": "woods",
+    "label": "Woods",
+    "file": "woods.webp",
+    "width": 2600,
+    "height": 2544,
+    "sha256": "daeed890bda1035e7aff78a031e033575bb08099e88f37935aed94d075ca6cf4"
+  },
+  {
+    "baseMap": "ground-zero",
+    "label": "Ground Zero",
+    "file": "groundzero.webp",
+    "width": 2600,
+    "height": 2600,
+    "sha256": "b04aee97b3d1171dc991e4c4e30b868465ce83b6377618cdc4b078562dc82c3d"
+  },
+  {
+    "baseMap": "shoreline",
+    "label": "Shoreline",
+    "file": "shoreline.webp",
+    "width": 2600,
+    "height": 1781,
+    "sha256": "a1825f6ed86477a2affb10e7bcda9ed06715b16e36b816366f1ee4109f85a12c"
+  },
+  {
+    "baseMap": "factory",
+    "label": "Factory",
+    "file": "factory.webp",
+    "width": 2600,
+    "height": 811,
+    "sha256": "c285b9567ec047d49c71facf7d93d73f688b0d2931820dcd0befc379ccbd4934"
+  },
+  {
+    "baseMap": "lighthouse",
+    "label": "Lighthouse",
+    "file": "lighthouse.webp",
+    "width": 2242,
+    "height": 3892,
+    "sha256": "b22b38c2e4223ba5892df792d438b8e37f84936e58fa179ae4e9985f25a1717d"
+  },
+  {
+    "baseMap": "streets-of-tarkov",
+    "label": "Streets of Tarkov",
+    "file": "streets.webp",
+    "width": 2600,
+    "height": 2005,
+    "sha256": "f068d2db5c6dcedfa86abf7bf911516b13b12d29337062d8f1cb5d4c07357d74"
+  },
+  {
+    "baseMap": "interchange",
+    "label": "Interchange",
+    "file": "interchange.webp",
+    "width": 2600,
+    "height": 1463,
+    "sha256": "11b47d1ea920cc020f31cd97e49766328002560658ecabfa7d58e648517b39a0"
+  },
+  {
+    "baseMap": "the-lab",
+    "label": "The Lab",
+    "file": "lab.webp",
+    "width": 2600,
+    "height": 1490,
+    "sha256": "935c443f6921454dd810c0df9efbbf5aa953bcb94e8adc28af8701245e838790"
+  },
+  {
+    "baseMap": "icebreaker",
+    "label": "Icebreaker",
+    "file": "icebreaker.webp",
+    "width": 2600,
+    "height": 1463,
+    "sha256": "f5c4a055063d2cf83352da7a11c8ad8095df6f35e0414fa95d3fa28e9e497f60"
+  },
+  {
+    "baseMap": "the-labyrinth",
+    "label": "The Labyrinth",
+    "file": "labyrinth.webp",
+    "width": 2600,
+    "height": 2409,
+    "sha256": "a65f36db7dd6142094eae0abe56f2ebd464951362adbecf7aaa2c57da09da758"
+  }
+]

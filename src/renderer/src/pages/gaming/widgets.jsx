@@ -29,24 +29,25 @@ function MapWidget({ game, params }) {
   const options = useMemo(() => {
     const names = new Map();
     for (const m of eftMaps?.maps || []) names.set(m.id, m.name);
-    for (const m of userMaps || []) if (!names.has(m.name)) names.set(m.name, m.name);
+    for (const m of userMaps || []) if (!names.has(m.name)) names.set(m.name, m.source?.label || m.name);
     if (!names.size) names.set('Hauptkarte', 'Hauptkarte');
     return [...names.entries()].map(([value, label]) => ({ value, label }));
   }, [eftMaps, userMaps]);
-  const [map, setMap] = useState(params.map || (isEft ? 'customs' : 'Hauptkarte'));
+  const [map, setMap] = useState(params.map || (isEft ? 'customs-wiki' : 'Hauptkarte'));
   useEffect(() => { if (params.map) setMap(params.map); }, [params.map]);
   useEffect(() => { rpc('game.setLastMap', { game: game.id, map }).catch(() => {}); }, [game.id, map]);
   const [markers, reloadMarkers] = useRpc('game.markers', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
-  const [apiMap] = useRpc('tarkov.map', { map }, { enabled: isEft, deps: [map] });
+  const baseMap = (userMaps || []).find((m) => m.name === map)?.source?.baseMap || map;
+  const [apiMap] = useRpc('tarkov.map', { map: baseMap }, { enabled: isEft, deps: [baseMap] });
   const meta = (userMaps || []).find((m) => m.name === map);
   const [pos, setPos] = useState(null);
   const [follow, setFollow] = useState(true);
   const nowT = useNow(5000);
   useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
-  useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== map) setMap(p.map); });
+  useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== baseMap) setMap(p.map); });
   const [loadingMaps, setLoadingMaps] = useState(false);
-  const autoTried = useRef(false);
+  useEffect(() => { if (isEft) rpc('tarkov.importWikiMaps').then(reloadMaps).catch(() => toast('Wiki-Karten konnten nicht bereitgestellt werden', 'error')); }, [isEft]);
   const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
     setLoadingMaps(true);
     const r = quiet ? await rpc('tarkov.importMaps', { force }).catch(() => null) : await guard(() => rpc('tarkov.importMaps', { force }));
@@ -54,14 +55,6 @@ function MapWidget({ game, params }) {
     if (r && !quiet) toast(r.done.length ? `${r.done.length} Karten von tarkov.dev geladen` : r.failed.length ? 'Karten konnten nicht geladen werden: ' + r.failed[0].error : 'Alle Karten sind schon da', r.failed.length && !r.done.length ? 'error' : undefined, 6000);
     return r;
   };
-  // Tarkov: fehlende Karten beim ersten Öffnen automatisch von tarkov.dev holen (ältere ohne Stockwerke werden erneuert)
-  useEffect(() => {
-    if (!isEft || autoTried.current || !Array.isArray(userMaps) || !eftMaps) return;
-    const cur = userMaps.find((m) => m.name === map) || {};
-    if (cur.hasImage && !(cur.source && !Array.isArray(cur.source.floors))) return;
-    autoTried.current = true;
-    loadEftMaps({ quiet: true });
-  }, [isEft, userMaps, eftMaps, map]);
   const [tool, setTool] = useState('custom');
   const [visible, setVisible] = useState(Object.fromEntries(CATS.map((c) => [c.id, true])));
   const [showApi, setShowApi] = useState(true);
@@ -97,7 +90,7 @@ function MapWidget({ game, params }) {
     const s = il / gl; const rot = Math.atan2(iy * imgSize.h, ix * imgSize.w) - Math.atan2(gz, gx);
     return (x, z) => { const dx = x - a.gx, dz = z - a.gz; const px = (dx * Math.cos(rot) - dz * Math.sin(rot)) * s, py = (dx * Math.sin(rot) + dz * Math.cos(rot)) * s; return { x: a.ix + px / imgSize.w, y: a.iy + py / imgSize.h }; };
   }, [meta?.calibration, imgSize]);
-  const [questMarks] = useRpc('tarkov.questMarkers', { map }, { enabled: isEft && showQuests && !!transform, deps: [map, showQuests, !!transform], events: ['game:progress'] });
+  const [questMarks] = useRpc('tarkov.questMarkers', { map: baseMap }, { enabled: isEft && showQuests && !!transform, deps: [baseMap, showQuests, !!transform], events: ['game:progress'] });
   const questPins = isEft && showQuests && transform ? (questMarks?.markers || []).map((q) => ({ ...transform(q.x, q.z), category: 'quest', label: q.task.length > 22 ? q.task.slice(0, 21) + '…' : q.task, objective: q.objective, task: q.task, api: true })) : [];
   const faction = useStore((x) => x.settings?.gaming?.eftFaction) || 'pmc';
   const apiPins = isEft && showApi && transform && apiMap?.map ? [
@@ -143,7 +136,7 @@ function MapWidget({ game, params }) {
     await rpc('game.updateMarker', { id: m.id, patch: { label } });
   };
   // eigene Position (aus dem letzten Tarkov-Screenshot) als Pfeil in Blickrichtung
-  const me = isEft && pos && pos.map === map && transform ? (() => { const a = transform(pos.x, pos.z); const b = transform(pos.x + pos.fx * 10, pos.z + pos.fz * 10); return { ...a, angle: Math.atan2((b.y - a.y) * imgSize.h, (b.x - a.x) * imgSize.w) * 180 / Math.PI, at: pos.at }; })() : null;
+  const me = isEft && pos && pos.map === baseMap && transform ? (() => { const a = transform(pos.x, pos.z); const b = transform(pos.x + pos.fx * 10, pos.z + pos.fz * 10); return { ...a, angle: Math.atan2((b.y - a.y) * imgSize.h, (b.x - a.x) * imgSize.w) * 180 / Math.PI, at: pos.at }; })() : null;
   const all = [...markers.filter((m) => visible[m.category]), ...apiPins.filter((m) => visible[m.category]), ...questPins.filter((m) => visible.quest && m.x >= 0 && m.x <= 1 && m.y >= 0 && m.y <= 1)];
   const content = (
     <div class={full ? 'overlay' : ''} style={full ? { placeItems: 'stretch', padding: 30 } : undefined}>
@@ -163,7 +156,7 @@ function MapWidget({ game, params }) {
             <div class="tool" onClick={async () => { const last = history.at(-1); if (!last) return toast('Nichts zum Rückgängigmachen'); await rpc('game.removeMarker', { id: last }); setHistory(history.slice(0, -1)); }}><Undo2 size={15} />Rückgängig</div>
             <div class="tool" onClick={async () => { if (await ask(`Alle eigenen Marker auf ${map} löschen?`, '', { confirmOnly: true, danger: true, okLabel: 'Löschen' })) rpc('game.clearMarkers', { game: game.id, map }); }}><Trash2 size={15} />Marker löschen</div>
             <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setPlacingGoal(false); setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
-            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}Karten laden</div>}
+            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}SVG-Karten laden</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
             {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
@@ -195,9 +188,10 @@ function MapWidget({ game, params }) {
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); zoom(0.8); }}><Minus size={14} /></button>
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); fit(); }}><Crosshair size={14} /></button>
             </div>
-            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Die meisten Tarkov-Karten lädt JARVIS automatisch von tarkov.dev (Knopf „Karten laden“). Für Labs, Labyrinth und Icebreaker gibt es dort keine Vektorkarte – eigenes Bild importieren und kalibrieren, dann blendet JARVIS Exits und verschlossene Türen ein.' : ''}</div>}
+            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Kalibrierte Vektorkarten kannst du über „SVG-Karten laden“ ergänzen. Die zwölf mitgelieferten Wiki-Karten findest du in der Kartenauswahl unter „Wiki“; sie sind offline verfügbar.' : ''}</div>}
+            {imgUrl && meta?.source?.source === 'wiki-bundle' && !transform && <div class="notice" style={{ position: 'absolute', left: 8, top: 8, maxWidth: '75%', pointerEvents: 'none' }}>Wiki-Karte: Ziele und Routen per Klick nutzbar. Spielkoordinaten noch nicht kalibriert; API-Punkte bleiben ausgeblendet.</div>}
             {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/2 anklicken</div>}
-            {imgUrl && meta?.calibration?.attribution && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration.attribution}</div>}
+            {imgUrl && (meta?.calibration?.attribution || meta?.source?.attribution) && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration?.attribution || meta.source?.attribution}</div>}
             {imgUrl && floors.length > 0 && <div class="row gap-s" style={{ position: 'absolute', right: 10, bottom: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: '70%' }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
               {[{ id: null, label: 'Erdgeschoss' }, ...floors].map((f) => <button class={`chip ${floor === f.id ? 'active' : ''}`} onClick={() => setFloor(f.id)}>{f.label}</button>)}
             </div>}
