@@ -313,7 +313,7 @@ function buildTools(s) {
           : sync?.skipped ? `Analyse aus den gespeicherten Matches (Stand: ${last ? new Date(last).toLocaleString('de-DE') : 'unbekannt'}). Neue Spiele kommen automatisch dazu, wenn der Client das nächste Mal läuft – den Nutzer NICHT bitten, den Client zu starten, sondern direkt analysieren.` : undefined,
       };
     } });
-  def({ name: 'league_deep_review', mode: 'read', description: 'LoL-Fehleranalyse aus den Timelines der letzten Ranked-Spiele: Tode (Minute, Ort auf der Karte, 1v1 oder in Unterzahl), Lane-Phase gegen den direkten Gegner (CS/Gold bei 10/15 Min.), Tode vor gegnerischen Objectives, Anwesenheit bei Drachen/Baron, Vision. Liefert erkannte Muster mit Belegen. Für „was mache ich falsch“, „analysiere meine Ranked-Spiele“, Trainingspläne. Nur diese Zahlen verwenden, nichts erfinden.',
+  def({ name: 'league_deep_review', mode: 'read', description: 'LoL-Fehleranalyse aus den Timelines der letzten Ranked-Spiele: Tode (Minute, Ort auf der Karte, 1v1 oder in Unterzahl), Lane-Phase gegen den direkten Gegner (CS/Gold bei 10/15 Min.), Tode vor gegnerischen Objectives, Anwesenheit bei Drachen/Baron, Vision, gegnerischer Jungler (Startseite, erster Gank, Ganks an dir), eigenes Jungling (Jungle-CS, Gank-Kills), Tode mit viel Gold. Liefert erkannte Muster mit Belegen. Für „was mache ich falsch“, „analysiere meine Ranked-Spiele“, Trainingspläne. Nur diese Zahlen verwenden, nichts erfinden.',
     schema: { type: 'object', properties: { games: { type: 'integer', description: 'Anzahl Spiele (Standard 20)' } } },
     run: async ({ games = 20 }) => {
       const L = s.gaming.league;
@@ -323,8 +323,11 @@ function buildTools(s) {
       const p = L.patterns(Math.min(40, games));
       return { ...p, sync, note: p.games < 3 ? `Erst ${p.games} Spiele mit Timeline-Analyse – sobald der League-Client läuft, lädt JARVIS die Details der letzten Ranked-Spiele automatisch nach (dauert etwa eine Minute).` : 'Orte und Anwesenheit bei Objectives sind aus Minuten-Positionen geschätzt (ungefähr).' };
     } });
-  def({ name: 'league_live', mode: 'read', description: 'Aktuelles LoL-Match (Live Client Data API): Champion, KDA, CS, Gold, Lane-Gegner, Hinweise.', schema: { type: 'object', properties: {} },
+  def({ name: 'league_live', mode: 'read', description: 'Aktuelles LoL-Match (Live Client Data API): Champion, KDA, CS, Gold, Level, Lane-Gegner, Kill-Stand, eigene Tode mit beteiligten Champions, Werte im Vergleich zu Schnitt/Zielen. Riot-Regeln im laufenden Spiel: nur einordnen und ggf. mehrere Optionen nennen – KEINE Anweisungen („geh jetzt ganken/recallen“), keine Power-Spike-Warnungen, keine Gegner-Cooldowns, Jungle-Timer oder Positionen des gegnerischen Junglers schätzen.', schema: { type: 'object', properties: {} },
     run: () => s.gaming.league.live() });
+  def({ name: 'lol_note', mode: 'write', description: 'Notiz während oder direkt nach einem LoL-Spiel speichern („Jarvis, notier: Jungler kam zweimal bot“, „Lane gegen Darius war unspielbar“, „hab Flash verschwendet“). Wird mit Spielzeit gespeichert und fließt in die Nachbesprechung des Spiels ein. Kurz bestätigen, nicht kommentieren.',
+    schema: { type: 'object', required: ['text'], properties: { text: { type: 'string', description: 'die Notiz in den Worten des Nutzers' } } },
+    run: ({ text }) => { const n = s.gaming.league.addLiveNote(text); return { saved: true, gameTime: n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')}` : null, champion: n.champion }; } });
   def({ name: 'league_champion', mode: 'read', description: 'Championinfos (Data Dragon, aktueller Patch): Fähigkeiten, Tipps.', schema: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } },
     run: async ({ name }) => (await s.gaming.league.champion(name)) || { error: 'Champion nicht gefunden' } });
 

@@ -147,17 +147,22 @@ class LolFlow {
     if (deep?.hasTimeline) {
       const facts = [];
       if (deep.opponent?.champion && deep.csDiff10 != null) facts.push(`Lane gegen ${deep.opponent.champion}: ${deep.csDiff10 >= 0 ? '+' : ''}${deep.csDiff10} CS bei 10 Min.${deep.goldDiff15 != null ? `, ${deep.goldDiff15 >= 0 ? '+' : ''}${deep.goldDiff15} Gold bei 15 Min.` : ''}`);
-      if (deep.deathsDetail?.length) facts.push('Tode: ' + deep.deathsDetail.map((d) => `${d.min}. Min ${d.zone}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (gegen ${d.enemies})` : ''}`).join(', '));
+      if (deep.deathsDetail?.length) facts.push('Tode: ' + deep.deathsDetail.map((d) => `${d.min}. Min ${d.zone}${d.by?.length ? ` durch ${d.by.join(' + ')}` : ''}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (gegen ${d.enemies})` : ''}${d.jungler ? ' – Jungler beteiligt' : ''}${d.gold != null && d.gold >= 1300 ? `, ${d.gold} Gold dabei` : ''}`).join('; '));
       if (deep.objectives?.lostWhileDead?.length) facts.push('Während du tot warst, hat der Gegner geholt: ' + deep.objectives.lostWhileDead.join(', '));
+      facts.push(...jungleFacts(deep));
       if (facts.length) summary += '\n\n' + facts.map((t) => '- ' + t).join('\n');
     }
     if (tips.length) summary += '\n\n' + tips.map((t) => '- ' + t).join('\n');
+    // Eigene Notizen aus dem Spiel („Jarvis, notier: …“) – Zeitfenster: Spielstart bis 10 Min. nach Spielende
+    const start = Date.parse(m.playedAt);
+    const notes = Number.isFinite(start) ? L.liveNotes(new Date(start - 5 * 60000).toISOString(), new Date(start + (m.duration + 600) * 1000).toISOString()) : [];
+    if (notes.length) summary += '\n\n**Deine Notizen im Spiel:**\n' + notes.map((n) => `- ${n.gameSec != null ? `${Math.floor(n.gameSec / 60)}:${String(n.gameSec % 60).padStart(2, '0')} ` : ''}${n.text}`).join('\n');
     if (this.cfg().lolReviewAi !== false && this.s.gemini.hasKey()) {
       try {
         const ai = await this.s.gemini.generate({ feature: 'lol',
           model: this.s.gemini.requireModel('fast'), temperature: 0.4,
-          system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 3 Sätze. Nutze NUR die gelieferten Zahlen, erfinde nichts.',
-          contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort, Lane-Differenzen, Objectives): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives })}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel.` }] }],
+          system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 4 Sätze. Nutze NUR die gelieferten Zahlen und Notizen, erfinde nichts. Wenn Notizen da sind, verknüpfe sie mit den Zahlen (z. B. Notiz „Jungler kam bot“ + Tod mit Jungler-Beteiligung).',
+          contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort/beteiligten Gegnern/Gold in der Tasche, Lane-Differenzen, Objectives, gegnerischer Jungler, eigenes Jungling): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives, enemyJungle: deep.enemyJungle, jungle: deep.jungle, wardsBefore14: deep.wardsBefore14, firstBackMin: deep.firstBackMin })}\n` : ''}${notes.length ? `Notizen, die ich mir im Spiel gemacht habe (meine eigene Wahrnehmung): ${JSON.stringify(notes.map((n) => ({ min: n.gameSec != null ? Math.round(n.gameSec / 60) : null, text: n.text })))}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel.` }] }],
         });
         if (ai) summary += '\n\n' + ai.trim();
       } catch (e) { log.debug('ai review', e); }
@@ -173,6 +178,25 @@ class LolFlow {
   reviews(limit = 10) {
     return this.s.db.all("SELECT * FROM game_reviews WHERE game='league' ORDER BY created_at DESC LIMIT ?", limit).map((r) => ({ id: r.id, ref: r.ref, title: r.title, summary: r.summary, tips: safeJson(r.tips, []), source: r.source, createdAt: r.created_at }));
   }
+}
+
+/** Jungle-/Gank-Fakten aus der Timeline-Analyse (nach dem Spiel). */
+function jungleFacts(d) {
+  const f = [];
+  const ej = d.enemyJungle;
+  if (ej?.champion) {
+    const side = ej.earlySide === 'top' ? 'auf der oberen Seite' : ej.earlySide === 'bot' ? 'auf der unteren Seite' : ej.earlySide === 'gemischt' ? 'auf beiden Seiten' : null;
+    let t = `Gegnerischer Jungler ${ej.champion}${side ? ` war in Min. 3–6 ${side}` : ''}`;
+    if (ej.firstGank) t += `; erster erfolgreicher Gank ${ej.firstGank.min}. Min. (${ej.firstGank.zone}${ej.firstGank.victim ? ', ' + ej.firstGank.victim : ''})`;
+    if (ej.ganksBefore14 != null) t += `; ${ej.ganksBefore14} Kills mit ihm vor Min. 14, davon ${ej.ganksOnMe || 0} an dir`;
+    f.push(t + '.');
+  }
+  if (d.jungle) {
+    const j = d.jungle; const lanes = Object.entries(j.laneVisitsBefore14 || {}).map(([z, n]) => `${z} ${n}×`).join(', ');
+    f.push(`Dein Jungling: ${j.jungleCsAt10 ?? '–'} Jungle-CS bei 10 Min., ${j.gankKillsBefore14} Gank-Kills/Assists vor Min. 14${lanes ? `, Minuten an Lanes: ${lanes}` : ''}${j.earlySide ? `, Start ${j.earlySide === 'top' ? 'oben' : j.earlySide === 'bot' ? 'unten' : 'gemischt'}` : ''}.`);
+  }
+  if (d.firstBackMin != null) f.push(`Erster Einkauf nach dem Start: ${d.firstBackMin}. Min.${d.wardsBefore14 != null ? ` · ${d.wardsBefore14} Wards vor Min. 14` : ''}`);
+  return f;
 }
 
 /** Rule-based, number-backed hints (no invented data). */
@@ -197,4 +221,4 @@ function reviewTips(m, avg, goals = []) {
   return t.slice(0, 6);
 }
 
-module.exports = { LolFlow, reviewTips };
+module.exports = { LolFlow, reviewTips, jungleFacts };

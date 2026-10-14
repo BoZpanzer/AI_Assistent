@@ -105,7 +105,7 @@ test('LoL: neue Spiele ohne Öffnen der Matchhistorie (PUUID-Abfrage + Spiel dir
 });
 
 /** Synthetisches 5v5-Spiel (LCU-Format) + Timeline. Ich (pid 4, Jinx BOTTOM) gegen pid 9 (BOTTOM). */
-function fullGame(gameId, { win = false, myCs10 = 60, oppCs10 = 75, deaths = [] } = {}) {
+function fullGame(gameId, { win = false, myCs10 = 60, oppCs10 = 75, deaths = [], posFor = null, extra = [], gold = null } = {}) {
   const roles = [['TOP', 'SOLO'], ['JUNGLE', 'NONE'], ['MIDDLE', 'SOLO'], ['BOTTOM', 'DUO_CARRY'], ['BOTTOM', 'DUO_SUPPORT']];
   const participants = []; const ids = [];
   for (let i = 1; i <= 10; i++) {
@@ -114,9 +114,10 @@ function fullGame(gameId, { win = false, myCs10 = 60, oppCs10 = 75, deaths = [] 
       stats: { win: team === 100 ? win : !win, kills: i === 4 ? 3 : 2, deaths: i === 4 ? deaths.length : 2, assists: 4, totalMinionsKilled: i === 4 ? 180 : 150, neutralMinionsKilled: 0, visionScore: 20, wardsPlaced: 8, visionWardsBoughtInGame: i === 4 ? 0 : 2, totalDamageDealtToChampions: 15000, totalDamageTaken: 18000, goldEarned: 11000 } });
     ids.push({ participantId: i, player: { puuid: i === 4 ? 'me' : 'p' + i } });
   }
-  const pfAt = (min) => Object.fromEntries(participants.map((p) => [String(p.participantId), { participantId: p.participantId, position: p.participantId === 4 ? { x: 9800, y: 4400 } : { x: 7000, y: 7000 }, totalGold: 500 + min * 300 + (p.participantId === 4 ? -40 * min : 0), xp: min * 400, minionsKilled: p.participantId === 4 ? Math.round(myCs10 * min / 10) : p.participantId === 9 ? Math.round(oppCs10 * min / 10) : min * 6, jungleMinionsKilled: 0 }]));
+  const pfAt = (min) => Object.fromEntries(participants.map((p) => [String(p.participantId), { participantId: p.participantId, position: (posFor && posFor(p.participantId, min)) || (p.participantId === 4 ? { x: 9800, y: 4400 } : { x: 7000, y: 7000 }), currentGold: gold != null && p.participantId === 4 ? gold : 300, totalGold: 500 + min * 300 + (p.participantId === 4 ? -40 * min : 0), xp: min * 400, minionsKilled: p.participantId === 4 ? Math.round(myCs10 * min / 10) : p.participantId === 9 ? Math.round(oppCs10 * min / 10) : min * 6, jungleMinionsKilled: 0 }]));
   const frames = []; for (let m = 0; m <= 30; m++) frames.push({ timestamp: m * 60000, participantFrames: pfAt(m), events: [] });
   for (const d of deaths) frames[Math.floor(d.min)].events.push({ type: 'CHAMPION_KILL', timestamp: d.min * 60000, victimId: 4, killerId: 9, assistingParticipantIds: d.assists || [], position: d.pos });
+  for (const e of extra) frames[Math.floor(e.timestamp / 60000)].events.push(e);
   // Gegner holt Drachen 30 s nach einem Tod in Minute 12
   frames[12].events.push({ type: 'ELITE_MONSTER_KILL', timestamp: 12.5 * 60000, killerId: 7, killerTeamId: 200, monsterType: 'DRAGON', position: { x: 9866, y: 4414 } });
   frames[20].events.push({ type: 'ELITE_MONSTER_KILL', timestamp: 20 * 60000, killerId: 2, killerTeamId: 100, monsterType: 'DRAGON', position: { x: 9866, y: 4414 } });
@@ -194,4 +195,85 @@ test('LoL Objective-Timer: Respawns aus echten Kills, Seele → Elder, einmalige
   const b = o.find((x) => x.id === 'baron');
   assert.equal(b.spawnAt, 1920); assert.match(b.note, /29:00/);
   assert.equal(objectives([], players, 0, 'ORDER', { dragon: 330 }).find((x) => x.id === 'dragon').spawnAt, 330);
+});
+
+test('LoL-Jungle-Analyse nach dem Spiel: gegnerischer Jungler, Ganks an mir, eigenes Jungling, Gold beim Tod', () => {
+  const { analyzeGame, patterns } = require('../src/main/services/gaming/lolanalysis');
+  const { jungleFacts } = require('../src/main/services/gaming/lolflow');
+  // Gegnerischer Jungler = pid 7 (Team 200), startet oben (y > x), gankt mich in Minute 6 auf der Botlane
+  const posFor = (pid, min) => (pid === 7 && min <= 6 ? { x: 4000, y: 11000 } : pid === 2 && min >= 5 && min <= 8 ? { x: 13000, y: 3000 } : null);
+  const extra = [
+    { type: 'CHAMPION_KILL', timestamp: 7 * 60000, victimId: 8, killerId: 2, assistingParticipantIds: [4], position: { x: 12800, y: 2500 } },
+    { type: 'WARD_PLACED', timestamp: 3 * 60000, creatorId: 4, wardType: 'YELLOW_TRINKET' },
+    { type: 'WARD_PLACED', timestamp: 9 * 60000, creatorId: 4, wardType: 'CONTROL_WARD' },
+    { type: 'ITEM_PURCHASED', timestamp: 60000, participantId: 4, itemId: 1055 },
+    { type: 'ITEM_PURCHASED', timestamp: 8.4 * 60000, participantId: 4, itemId: 3031 },
+  ];
+  const deaths = [{ min: 6, pos: { x: 12800, y: 2500 }, assists: [7] }, { min: 11, pos: { x: 9000, y: 5800 } }];
+  const names = { 107: 'Lee Sin', 109: 'Caitlyn', 102: 'Vi', 222: 'Jinx' };
+  const { game, timeline } = fullGame(1, { deaths, posFor, extra, gold: 1500 });
+  const a = analyzeGame(game, timeline, 'me', { name: (id) => names[id] || null });
+  assert.equal(a.v, 2);
+  assert.deepEqual(a.deathsDetail.map((d) => [d.min, d.jungler, d.gold]), [[6, true, 1500], [11, false, 1500]]);
+  assert.deepEqual(a.deathsDetail[0].by.sort(), ['Caitlyn', 'Lee Sin']);
+  assert.equal(a.enemyJungle.champion, 'Lee Sin');
+  assert.equal(a.enemyJungle.earlySide, 'top');
+  assert.equal(a.enemyJungle.ganksOnMe, 1); assert.equal(a.enemyJungle.firstGank.min, 6); assert.equal(a.enemyJungle.firstGank.victim, 'Jinx');
+  assert.equal(a.highGoldDeaths, 2);
+  assert.equal(a.wardsBefore14, 2); assert.equal(a.controlWardsPlaced, 1);
+  assert.equal(a.firstBackMin, 8.4, 'Startkauf in Minute 1 zählt nicht als Rückkehr');
+  assert.equal(a.jungle, undefined, 'eigene Jungle-Werte nur, wenn ich Jungle spiele');
+  // Dasselbe Spiel aus Sicht des eigenen Junglers (pid 2, Vi)
+  const j = analyzeGame(game, timeline, 'p2', { name: (id) => names[id] || null });
+  assert.equal(j.role, 'JUNGLE');
+  assert.equal(j.jungle.gankKillsBefore14, 1);
+  assert.ok(j.jungle.laneVisitsBefore14.Botlane >= 3, JSON.stringify(j.jungle.laneVisitsBefore14));
+  assert.equal(j.jungle.jungleCsAt10, 0);
+  // Nachbesprechung: Fakten nur aus der Analyse
+  const f = jungleFacts(a).join('\n');
+  assert.match(f, /Lee Sin war in Min\. 3–6 auf der oberen Seite/);
+  assert.match(f, /erster erfolgreicher Gank 6\. Min\. \(Botlane, Jinx\)/);
+  assert.match(f, /Erster Einkauf nach dem Start: 8\.4\. Min\. · 2 Wards/);
+  // Muster über mehrere Spiele
+  const list = [1, 2, 3, 4].map((i) => analyzeGame(...Object.values(fullGame(i, { deaths, posFor, extra, gold: 1500 })), 'me', { name: (id) => names[id] || null }));
+  const p = patterns(list);
+  const ids = p.findings.map((x) => x.id);
+  assert.ok(ids.includes('ganked'), ids.join(','));
+  assert.ok(ids.includes('gold-deaths'), ids.join(','));
+  assert.equal(p.averages.gankDeathPct, 50);
+});
+
+test('LoL live: neutrale Werte statt Anweisungen, Kill-Stand + eigene Tode, Notizen im Spiel fließen in die Analyse', async () => {
+  const { liveContext } = require('../src/main/services/gaming/league');
+  const { core, cleanup } = tempCore();
+  try {
+    const L = core.gaming.league;
+    core.settings.update({ gaming: { lolLiveCoach: true } });
+    const tips = L.liveTips({ seconds: 900, csPerMin: 5.1, cs: 77, position: 'BOTTOM', level: 8, gold: 2600, deaths: 6, ward: 4, opponent: { champion: 'Caitlyn', level: 10, cs: 95 } });
+    assert.ok(tips.length >= 2, JSON.stringify(tips));
+    assert.ok(tips.some((t) => /CS 77 gegen 95 \(-18\)/.test(t)), JSON.stringify(tips));
+    assert.ok(tips.some((t) => /Level 8 gegen 10/.test(t)));
+    for (const t of tips) assert.doesNotMatch(t, /recall|kauf|geh |Risiko|ward(s)? setzen|Ganken|jetzt/i, 'keine Anweisungen im Spiel: ' + t);
+
+    const me = { riotId: 'BoZ#EUW', championName: 'Jinx', team: 'ORDER', position: 'BOTTOM' };
+    const players = [me, { riotId: 'A#1', championName: 'Lee Sin', team: 'CHAOS', position: 'JUNGLE' }, { riotId: 'B#2', championName: 'Caitlyn', team: 'CHAOS', position: 'BOTTOM' }, { riotId: 'C#3', championName: 'Vi', team: 'ORDER', position: 'JUNGLE' }];
+    const ev = [
+      { EventName: 'ChampionKill', EventTime: 362, KillerName: 'B', VictimName: 'BoZ', Assisters: ['A'] },
+      { EventName: 'ChampionKill', EventTime: 420, KillerName: 'C', VictimName: 'B', Assisters: ['BoZ'] },
+      { EventName: 'DragonKill', EventTime: 500 },
+    ];
+    const c = liveContext(ev, players, me);
+    assert.deepEqual(c.score, { us: 1, them: 1 });
+    assert.deepEqual(c.myDeaths, [{ min: 6, by: ['Caitlyn', 'Lee Sin'], jungler: true }]);
+
+    L.lastLive = { seconds: 754, champion: 'Jinx' };
+    const out = await core.orchestrator.execute('lol_note', { text: 'Lee Sin kam zweimal bot über den Fluss' }, { conversationId: 'x', channel: 'voice' });
+    const r = out.response;
+    assert.equal(r.saved, true); assert.equal(r.gameTime, '12:34');
+    const start = new Date(Date.now() - 20 * 60000).toISOString();
+    assert.equal(L.liveNotes(start).length, 1);
+    assert.deepEqual(L.notesFor({ playedAt: start, durationMin: 25 }).map((n) => n.text), ['Lee Sin kam zweimal bot über den Fluss']);
+    assert.deepEqual(L.notesFor({ playedAt: new Date(Date.now() - 5 * 3600_000).toISOString(), durationMin: 30 }), [], 'Notizen gehören nur zum passenden Spiel');
+    assert.throws(() => L.addLiveNote('  '), /Leere Notiz/);
+  } finally { cleanup(); }
 });

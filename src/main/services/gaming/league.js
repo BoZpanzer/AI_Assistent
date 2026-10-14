@@ -15,6 +15,25 @@ const { analyzeGame, patterns } = require('./lolanalysis');
 const REGIONAL = { euw1: 'europe', eun1: 'europe', tr1: 'europe', ru: 'europe', na1: 'americas', br1: 'americas', la1: 'americas', la2: 'americas', kr: 'asia', jp1: 'asia', oc1: 'sea' };
 const DD = 'https://ddragon.leagueoflegends.com';
 
+/**
+ * Was du im Spiel ohnehin siehst (Scoreboard, Death-Recap) – für Chat und Nachbesprechung, ohne Vorgaben:
+ * Kill-Stand, deine Tode mit beteiligten Champions (und ob der gegnerische Jungler dabei war).
+ */
+function liveContext(events, players, self) {
+  const names = (p) => [p.riotId, p.riotIdGameName, p.summonerName, String(p.riotId || '').split('#')[0]].filter(Boolean);
+  const byName = new Map(); for (const p of players) for (const n of names(p)) byName.set(n, p);
+  const find = (n) => byName.get(n) || byName.get(String(n || '').split('#')[0]) || null;
+  const kills = events.filter((e) => e.EventName === 'ChampionKill');
+  const score = { us: 0, them: 0 };
+  for (const e of kills) { const v = find(e.VictimName); if (v) { if (v.team === self.team) score.them++; else score.us++; } }
+  const isMe = (n) => { const p = find(n); return !!p && p === self; };
+  const myDeaths = kills.filter((e) => isMe(e.VictimName)).map((e) => {
+    const by = [e.KillerName, ...(e.Assisters || [])].map(find).filter((p) => p && p.team !== self.team);
+    return { min: Math.round((e.EventTime || 0) / 6) / 10, by: by.map((p) => p.championName), jungler: by.some((p) => p.position === 'JUNGLE') };
+  });
+  return { score, myDeaths };
+}
+
 class League {
   constructor(ctx) {
     this.db = ctx.db; this.settings = ctx.settings; this.secrets = ctx.secrets; this.fetch = ctx.fetch; this.cache = ctx.gameCache; this.bus = ctx.bus;
@@ -55,6 +74,7 @@ class League {
         items: (self.items || []).map((i) => i.displayName),
         source: 'Live Client Data API (lokal)',
       };
+      Object.assign(state, liveContext(all.events?.Events || [], players, self));
       if (!this.liveSession || (this.lastLive && seconds < this.lastLive.seconds - 30)) this.liveSession = id('lol');
       if (!this.lastLive || seconds - (this.lastLive.loggedAt || 0) >= 30) {
         this.db.run('INSERT INTO lol_samples(session,at,game_seconds,champion,level,gold,k,d,a,cs) VALUES(?,?,?,?,?,?,?,?,?,?)', this.liveSession, nowIso(), seconds, state.champion, state.level, state.gold, sc.kills, sc.deaths, sc.assists, sc.creepScore);
@@ -74,16 +94,42 @@ class League {
     }
   }
 
-  /** Rule-based, cheap live coaching hints (no LLM call). */
+  /**
+   * Live-Werte als neutrale Einordnung (kein LLM). Riot-Regeln: Apps dürfen im Spiel keine Entscheidungen
+   * vorgeben („jetzt recallen/ganken“), keine Power-Spike-Alarme und keine Gegner-Cooldowns/-Positionen tracken.
+   * Deshalb nur Zahlen, die du auch im Spiel siehst, verglichen mit DEINEM Schnitt und deinen Trainingszielen.
+   */
   liveTips(s) {
     const tips = [];
     const min = s.seconds / 60;
-    if (s.csPerMin != null && min > 8 && ['BOTTOM', 'MIDDLE', 'TOP', 'JUNGLE'].includes(s.position) && s.csPerMin < 6) tips.push(`CS/min bei ${s.csPerMin} – Wellen zwischen Fights einsammeln.`);
-    if (s.gold > 2000) tips.push(`${s.gold} Gold ungenutzt – bei Gelegenheit recallen.`);
-    if (s.opponent && s.level != null && s.opponent.level - s.level >= 2) tips.push(`Lane-Gegner ${s.opponent.champion} ist ${s.opponent.level - s.level} Level voraus – Risiko reduzieren.`);
-    if (s.deaths >= 5 && min < 15) tips.push('Viele frühe Tode – Wardings und Map-Check vor Aggression.');
-    if (s.ward != null && min > 15 && s.ward < min * 0.6) tips.push('Vision Score niedrig – Control Ward kaufen.');
-    return tips.slice(0, 3);
+    let avg = null; try { avg = this.stats(20).current; } catch { avg = null; }
+    const goal = (metric) => (this.goals?.() || []).find((g) => g.metric === metric)?.target;
+    if (s.csPerMin != null && min > 5 && s.position !== 'UTILITY') {
+      const ref = goal('csPerMin') ?? avg?.csPerMin;
+      tips.push(`CS/min ${s.csPerMin}${ref != null ? ` · ${goal('csPerMin') != null ? 'Ziel' : 'dein Schnitt'} ${ref}` : ''}`);
+    }
+    if (s.opponent && s.level != null && s.opponent.level != null && s.opponent.level !== s.level) tips.push(`Level ${s.level} gegen ${s.opponent.level} (${s.opponent.champion})`);
+    if (s.opponent?.cs != null && s.cs != null && s.position !== 'UTILITY' && s.position !== 'JUNGLE') tips.push(`CS ${s.cs} gegen ${s.opponent.cs} (${s.cs - s.opponent.cs >= 0 ? '+' : ''}${s.cs - s.opponent.cs})`);
+    const dg = goal('deaths');
+    if (dg != null && s.deaths != null) tips.push(`Tode ${s.deaths} · Ziel max. ${dg}`);
+    if (s.ward != null && min > 10) tips.push(`Vision ${Math.round(s.ward)}${avg?.vision != null ? ` · dein Schnitt am Ende ${avg.vision}` : ''}`);
+    return tips.slice(0, 4);
+  }
+
+  /** Notiz während des Spiels (per Sprache/Chat) – fließt in die Nachbesprechung ein. */
+  addLiveNote(text) {
+    const t = String(text || '').trim().slice(0, 300);
+    if (!t) throw new Error('Leere Notiz');
+    const list = (() => { try { return JSON.parse(this.db.get("SELECT value FROM game_state WHERE key='lol:notes'")?.value || '[]'); } catch { return []; } })();
+    const note = { at: nowIso(), gameSec: this.lastLive?.seconds ?? null, champion: this.lastLive?.champion || null, text: t };
+    list.push(note);
+    this.db.run("INSERT INTO game_state(key,value,updated_at) VALUES('lol:notes',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", JSON.stringify(list.slice(-60)), nowIso());
+    return note;
+  }
+  /** Notizen in einem Zeitfenster (für die Nachbesprechung eines Spiels). */
+  liveNotes(fromIso, toIso) {
+    let list = []; try { list = JSON.parse(this.db.get("SELECT value FROM game_state WHERE key='lol:notes'")?.value || '[]'); } catch { list = []; }
+    return list.filter((n) => (!fromIso || n.at >= fromIso) && (!toIso || n.at <= toIso));
   }
 
   // ---------- Riot Web API ----------
@@ -252,7 +298,7 @@ class League {
       source = 'Riot-API';
     }
     if (!game) return null;
-    const a = analyzeGame(game, tl, puuid);
+    const a = analyzeGame(game, tl, puuid, { name });
     if (!a) return null;
     a.matchId = mid; a.champion = a.champion || name(a.championId); if (a.opponent) a.opponent.champion = a.opponent.champion || name(a.opponent.championId);
     a.source = source; a.analyzedAt = nowIso();
@@ -265,7 +311,7 @@ class League {
   /** Fehlende Tiefenanalysen der letzten Ranked-Spiele nachholen (Client offen oder Riot-Schlüssel). */
   async deepSync({ limit = 20 } = {}) {
     const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT ?', limit);
-    const todo = rows.filter((r) => !this.getDeep(r.match_id)?.hasTimeline).map((r) => r.match_id);
+    const todo = rows.filter((r) => { const d = this.getDeep(r.match_id); return !d?.hasTimeline || (d.v || 1) < 2; }).map((r) => r.match_id);
     if (!todo.length) return { analyzed: 0, missing: 0 };
     const canClient = !!(await this.lcuCreds().catch(() => null));
     if (!canClient && !this.hasKey()) return { analyzed: 0, missing: todo.length, reason: 'Client geschlossen' };
@@ -282,7 +328,12 @@ class League {
   patterns(n = 20) {
     const rows = this.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT ?', n);
     const list = rows.map((r) => this.getDeep(r.match_id)).filter(Boolean);
-    return { ...patterns(list), recent: list.slice(0, 5).map((g) => ({ matchId: g.matchId, playedAt: g.playedAt, champion: g.champion, vs: g.opponent?.champion || null, win: g.win, kda: `${g.kills}/${g.deaths}/${g.assists}`, earlyDeaths: g.earlyDeaths, csAt10: g.csAt10, csDiff10: g.csDiff10, goldDiff15: g.goldDiff15, deaths: (g.deathsDetail || []).map((d) => `${d.min}. Min ${d.zone}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (${d.enemies} Gegner)` : ''}`), objectives: g.objectives })), analyzedOf: rows.length };
+    return { ...patterns(list), recent: list.slice(0, 5).map((g) => ({ matchId: g.matchId, playedAt: g.playedAt, champion: g.champion, vs: g.opponent?.champion || null, win: g.win, kda: `${g.kills}/${g.deaths}/${g.assists}`, earlyDeaths: g.earlyDeaths, csAt10: g.csAt10, csDiff10: g.csDiff10, goldDiff15: g.goldDiff15, deaths: (g.deathsDetail || []).map((d) => `${d.min}. Min ${d.zone}${d.by?.length ? ' durch ' + d.by.join(' + ') : ''}${d.solo ? ' (1v1)' : d.enemies >= 3 ? ` (${d.enemies} Gegner)` : ''}${d.jungler ? ' [Jungler]' : ''}${d.gold >= 1300 ? ` [${d.gold} Gold]` : ''}`), objectives: g.objectives, enemyJungle: g.enemyJungle || null, jungle: g.jungle || null, firstBackMin: g.firstBackMin ?? null, wardsBefore14: g.wardsBefore14 ?? null, notes: this.notesFor(g).map((x) => x.text) })), analyzedOf: rows.length };
+  }
+  notesFor(g) {
+    const start = Date.parse(g.playedAt); const dur = Number(g.duration || 0) || Number(g.durationMin || 0) * 60;
+    if (!Number.isFinite(start) || !dur) return [];
+    return this.liveNotes(new Date(start - 5 * 60000).toISOString(), new Date(start + (dur + 600) * 1000).toISOString());
   }
 
   saveRank(rank, source) {
@@ -452,4 +503,4 @@ function summarizeLcuGame(g, me, champName) {
   };
 }
 
-module.exports = { League, REGIONAL, summarizeLcuGame, parseGoal };
+module.exports = { liveContext, League, REGIONAL, summarizeLcuGame, parseGoal };

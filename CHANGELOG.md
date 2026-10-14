@@ -2,6 +2,16 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.23.0 – LoL-Coach: Jungle-Analyse, Notizen im Spiel, mehr Spielinfos
+
+- **Jungle-Analyse nach jedem Spiel** (aus der Riot-Timeline): gegnerischer Jungler mit Startseite (Min. 3–6), erster erfolgreicher Gank (Minute, Lane, Opfer), Ganks vor Min. 14 und wie viele davon dich getroffen haben.
+- **Tode genauer:** wer dich getötet hat (Champions), ob der gegnerische Jungler beteiligt war und wie viel Gold du dabei in der Tasche hattest.
+- **Spielst du selbst Jungle:** Jungle-CS bei 4/10 Min., Gank-Kills vor Min. 14, an welchen Lanes du warst, Startseite.
+- Neue Muster in der Fehleranalyse: „Oft vom gegnerischen Jungler erwischt“, „Tode mit viel ungenutztem Gold“, „Wenig früher Einfluss als Jungler“; dazu erster Einkauf und Wards vor Min. 14. Bereits analysierte Spiele werden automatisch neu ausgewertet.
+- **Notizen im Spiel:** „Jarvis, notier: Jungler kam zweimal bot“ – wird mit Spielzeit gespeichert und landet in der Nachbesprechung; die KI verknüpft deine Notizen mit den Zahlen.
+- **Live-Coach regelkonform:** im Match nur noch deine Werte im Vergleich zu deinem Schnitt und deinen Zielen (CS/min, CS und Level gegen den Lane-Gegner, Tode, Vision) – keine Anweisungen. Zusätzlich Kill-Stand und deine Tode mit beteiligten Champions (wie im Death-Recap).
+- Kein Live-Tracking des gegnerischen Junglers, keine Camp- oder Cooldown-Timer: das verbieten die Riot-Regeln für Drittanbieter-Apps.
+
 ## 3.22.1 – „Was ist das?“ erkennt in Tarkov auch den Item-Wert
 
 - **Eine Taste für beides:** Drückst du in Tarkov die „Was ist das?“-Taste, während der Mauszeiger auf einem Item liegt, schickt JARVIS zusätzlich einen Ausschnitt um den Mauszeiger mit. Ist dort ein Item, kommen Flohmarktpreis, bester Händler, Wert pro Slot und „für Quests/Hideout behalten?“ direkt mit: als Antwort und als Item-Karte im Overlay. Ist kein Item zu sehen, beantwortet JARVIS die Frage wie bisher.

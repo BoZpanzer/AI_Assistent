@@ -746,6 +746,8 @@ function LolMistakes() {
           <span class="chip static" title="CS-Differenz zum Lane-Gegner bei 10 Min.">CS-Diff@10 {A.csDiff10 > 0 ? '+' : ''}{A.csDiff10 ?? '–'}</span>
           <span class="chip static" title="Gold-Differenz zum Lane-Gegner bei 15 Min.">Gold@15 {A.goldDiff15 > 0 ? '+' : ''}{A.goldDiff15 ?? '–'}</span>
           <span class="chip static" title="Bei Drachen/Baron deines Teams in der Nähe (geschätzt)">Objectives ~{A.objectivePresence ?? '–'} %</span>
+          {A.gankDeathPct != null && <span class="chip static" title="Anteil deiner Tode vor Min. 14, an denen der gegnerische Jungler beteiligt war">Jungler an frühen Toden {A.gankDeathPct} %</span>}
+          {A.jungleCsAt10 != null && <span class="chip static" title="Eigene Jungle-Monster (CS) bis Min. 10, Ø in deinen Jungle-Spielen">Jungle-CS@10 Ø {A.jungleCsAt10}</span>}
         </div>
         <div class="col" style={{ gap: 8 }}>
           {!p.findings.length && <div class="small muted">Keine auffälligen Fehlermuster – solide.</div>}
@@ -771,7 +773,7 @@ function LolLive() {
         <div class="row"><b style={{ fontSize: 17 }}>{live.champion}</b><span class="chip static">Lvl {live.level}</span><span class="chip static">{Math.floor(live.seconds / 60)}:{String(live.seconds % 60).padStart(2, '0')}</span><span class="grow" /><b>{live.kills}/{live.deaths}/{live.assists}</b></div>
         <div class="small mt">CS {live.cs} ({live.csPerMin ?? '–'}/min) · Gold {live.gold} · Vision {Math.round(live.ward || 0)}</div>
         {live.opponent && <div class="small muted">Lane-Gegner: {live.opponent.champion} · Lvl {live.opponent.level} · CS {live.opponent.cs}</div>}
-        <div class="col mt" style={{ gap: 4 }}>{(live.tips || []).map((t) => <div class="small"><Sparkles size={12} style={{ color: 'var(--cyan)' }} /> {t}</div>)}{!live.tips?.length && <div class="small muted">Keine Hinweise – läuft gut.</div>}</div>
+        <div class="col mt" style={{ gap: 4 }}>{(live.tips || []).map((t) => <div class="small"><Sparkles size={12} style={{ color: 'var(--cyan)' }} /> {t}</div>)}{!live.tips?.length && <div class="small muted">Live-Einordnung ist aus (Einstellungen → Gaming).</div>}{live.score && <div class="tiny muted">Kills {live.score.us}:{live.score.them}{live.myDeaths?.length ? ` · deine Tode: ${live.myDeaths.map((d) => `${Math.floor(d.min)}. Min ${d.by.join(' + ')}`).join(', ')}` : ''}</div>}</div>
         {live.objectives?.length > 0 && <div class="mt" style={{ borderTop: '1px solid var(--line)', paddingTop: 6 }}>
           <div class="tiny muted">Objectives (≈ = Standard-Startzeit, je nach Patch anders)</div>
           {live.objectives.slice(0, 5).map((o) => <div class="row small" title={o.note || ''}><span class="grow">{o.label}{o.estimated ? ' ≈' : ''}{o.note ? <span class="tiny muted"> · {o.note}</span> : null}</span><b style={{ color: o.state === 'soon' ? '#c8aa6e' : o.state === 'up' ? 'var(--green)' : undefined }}>{o.remaining <= 0 ? 'steht' : `${Math.floor(o.remaining / 60)}:${String(o.remaining % 60).padStart(2, '0')}`}</b></div>)}

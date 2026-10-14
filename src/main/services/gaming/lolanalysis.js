@@ -71,7 +71,11 @@ function posAt(frames, id, ts) {
 const dist = (a, b) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity);
 
 /** Ein Spiel analysieren. Gibt null zurück, wenn der Spieler nicht gefunden wird. */
-function analyzeGame(game, timeline, puuid) {
+/** Kartenhälfte: oben links (Top-Seite) oder unten rechts (Bot-Seite) – Summoner's Rift 0..15000. */
+const side = (pos) => (!pos || pos.x == null ? null : pos.y - pos.x > 0 ? 'top' : 'bot');
+const SIDE_DE = { top: 'Top-Seite', bot: 'Bot-Seite' };
+
+function analyzeGame(game, timeline, puuid, { name = () => null } = {}) {
   const g = normalizeGame(game, puuid);
   if (!g?.me) return null;
   const { me, parts } = g;
@@ -87,7 +91,7 @@ function analyzeGame(game, timeline, puuid) {
     damageShare: round((me.damage / Math.max(1, team.reduce((a, p) => a + (p.damage || 0), 0))) * 100, 0),
     visionPerMin: round((me.vision || 0) / mins, 2), wardsPlaced: me.wardsPlaced ?? null, controlWards: me.controlWards ?? null,
     opponent: opp ? { championId: opp.championId, champion: opp.champion } : null,
-    hasTimeline: frames.length > 0,
+    hasTimeline: frames.length > 0, v: 2,
   };
   if (!frames.length) return out;
 
@@ -131,6 +135,50 @@ function analyzeGame(game, timeline, puuid) {
     }
   }
   out.objectives = { teamTaken, enemyTaken, presentPct: teamTaken ? round((present / teamTaken) * 100, 0) : null, deathsBeforeEnemyObjective: deadBefore, lostWhileDead: lost };
+
+  // ---- Jungle (nach dem Spiel aus der Riot-Timeline – im Spiel selbst wird nichts getrackt)
+  const champ = (p) => (p ? p.champion || name(p.championId) || null : null);
+  const ej = parts.find((p) => p.teamId !== me.teamId && p.role === 'JUNGLE') || null;
+  const ownJ = parts.find((p) => p.teamId === me.teamId && p.role === 'JUNGLE') || null;
+  const involved = (e, p) => !!p && (e.killerId === p.id || (e.assistingParticipantIds || []).includes(p.id));
+  out.deathsDetail = out.deathsDetail.map((d, i) => {
+    const e = kills.filter((k) => k.victimId === me.id)[i];
+    const by = [e.killerId, ...(e.assistingParticipantIds || [])].map((pid) => parts.find((p) => p.id === pid)).filter((p) => p && p.teamId !== me.teamId);
+    return { ...d, by: by.map(champ).filter(Boolean), jungler: involved(e, ej), gold: pf(frames.find((f) => f.timestamp >= e.timestamp - 60000 && f.timestamp <= e.timestamp) || null, me.id)?.currentGold ?? null };
+  });
+  if (ej) {
+    const early = [3, 4, 5, 6].map((m) => side(pf(atMinute(frames, m), ej.id)?.position)).filter(Boolean);
+    const top = early.filter((x) => x === 'top').length;
+    const ganks = kills.filter((e) => e.timestamp < 14 * 60000 && involved(e, ej) && parts.find((p) => p.id === e.victimId)?.teamId === me.teamId);
+    const firstGank = ganks[0] ? { min: round(ganks[0].timestamp / 60000, 1), zone: zone(ganks[0].position, me.teamId), victim: champ(parts.find((p) => p.id === ganks[0].victimId)) } : null;
+    out.enemyJungle = {
+      champion: champ(ej), earlySide: early.length ? (top > early.length / 2 ? 'top' : top < early.length / 2 ? 'bot' : 'gemischt') : null,
+      firstGank, ganksBefore14: ganks.length, ganksOnMe: out.deathsDetail.filter((d) => d.jungler && d.min < 14).length,
+      lanesGanked: ganks.reduce((a, e) => { const z = zone(e.position, me.teamId); a[z] = (a[z] || 0) + 1; return a; }, {}),
+    };
+  }
+  if (me.role === 'JUNGLE') {
+    const myFrames = [4, 6, 8, 10].map((m) => ({ m, f: pf(atMinute(frames, m), me.id) }));
+    const laneMins = [];
+    for (let m = 3; m <= 14; m++) { const z = zone(pf(atMinute(frames, m), me.id)?.position, me.teamId); if (/lane/i.test(z)) laneMins.push(z); }
+    const myGanks = kills.filter((e) => e.timestamp < 14 * 60000 && involved(e, me) && parts.find((p) => p.id === e.victimId)?.teamId !== me.teamId);
+    out.jungle = {
+      jungleCsAt4: myFrames[0].f?.jungleMinionsKilled ?? null, jungleCsAt10: myFrames[3].f?.jungleMinionsKilled ?? null,
+      earlySide: (() => { const s = [3, 4, 5, 6].map((m) => side(pf(atMinute(frames, m), me.id)?.position)).filter(Boolean); const t = s.filter((x) => x === 'top').length; return s.length ? (t > s.length / 2 ? 'top' : t < s.length / 2 ? 'bot' : 'gemischt') : null; })(),
+      gankKillsBefore14: myGanks.length,
+      laneVisitsBefore14: laneMins.reduce((a, z) => { a[z] = (a[z] || 0) + 1; return a; }, {}),
+      vsJungler: ej ? { csDiff10: out.csDiff10 ?? null } : null,
+    };
+  }
+  // Wards und erste Rückkehr (Kauf nach Minute 2)
+  const mine = (e) => e.creatorId === me.id || e.participantId === me.id;
+  const wards = events.filter((e) => e.type === 'WARD_PLACED' && mine(e));
+  out.wardsBefore14 = wards.filter((e) => e.timestamp < 14 * 60000).length || (wards.length ? 0 : null);
+  out.controlWardsPlaced = wards.filter((e) => /CONTROL/i.test(e.wardType || '')).length || (wards.length ? 0 : null);
+  const firstBuy = events.find((e) => e.type === 'ITEM_PURCHASED' && e.participantId === me.id && e.timestamp > 120000);
+  out.firstBackMin = firstBuy ? round(firstBuy.timestamp / 60000, 1) : null;
+  out.highGoldDeaths = out.deathsDetail.filter((d) => d.gold != null && d.gold >= 1300).length;
+  if (ownJ && ownJ.id !== me.id) out.ownJungler = champ(ownJ);
   return out;
 }
 
@@ -178,6 +226,26 @@ function patterns(list) {
     if (A.goldDiff15 != null && A.goldDiff15 <= -400) add(res.findings, 'gold-behind', 'Hinter dem Lane-Gegner bei 15 Min.', `Gegen deinen direkten Gegner liegst du bei 15 Minuten im Schnitt ${Math.abs(A.goldDiff15)} Gold zurück (CS-Differenz bei 10 Min.: ${A.csDiff10 ?? '–'}).`, { goldDiff15: A.goldDiff15, csDiff10: A.csDiff10 }, 2.5);
     if (A.goldDiff15 != null && A.goldDiff15 >= 400) add(res.strengths, 'lane-strong', 'Starke Lane-Phase', `Bei 15 Min. im Schnitt +${A.goldDiff15} Gold gegen deinen Gegner.`, { goldDiff15: A.goldDiff15 }, 1);
   }
+  // Jungle / Ganks / Gold (aus Timelines)
+  if (tl.length >= 3) {
+    const gankDeaths = tl.reduce((a, g) => a + (g.deathsDetail || []).filter((d) => d.jungler && d.min < 14).length, 0);
+    const early = tl.reduce((a, g) => a + (g.deathsDetail || []).filter((d) => d.min < 14).length, 0);
+    if (early >= 3) A.gankDeathPct = Math.round(gankDeaths / early * 100);
+    if (early >= 4 && gankDeaths / early >= 0.4) {
+      const sides = tl.map((g) => g.enemyJungle?.firstGank?.zone).filter(Boolean);
+      const where = sides.length ? Object.entries(sides.reduce((a, z) => { a[z] = (a[z] || 0) + 1; return a; }, {})).sort((a, b) => b[1] - a[1])[0][0] : null;
+      add(res.findings, 'ganked', 'Oft vom gegnerischen Jungler erwischt', `${gankDeaths} deiner ${early} frühen Tode (vor Min. 14) waren mit dem gegnerischen Jungler beteiligt${where ? `; erster Gank meistens: ${where}` : ''}. Tipp: Wo war der Jungler zuletzt zu sehen, auf welcher Seite startet er (steht in jeder Nachbesprechung)?`, { gankDeaths, earlyDeaths: early, firstGankZone: where }, 2.5 + gankDeaths / early * 2);
+    }
+    const hg = tl.reduce((a, g) => a + (g.highGoldDeaths || 0), 0);
+    if (hg >= 3 && hg / tl.length >= 0.6) add(res.findings, 'gold-deaths', 'Tode mit viel ungenutztem Gold', `${hg}-mal bist du mit 1300+ Gold in der Tasche gestorben (in ${tl.length} Spielen). Das Gold hätte schon ein Item sein können.`, { count: hg, games: tl.length }, 1.8);
+    const jg = tl.filter((g) => g.jungle);
+    if (jg.length >= 3) {
+      const gk = avg(jg.map((g) => g.jungle.gankKillsBefore14));
+      if (gk != null && gk < 1) add(res.findings, 'jungle-impact', 'Wenig früher Einfluss als Jungler', `Im Schnitt ${round(gk)} Kills/Assists durch Ganks vor Min. 14 (${jg.length} Jungle-Spiele).`, { avg: round(gk) }, 1.8);
+      const c10 = avg(jg.map((g) => g.jungle.jungleCsAt10).filter((v) => v != null));
+      if (c10 != null) A.jungleCsAt10 = round(c10, 0);
+    }
+  }
   if (A.controlWards != null && A.controlWards < 1 && majorRole(games) !== null) add(res.findings, 'control-wards', 'Kaum Kontrollwards', `Im Schnitt ${A.controlWards} Kontrollwards pro Spiel. Eine pro Rückkehr zur Basis ist eine gute Faustregel.`, { avg: A.controlWards }, 1.5);
   const vw = avg(wins.map((g) => g.visionPerMin).filter((v) => v != null)); const vl = avg(losses.map((g) => g.visionPerMin).filter((v) => v != null));
   if (wins.length >= 2 && losses.length >= 2 && vw && vl && vl < vw * 0.8) add(res.findings, 'vision-loss', 'Weniger Sicht in Niederlagen', `Vision pro Minute: ${round(vw, 2)} in Siegen, ${round(vl, 2)} in Niederlagen.`, { wins: round(vw, 2), losses: round(vl, 2) }, 1.2);
@@ -192,4 +260,4 @@ function majorRole(games) {
   return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 }
 
-module.exports = { analyzeGame, patterns, zone, normalizeGame, ROLE_DE };
+module.exports = { analyzeGame, patterns, zone, normalizeGame, ROLE_DE, side, SIDE_DE };

@@ -325,7 +325,7 @@ function GamingCard({ s, secrets }) {
       <Field label="Riot-API-Schlüssel (optional)" hint={secrets['riot.api_key'] ? 'gespeichert' : 'nicht nötig, wenn der Client läuft'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['riot.api_key'] ? '••••••••' : 'RGAPI-…'} value={riotKey} onInput={(e) => setRiotKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'riot.api_key', value: riotKey }), 'Gespeichert'); setRiotKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
       </Field>
-      <Field label="LoL Live-Coach (Hinweise im Match)"><Toggle checked={g.lolLiveCoach} onChange={(v) => upd({ gaming: { lolLiveCoach: v } })} /></Field>
+      <Field label="LoL Live-Coach (deine Werte im Match)" hint="Nur Einordnung gegen deinen Schnitt und deine Ziele – keine Anweisungen, keine Gegner-Timer (Riot-Regeln). Notizen im Spiel: „Jarvis, notier: …“ – landen in der Nachbesprechung."><Toggle checked={g.lolLiveCoach} onChange={(v) => upd({ gaming: { lolLiveCoach: v } })} /></Field>
       <Field label="LoL Objective-Timer im Overlay" hint="Drache, Baron, Herold, Grubs, Atakhan – Respawns aus echten Kills"><Toggle checked={g.lolObjectives !== false} onChange={(v) => upd({ gaming: { lolObjectives: v } })} /></Field>
       {g.lolObjectives !== false && <Field label="Erste Spawnzeiten (Min.)" hint="Standardwerte; nach einem Patch hier anpassen">
         <div class="row gap-s" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>{[['dragon', 'Drache', 5], ['grubs', 'Grubs', 8], ['herald', 'Herold', 15], ['atakhan', 'Atakhan', 20], ['baron', 'Baron', 25]].map(([k, l, d]) => (
