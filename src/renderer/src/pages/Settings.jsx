@@ -22,6 +22,7 @@ export function Settings() {
         <div class="settings-grid">
           <General s={s} />
           <Speech s={s} />
+          <LocalAI s={s} />
           <Ai s={s} secrets={secrets} />
           <Google s={s} />
           <StudyCard s={s} />
@@ -114,7 +115,7 @@ function Ai({ s, secrets }) {
       <Field label="Temperatur"><Select value={String(s.temperature)} onChange={(v) => upd({ temperature: Number(v) })} options={[['0.3', 'Präzise (0.3)'], ['0.7', 'Ausgewogen (0.7)'], ['1', 'Kreativ (1.0)']].map(([value, label]) => ({ value, label }))} /></Field>
       <Field label="Websuche für aktuelle Informationen"><Toggle checked={s.webSearch} onChange={(v) => upd({ webSearch: v })} /></Field>
       <Field label="Wichtiges automatisch merken (Brain)" hint="Sensibles nur auf ausdrücklichen Wunsch"><Toggle checked={s.autoMemory} onChange={(v) => upd({ autoMemory: v })} /></Field>
-      <Field label="Geburtstage aus dem Brain in den Kalender" hint="ganztägig, jährlich – auch nach Google"><Toggle checked={s.birthdaysToCalendar !== false} onChange={(v) => upd({ birthdaysToCalendar: v })} /></Field>
+      <Field label="Geburtstage aus dem Brain in den Kalender" hint="ganztägig, jährlich – nur lokal"><Toggle checked={s.birthdaysToCalendar !== false} onChange={(v) => upd({ birthdaysToCalendar: v })} /></Field>
       <div class="row mt"><button class="btn xs" disabled={busy || !secrets['gemini.api_key']} onClick={() => test('')}><RefreshCw size={12} />Modelle neu prüfen</button><span class="tiny muted grow">Diese Sitzung: {usage?.requests || 0} Anfragen · {Math.round(((usage?.inputTokens || 0) + (usage?.outputTokens || 0)) / 1000)}k Tokens</span></div>
       <BudgetField s={s} />
       <UsageTable />
@@ -179,7 +180,7 @@ function Google({ s }) {
   };
   const row = (Icon, name, ok, note) => <div class="conn-row"><span class="gico"><Icon size={18} /></span><span>{name}</span><span class="st"><StatusDot state={ok ? 'ok' : 'off'} /><span class={ok ? 'ok' : 'muted'}>{ok ? 'Verbunden' : note || 'Nicht verbunden'}</span></span></div>;
   return (
-    <Panel icon={CalendarDays} title="Kalender & Google" sub="Verbindungen und Synchronisation">
+    <Panel icon={CalendarDays} title="Kalender & Google" sub="Google nur lesen · neue Termine bleiben lokal">
       {row(Globe, `Google-Konto${status?.account ? ' · ' + status.account : ''}`, status?.connected)}
       {row(CalendarDays, 'Google Kalender', status?.connected && cals.some((c) => c.id !== 'local'))}
       {!status?.connected ? (
@@ -196,7 +197,7 @@ function Google({ s }) {
         <>
           <Field label="Auto-Synchronisation"><Toggle checked={s.google.calendarSync} onChange={(v) => upd({ google: { calendarSync: v } })} /></Field>
           <Field label="Synchronisationsintervall"><Select value={String(s.google.syncIntervalMinutes)} onChange={(v) => upd({ google: { syncIntervalMinutes: Number(v) } })} options={[['5', 'Alle 5 Minuten'], ['15', 'Alle 15 Minuten'], ['30', 'Alle 30 Minuten'], ['60', 'Stündlich']].map(([value, label]) => ({ value, label }))} /></Field>
-          <Field label="Neue Termine in"><Select value={s.google.defaultCalendarId} onChange={(v) => upd({ google: { defaultCalendarId: v } })} options={[{ value: '', label: 'Hauptkalender' }, ...cals.filter((c) => c.writable && c.id !== 'local').map((c) => ({ value: c.id, label: c.name }))]} /></Field>
+          <Field label="Neue Termine bleiben immer lokal (Private)"><Select disabled value={s.google.defaultCalendarId} onChange={(v) => upd({ google: { defaultCalendarId: v } })} options={[{ value: '', label: 'Hauptkalender' }, ...cals.filter((c) => c.writable && c.id !== 'local').map((c) => ({ value: c.id, label: c.name }))]} /></Field>
           <div class="row"><span class="tiny muted grow">Letzter Abgleich: {status?.lastSync ? ago(status.lastSync) : '—'}{status?.error ? ' · ' + status.error : ''}</span>
             <button class="btn xs" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}><RefreshCw size={12} />Sync</button>
             <button class="btn xs danger" onClick={async () => { if (await ask('Google trennen? Lokale Kopien der Google-Termine bleiben bis zum nächsten Abgleich sichtbar.', '', { confirmOnly: true, okLabel: 'Trennen' })) { await rpc('google.disconnect'); setState({ google: await rpc('calendar.status') }); } }}>Trennen</button></div>
@@ -636,4 +637,16 @@ function ImportModal({ onClose }) {
       <button class="btn sm mt" onClick={() => guard(() => rpc('study.import'), 'Dokumente indexiert')}><Upload size={14} />Dateien importieren (PDF, DOCX, PPTX, MD, TXT, IPYNB)</button>
     </Modal>
   );
+}
+
+
+function LocalAI({ s }) {
+  const [models, setModels] = useState([]);
+  return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub="Private Daten bleiben auf diesem PC">
+    <p class="small">Finanzen, Persönliches, Familie und Termine werden lokal verarbeitet. Ollama mit OLLAMA_NO_CLOUD=1 starten und ein lokales Modell mit Werkzeugunterstützung installieren. Kein Cloud-Fallback.</p>
+    <Field label="Ollama-Port (127.0.0.1)"><input class="inp" type="number" min="1" max="65535" value={s.localLLM?.port || 11434} onChange={(e) => upd({ localLLM: { port: Number(e.currentTarget.value) } })} /></Field>
+    <button class="btn sm" onClick={async () => { const r = await guard(() => rpc('local.models')); if (r) setModels(r); }}>Lokale Modelle laden</button>
+    <Select value={s.localLLM?.model || ''} onChange={(model) => upd({ localLLM: { model } })} options={[{ value: '', label: 'Modell auswählen' }, ...[...new Set([s.localLLM?.model, ...models].filter(Boolean))].map((m) => ({ value: m, label: m }))]} />
+    <p class="tiny muted">Cloud-Gespräche für Uni/Gaming separat starten. Private-Gespräche bleiben dauerhaft lokal. Cloud-Backups, Cloud-Embeddings, Google-Terminänderungen und Gemini Live sind gesperrt; lokale Textsuche und lokale Backups bleiben verfügbar.</p>
+  </Panel>;
 }

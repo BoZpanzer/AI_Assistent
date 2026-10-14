@@ -73,27 +73,9 @@ class Transit {
   }
 
   /** Alle paar Minuten: Verbindung zum nächsten Termin planen und rechtzeitig „los“ melden. */
-  async check(now = new Date()) {
-    if (this.cfg().enabled === false || !this.cfg().homeId) return null;
-    const ev = this.nextEvent(now); if (!ev) return null;
-    let p = this.plans.get(ev.id);
-    if (!p || Date.now() - p.at > 10 * 60000 || p.start !== ev.start_at) {
-      try { p = { at: Date.now(), start: ev.start_at, ...(await this.plan(ev.location, ev.start_at)) }; } catch (e) { log.debug('plan', e); p = { at: Date.now(), start: ev.start_at, error: e.message, journeys: [] }; }
-      this.plans.set(ev.id, p);
-      this.s.bus.emit('transit:data', { eventId: ev.id });
-    }
-    const j = p.journeys[0]; if (!j) return { event: ev, plan: p };
-    const lead = Number(this.cfg().notifyBeforeMin ?? 10);
-    const mins = (Date.parse(j.leave) - now.getTime()) / 60000;
-    if (mins <= lead && mins > -2) {
-      const ride = j.legs.find((l) => !l.walking) || j.legs[0];
-      const t = (x) => new Date(x).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-      this.s.notifications.push({ category: 'system', origin: 'system', dedupeKey: `leave:${ev.id}:${ev.start_at}`, title: `Los in ${Math.max(0, Math.round(mins))} min: ${ev.title}`,
-        body: `${ride.line ? ride.line + ' ' : ''}ab ${ride.from || this.cfg().homeName} um ${t(ride.dep)}${ride.platform ? ', Gl. ' + ride.platform : ''}${ride.delayMin ? ` (+${ride.delayMin})` : ''} → an ${t(j.arrive)}${j.transfers ? `, ${j.transfers}× umsteigen` : ''}` });
-    }
-    return { event: ev, plan: p };
-  }
+  async check() { return { skipped: 'private-calendar', message: 'Automatische Routen zu privaten Terminen bleiben deaktiviert.' }; }
   state() { const ev = this.nextEvent(); return { home: this.cfg().homeId ? { id: this.cfg().homeId, name: this.cfg().homeName } : null, event: ev, plan: ev ? this.plans.get(ev.id) || null : null }; }
 }
 
 module.exports = { Transit, ONLINE };
+

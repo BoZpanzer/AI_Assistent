@@ -443,10 +443,23 @@ class Gaming {
     if (m) this.bus.emit('game:markers', m);
   }
   clearMarkers(gid, map) { this.db.run('DELETE FROM game_markers WHERE game=? AND map=?', gid, map); this.bus.emit('game:markers', { game: gid, map }); }
+  routeGoal(map) { return safeJson(this.context.getState('eft:route-goal:' + map), null); }
+  setRouteGoal(map, goal) {
+    if (typeof map !== 'string' || !map.trim() || map.length > 80) throw new Error('Karte erforderlich');
+    if (goal !== null) {
+      if (!goal || !String(goal.label || '').trim()) throw new Error('Zielname erforderlich');
+      const placed = goal.x != null || goal.y != null;
+      if (placed && (![goal.x, goal.y].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1))) throw new Error('Ziel muss innerhalb der Karte liegen');
+      goal = { label: String(goal.label).trim().slice(0,120), x: placed ? goal.x : null, y: placed ? goal.y : null, floor: goal.floor ? String(goal.floor).slice(0,80) : null };
+    }
+    this.context.setState('eft:route-goal:' + map, goal);
+    this.bus.emit('game:markers', { game: 'eft', map }); return goal;
+  }
   routes(gid, map) { return this.db.all('SELECT * FROM game_routes WHERE game=? AND map=? ORDER BY created_at DESC', gid, map).map((r) => ({ id: r.id, name: r.name, points: safeJson(r.points, []) })); }
   saveRoute(gid, map, name, points) {
     if (!Array.isArray(points) || points.length < 2 || points.length > 50) throw new Error('Route braucht 2–50 Punkte');
     const clean = points.map((p) => ({ x: Number(p.x), y: Number(p.y), label: String(p.label || '').slice(0, 40) })).filter((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
+    if (clean.length !== points.length) throw new Error('Alle Routenpunkte müssen innerhalb der Karte liegen');
     const rid = id('rt');
     this.db.run('INSERT INTO game_routes(id,game,map,name,points,created_at) VALUES(?,?,?,?,?,?)', rid, gid, map, String(name).slice(0, 60), JSON.stringify(clean), nowIso());
     this.bus.emit('game:markers', { game: gid, map });
@@ -532,3 +545,4 @@ class Gaming {
 }
 
 module.exports = { Gaming, WIDGETS, LAYOUTS, WIDGET_TYPES: Object.keys(WIDGETS), extrasFor };
+

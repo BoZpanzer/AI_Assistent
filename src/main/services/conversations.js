@@ -5,15 +5,17 @@ const { id, nowIso, safeJson, truncate } = require('../core/util');
 class Conversations {
   constructor(ctx) { this.db = ctx.db; this.bus = ctx.bus; }
 
-  create(title = 'Neues Gespräch') {
+  create(title = 'Neues Gespräch', privacy = 'private') {
+    if (!['private', 'study', 'gaming'].includes(privacy)) throw new Error('Ungültiger Gesprächsmodus');
     const cid = id('c'); const now = nowIso();
     this.db.run('INSERT INTO conversations(id,title,created_at,updated_at) VALUES(?,?,?,?)', cid, title, now, now);
+    this.db.run('UPDATE conversations SET privacy=? WHERE id=?', privacy, cid);
     this.bus.emit('conversations:changed', {});
     return this.get(cid);
   }
   get(cid) {
     const r = this.db.get('SELECT * FROM conversations WHERE id=?', cid);
-    return r ? { id: r.id, title: r.title, createdAt: r.created_at, updatedAt: r.updated_at, archived: !!r.archived } : null;
+    return r ? { id: r.id, title: r.title, createdAt: r.created_at, updatedAt: r.updated_at, privacy: r.privacy, archived: !!r.archived } : null;
   }
   /** The conversation the dashboard / voice use: most recent, or a new one. */
   current() {
@@ -25,12 +27,13 @@ class Conversations {
       const fts = q.split(/\s+/).filter(Boolean).map((t) => `"${t.replace(/"/g, '')}"*`).join(' ');
       return this.db.all(`SELECT DISTINCT c.*, snippet(messages_fts, 0, '‹', '›', '…', 12) snip FROM messages_fts f JOIN messages m ON m.rowid=f.rowid
         JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ? GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?`, fts, limit)
-        .map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at, snippet: r.snip }));
+        .map((r) => ({ id: r.id, title: r.title, privacy: r.privacy, updatedAt: r.updated_at, snippet: r.snip }));
     }
     return this.db.all(`SELECT c.*, (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY created_at DESC LIMIT 1) last,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) n FROM conversations c WHERE archived=0 ORDER BY updated_at DESC LIMIT ?`, limit)
-      .map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at, preview: truncate(r.last || '', 90), messages: r.n }));
+      .map((r) => ({ id: r.id, title: r.title, privacy: r.privacy, updatedAt: r.updated_at, preview: truncate(r.last || '', 90), messages: r.n }));
   }
+  markPrivate(cid) { this.db.run("UPDATE conversations SET privacy='private' WHERE id=?", cid); this.bus.emit('conversations:changed', {}); return this.get(cid); }
   rename(cid, title) { this.db.run('UPDATE conversations SET title=? WHERE id=?', String(title).slice(0, 120), cid); this.bus.emit('conversations:changed', {}); }
   remove(cid) { this.db.run('DELETE FROM conversations WHERE id=?', cid); this.bus.emit('conversations:changed', {}); }
 
@@ -92,3 +95,4 @@ class Conversations {
 }
 
 module.exports = { Conversations };
+

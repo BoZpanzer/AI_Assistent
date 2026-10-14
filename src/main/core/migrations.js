@@ -217,4 +217,11 @@ module.exports = [
     CREATE TABLE recurring(id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('income','expense')), name TEXT NOT NULL, amount REAL NOT NULL, cycle TEXT NOT NULL DEFAULT 'month', day INTEGER NOT NULL DEFAULT 1, month INTEGER, category TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
     CREATE TABLE incomes(id TEXT PRIMARY KEY, amount REAL NOT NULL, note TEXT NOT NULL DEFAULT '', at TEXT NOT NULL, created_at TEXT NOT NULL);
   `),
+  // v9 — private conversations and reserved spending (not expenses until booked)
+  (db) => db.exec(`
+    ALTER TABLE conversations ADD COLUMN privacy TEXT NOT NULL DEFAULT 'private';
+    CREATE TABLE expense_buckets(id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL CHECK(amount>0), month TEXT NOT NULL, category TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE INDEX ix_buckets_month ON expense_buckets(month);
+  `),
 ];
+

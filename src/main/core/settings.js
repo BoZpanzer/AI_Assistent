@@ -36,6 +36,7 @@ const SCHEMA = {
     campusDualResults: { type: 'object', properties: { enabled: { type: 'boolean' }, intervalHours: { type: 'number', minimum: 1, maximum: 48 } } },
     backupDrive: { type: 'object', properties: { enabled: { type: 'boolean' }, folder: { type: 'string', maxLength: 200 }, keep: { type: 'number', minimum: 1, maximum: 100 }, intervalHours: { type: 'number', minimum: 1, maximum: 168 } } },
     updateCheck: { type: 'boolean' },
+    localLLM: { type: 'object', properties: { port: { type: 'integer', minimum: 1, maximum: 65535 }, model: { type: 'string', maxLength: 120 } } },
     // AI
     models: { type: 'object', properties: {
       fast: { type: 'string', maxLength: 80 }, reasoning: { type: 'string', maxLength: 80 },
@@ -185,3 +186,4 @@ class Settings {
 }
 
 module.exports = { Settings, DEFAULTS, SCHEMA };
+

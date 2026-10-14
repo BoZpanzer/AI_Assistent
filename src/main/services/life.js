@@ -61,6 +61,27 @@ class Life {
   cfg() { return this.s.settings.get('life') || {}; }
   emit() { this.s.bus.emit('life:data', {}); }
 
+  buckets(month) { return this.db().all('SELECT * FROM expense_buckets' + (month ? ' WHERE month=?' : '') + ' ORDER BY month, created_at', ...(month ? [month] : [])); }
+  saveBucket({ id: bid, name, amount, month, category = 'Sonstiges' } = {}) {
+    const a = Number(String(amount).replace(',', '.'));
+    if (!String(name || '').trim() || !Number.isFinite(a) || a < 0.01 || a >= 100000 || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) throw new Error('Name, positiver Betrag und Monat (JJJJ-MM) nötig');
+    if (bid && !this.db().get('SELECT id FROM expense_buckets WHERE id=?', bid)) throw new Error('Bucket nicht gefunden');
+    const key = bid || id('bucket');
+    this.db().run(`INSERT INTO expense_buckets(id,name,amount,month,category,created_at) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name, amount=excluded.amount, month=excluded.month, category=excluded.category`, key, String(name).trim().slice(0,120), r2(a), month, CATEGORIES.includes(category) ? category : 'Sonstiges', nowIso());
+    this.emit(); return this.db().get('SELECT * FROM expense_buckets WHERE id=?', key);
+  }
+  removeBucket(bid) { this.db().run('DELETE FROM expense_buckets WHERE id=?', bid); this.emit(); return true; }
+  bookBucket(bid, at) {
+    const result = this.db().tx(() => {
+      const b = this.db().get('SELECT * FROM expense_buckets WHERE id=?', bid);
+      if (!b) throw new Error('Bucket nicht gefunden oder bereits gebucht');
+      this.db().run('DELETE FROM expense_buckets WHERE id=?', bid);
+      return this.addExpense({ amount: b.amount, note: b.name, category: b.category, at });
+    });
+    this.emit(); return result;
+  }
+
   // ---------- Ausgaben ----------
   addExpense({ amount, note = '', category, at } = {}) {
     const a = Number(String(amount).replace(',', '.'));
@@ -93,10 +114,12 @@ class Life {
     const fixedOut = r2(fixed.filter((x) => x.kind === 'expense').reduce((a, x) => a + x.amount, 0));
     const subsThisMonth = r2(this.subscriptions().filter((x) => x.active).reduce((a, x) => { const nc = new Date(x.nextCharge + 'T12:00:00'); return a + (x.cycle === 'month' || x.cycle === 'week' ? monthly(x) : (nc.getFullYear() === y && nc.getMonth() + 1 === m ? x.amount : 0)); }, 0));
     // Saldo = was bis Monatsende noch frei ist: Einnahmen minus feste Posten, Abos und Ausgaben bisher
-    const balance = income ? r2(income - fixedOut - subsThisMonth - total) : null;
+    const buckets = this.buckets(`${y}-${String(m).padStart(2, '0')}`);
+    const reserved = r2(buckets.reduce((sum, b) => sum + b.amount, 0));
+    const balance = income ? r2(income - fixedOut - subsThisMonth - total - reserved) : null;
     const perDay = balance != null && isNow ? r2(balance / Math.max(1, daysIn - dayNo + 1)) : null;
-    return { month: `${y}-${String(m).padStart(2, '0')}`, total, subscriptions: subs, totalWithSubs: r2(total + subs), budget, left: budget != null ? r2(budget - total - subs) : null, forecast,
-      income, fixedOut, subsThisMonth, balance, perDay, fixed, incomes: once.map((x) => ({ id: x.id, amount: x.amount, note: x.note, at: x.at })),
+    return { month: `${y}-${String(m).padStart(2, '0')}`, total, subscriptions: subs, totalWithSubs: r2(total + subs), budget, left: budget != null ? r2(budget - total - subs - reserved) : null, forecast,
+      reserved, buckets, income, fixedOut, subsThisMonth, balance, perDay, fixed, incomes: once.map((x) => ({ id: x.id, amount: x.amount, note: x.note, at: x.at })),
       categories: Object.entries(byCat).map(([category, sum]) => ({ category, sum })).sort((a, b) => b.sum - a.sum), recent: rows.slice(0, 12).map((x) => ({ id: x.id, amount: x.amount, category: x.category, note: x.note, at: x.at })) };
   }
 
@@ -296,3 +319,4 @@ class Life {
 }
 
 module.exports = { Life, CATEGORIES, SECTIONS, parseWorkout, e1rm, addCycle, pickBy, CAT_WORDS, SEC_WORDS };
+

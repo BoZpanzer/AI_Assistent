@@ -37,7 +37,7 @@ export function Chat() {
             <div class="col scroll" style={{ padding: '0 10px 10px', gap: 6 }}>
               {(list || []).map((c) => (
                 <div class={`result-row ${c.id === cid ? 'sel' : ''}`} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }} onClick={() => setState({ conversationId: c.id })}>
-                  <div class="ellipsis" style={{ fontWeight: 600, fontSize: 13.5 }}>{c.title}</div>
+                  <div class="ellipsis" style={{ fontWeight: 600, fontSize: 13.5 }}>{c.privacy === 'private' ? '🔒 ' : '☁ '}{c.title}</div>
                   <div class="tiny muted ellipsis">{c.snippet || c.preview || '—'}</div>
                   <div class="tiny muted">{ago(c.updatedAt)}</div>
                 </div>
@@ -63,3 +63,4 @@ export function Chat() {
     </div>
   );
 }
+

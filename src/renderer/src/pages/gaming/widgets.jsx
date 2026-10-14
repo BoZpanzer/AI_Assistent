@@ -69,6 +69,9 @@ function MapWidget({ game, params }) {
   const [full, setFull] = useState(false);
   const [history, setHistory] = useState([]);
   const [routeDraft, setRouteDraft] = useState(null);
+  const [goal] = useRpc('tarkov.routeGoal', { map }, { enabled: isEft, deps: [map], events: ['game:markers'] });
+  const [placingGoal, setPlacingGoal] = useState(false);
+  useEffect(() => { setRouteDraft(null); setPlacingGoal(false); }, [map]);
   const [calib, setCalib] = useState(null); // {step, points:[]}
   const [imgSize, setImgSize] = useState({ w: 1600, h: 1000 });
   const box = useRef(); const drag = useRef(null);
@@ -115,6 +118,11 @@ function MapWidget({ game, params }) {
       if (pts.length === 2) { await guard(() => rpc('game.calibrate', { game: game.id, map, points: pts }), 'Karte kalibriert – API-Punkte werden eingeblendet'); setCalib(null); reloadMaps(); } else setCalib({ points: pts });
       return;
     }
+    if (placingGoal) {
+      const label = goal?.label || await ask('Dein Routenziel', '');
+      if (label && await guard(() => rpc('tarkov.setRouteGoal', { map, goal: { ...p, label, floor } }))) setPlacingGoal(false);
+      return;
+    }
     if (routeDraft) { setRouteDraft([...routeDraft, p]); return; }
     const label = await ask(`${CATS.find((c) => c.id === tool).label}-Marker – Beschriftung`, '');
     if (label === null) return;
@@ -127,6 +135,7 @@ function MapWidget({ game, params }) {
   const onMove = (e) => { const d = drag.current; if (!d || !(e.buttons & 1)) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
   const editMarker = async (m) => {
+    if (placingGoal) { await guard(() => rpc('tarkov.setRouteGoal', { map, goal: { x: m.x, y: m.y, label: m.task || m.label || 'Ziel', floor } })); setPlacingGoal(false); return; }
     if (m.api) return toast(m.objective ? `${m.task}: ${m.objective} (Quelle: tarkov.dev)` : `${m.label} (Quelle: tarkov.dev)`, undefined, m.objective ? 8000 : undefined);
     const label = await ask('Marker bearbeiten – Beschriftung (leer = löschen)', m.label || '');
     if (label === null) return;
@@ -146,10 +155,14 @@ function MapWidget({ game, params }) {
         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, height: full ? 'calc(100% - 10px)' : 380 }}>
           <div class="map-tools">
             <div class="hud-label" style={{ fontSize: 11 }}>Marker setzen</div>
-            {CATS.map((c) => <div class={`tool ${tool === c.id && !routeDraft && !calib ? 'active' : ''}`} onClick={() => { setTool(c.id); setRouteDraft(null); setCalib(null); }} onContextMenu={(e) => { e.preventDefault(); setVisible({ ...visible, [c.id]: !visible[c.id] }); }} title="Rechtsklick: ein-/ausblenden" style={!visible[c.id] ? { opacity: 0.4 } : undefined}><span class={`pin ${c.cls}`} style={{ width: 18, height: 18, borderRadius: 4, display: 'grid', placeItems: 'center' }}><c.icon size={12} color="white" /></span>{c.label}</div>)}
+            {isEft && <><button class={`btn xs ${placingGoal ? 'active' : ''}`} onClick={() => { setPlacingGoal(!placingGoal); setRouteDraft(null); setCalib(null); }}><Target size={14} />{placingGoal ? 'Ziel anklicken…' : 'Mein Ziel setzen'}</button>
+            {goal && <><span class="tiny">Ziel: {goal.label}{goal.x == null ? ' · noch platzieren' : ''}</span><button class="btn xs" onClick={() => guard(() => rpc('tarkov.setRouteGoal', { map, goal: null }))}>Ziel entfernen</button>
+            {goal.x != null && routeDraft && <button class="btn xs" onClick={() => { setRouteDraft([...routeDraft, { x: goal.x, y: goal.y, label: goal.label }]); }}>Ziel an Route anhängen</button>}</>}</>}
+
+            {CATS.map((c) => <div class={`tool ${tool === c.id && !routeDraft && !calib ? 'active' : ''}`} onClick={() => { setTool(c.id); setPlacingGoal(false); setRouteDraft(null); setCalib(null); }} onContextMenu={(e) => { e.preventDefault(); setVisible({ ...visible, [c.id]: !visible[c.id] }); }} title="Rechtsklick: ein-/ausblenden" style={!visible[c.id] ? { opacity: 0.4 } : undefined}><span class={`pin ${c.cls}`} style={{ width: 18, height: 18, borderRadius: 4, display: 'grid', placeItems: 'center' }}><c.icon size={12} color="white" /></span>{c.label}</div>)}
             <div class="tool" onClick={async () => { const last = history.at(-1); if (!last) return toast('Nichts zum Rückgängigmachen'); await rpc('game.removeMarker', { id: last }); setHistory(history.slice(0, -1)); }}><Undo2 size={15} />Rückgängig</div>
             <div class="tool" onClick={async () => { if (await ask(`Alle eigenen Marker auf ${map} löschen?`, '', { confirmOnly: true, danger: true, okLabel: 'Löschen' })) rpc('game.clearMarkers', { game: game.id, map }); }}><Trash2 size={15} />Marker löschen</div>
-            <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
+            <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setPlacingGoal(false); setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
             {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}Karten laden</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
             {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
@@ -164,7 +177,9 @@ function MapWidget({ game, params }) {
               {imgUrl ? <img src={imgUrl} onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} /> : <div style={{ width: imgSize.w, height: imgSize.h }} />}
               <svg width={imgSize.w} height={imgSize.h} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {[...routes, ...(routeDraft ? [{ id: 'draft', points: routeDraft }] : [])].map((r) => <polyline points={r.points.map((p) => `${p.x * imgSize.w},${p.y * imgSize.h}`).join(' ')} fill="none" stroke={r.id === 'draft' ? '#facc15' : '#22d3ee'} stroke-width={4 / view.z} stroke-dasharray={`${12 / view.z} ${8 / view.z}`} />)}
+                {routes.map((r) => { const end = r.points.at(-1); return end && <g><circle cx={end.x * imgSize.w} cy={end.y * imgSize.h} r={7 / view.z} fill="#22d3ee" /><text x={end.x * imgSize.w} y={end.y * imgSize.h - 12 / view.z} fill="#22d3ee" font-size={13 / view.z}>{end.label || r.name}</text></g>; })}
               </svg>
+              {isEft && goal?.x != null && (goal.floor || null) === floor && <div class="marker" style={{ left: goal.x * imgSize.w, top: goal.y * imgSize.h, transform: `translate(-50%, -100%) scale(${1 / view.z})`, transformOrigin: '50% 100%', zIndex: 6 }} onClick={(e) => e.stopPropagation()}><div class="pin mk-quest" style={{ background: '#e879f9' }}><Target size={18} /></div><div class="lbl">ZIEL · {goal.label}</div></div>}
               {me && (nowT - Date.parse(me.at)) < 900000 && <div class="marker" title={`Du – Stand ${new Date(me.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} (letzter Screenshot)`} style={{ left: me.x * imgSize.w, top: me.y * imgSize.h, transform: `translate(-50%, -50%) scale(${1 / view.z})`, zIndex: 5 }} onClick={(e) => e.stopPropagation()}>
                 <svg width="30" height="30" viewBox="-15 -15 30 30" style={{ opacity: nowT - Date.parse(me.at) < 120000 ? 1 : nowT - Date.parse(me.at) < 300000 ? 0.6 : 0.35, transform: `rotate(${me.angle + 90}deg)`, filter: 'drop-shadow(0 0 6px rgba(250,204,21,.9))' }}><circle r="13" fill="rgba(250,204,21,.18)" /><path d="M0 -11 L8 8 L0 4 L-8 8 Z" fill="#facc15" stroke="#000" stroke-width="1.5" /></svg>
                 <div class="lbl" style={{ color: '#facc15' }}>{(() => { const s = (nowT - Date.parse(me.at)) / 1000; return s < 60 ? 'Du · gerade' : `Du · vor ${Math.round(s / 60)} min`; })()}</div>
@@ -320,6 +335,9 @@ function TarkovRaidPlan({ params }) {
   const [plan, reload, st] = useRpc('tarkov.raidPlan', { map: map || undefined }, { deps: [map], events: ['game:progress'] });
   const [all] = useRpc('tarkov.raidPlan', {}, { events: ['game:progress'] });
   const ranking = all?.maps || plan?.maps || [];
+  const [goal] = useRpc('tarkov.routeGoal', { map }, { enabled: !!map, deps: [map], events: ['game:markers'] });
+  const [goalText, setGoalText] = useState('');
+  useEffect(() => { setGoalText(goal?.label || ''); }, [goal?.label, map]);
   const showOnMap = (id) => rpc('game.setLastMap', { game: 'eft', map: id }).then(() => rpc('game.pushWidget', { game: 'eft', type: 'map', params: { map: id } })).catch(() => {});
   return (
     <Panel icon={Route} title="Raid-Planer" sub={`Aus deinen offenen Quests${all?.level ? ` · Level ${all.level}` : ''} · tarkov.dev`} right={<Select style={{ width: 170 }} value={map} onChange={setMap} options={[{ value: '', label: 'Beste Karte finden' }, ...ranking.map((m) => ({ value: m.id, label: `${m.name} (${m.tasks})` }))]} />}>
@@ -332,6 +350,7 @@ function TarkovRaidPlan({ params }) {
         ))}</div>
         {plan.anywhere?.length > 0 && <details class="mt"><summary class="small">Geht auf jeder Karte ({plan.anywhere.length})</summary>{plan.anywhere.map((t) => <div class="small"><b>{t.task}</b> <span class="muted">– {t.objectives.join('; ')}</span></div>)}</details>}
       </>}
+      {map && <div class="row wrap gap-s mb"><input class="inp grow" placeholder="Mein Ziel: z. B. Med-Loot, Quest, Exit" value={goalText} onInput={(e) => setGoalText(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { if (await guard(() => rpc('tarkov.setRouteGoal', { map, goal: { ...(goal || {}), label: goalText } }))) await showOnMap(map); }}>Ziel speichern & Karte</button><span class="tiny muted">Auf der Karte „Mein Ziel setzen“ wählen und Position oder Marker anklicken. Route manuell zeichnen.</span></div>}
       {plan && map && <>
         <div class="row small"><span class="grow muted">{plan.tasks?.length || 0} Quests mit Zielen auf dieser Karte</span><button class="btn xs" onClick={() => showOnMap(map)}><MapIcon size={12} />Auf Karte zeigen</button></div>
         {(plan.bring?.items?.length > 0 || plan.bring?.keys?.length > 0) && <div class="notice small mt"><b>Mitnehmen:</b> {[...plan.bring.items.map((x) => `${x.count > 1 ? x.count + '× ' : ''}${x.short}`), ...plan.bring.keys.map((k) => '🔑 ' + k.short)].join(' · ')}</div>}
@@ -1519,3 +1538,4 @@ export const WIDGETS = {
   playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc, 'tarkov-economy': TarkovEconomy, 'lol-progress': LolProgress, 'tarkov-ammo': TarkovAmmo,
 };
 export { nextScheduled };
+

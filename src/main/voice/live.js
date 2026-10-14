@@ -38,6 +38,7 @@ class LiveVoice {
   isOpen() { return !!this.session; }
 
   async start({ conversationId } = {}) {
+    throw new Error('Datenschutz: Gemini Live überträgt Audio direkt. Bitte den lokalen Textchat verwenden; lokale Spracheingabe ist noch nicht eingerichtet.');
     if (this.session || this.state === 'connecting') return { state: this.state };
     const { gemini, settings, conversations } = this.s;
     if (!gemini.hasKey()) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
@@ -276,3 +277,4 @@ class LiveVoice {
 }
 
 module.exports = { LiveVoice, YES, NO, STANDBY_RE };
+

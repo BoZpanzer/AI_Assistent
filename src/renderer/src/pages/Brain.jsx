@@ -300,9 +300,11 @@ function EntryEditor({ initial, onClose, onSaved }) {
       <Field label="Titel" wide><input class="inp" value={f.title} onInput={(e) => setF({ ...f, title: e.currentTarget.value })} /></Field>
       <Field label="Bereich" wide><Select value={f.domain} onChange={(v) => setF({ ...f, domain: v })} options={DOMAIN_OPTS.map(([value, label]) => ({ value, label }))} /></Field>
       <Field label="Art" wide><Select value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={KIND_OPTS.map(([value, label]) => ({ value, label }))} /></Field>
+      <label class="small"><input type="checkbox" checked={f.tags.split(',').some((t) => t.trim().toLowerCase() === 'private')} onChange={(e) => setF({ ...f, tags: [...f.tags.split(',').map((t) => t.trim()).filter((t) => t && t.toLowerCase() !== 'private'), ...(e.currentTarget.checked ? ['Private'] : [])].join(', ') })} /> Private · nur auf diesem PC verarbeiten</label>
       <Field label="Tags (kommagetrennt)" wide><input class="inp" value={f.tags} onInput={(e) => setF({ ...f, tags: e.currentTarget.value })} /></Field>
       <Field label="Gültig bis (optional)" wide><input class="inp" type="date" value={f.validUntil} onInput={(e) => setF({ ...f, validUntil: e.currentTarget.value })} /></Field>
       <textarea class="ta mt" rows={7} placeholder="Inhalt…" value={f.content} onInput={(e) => setF({ ...f, content: e.currentTarget.value })} autofocus />
     </Modal>
   );
 }
+

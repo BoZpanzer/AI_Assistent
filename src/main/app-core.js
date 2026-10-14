@@ -72,6 +72,9 @@ function createCore(opts) {
   const s = { bus, version: opts.version, paths: { data }, platform: opts.platform || {}, fetch: opts.fetch || globalThis.fetch, updatePublicKey: opts.updatePublicKey || null, updateRepo: opts.updateRepo || null };
   s.db = new Database(opts.dbFile || path.join(data, 'jarvis.sqlite3'), { backupDir: path.join(data, 'backups') });
   s.settings = new Settings(s.db, bus);
+  s.localLLM = new (require('./providers/local').LocalLLM)(s.settings);
+  const fetchExternal = s.fetch;
+  s.fetch = (...args) => { require('./core/privacy').assertExternal(); return fetchExternal(...args); };
   s.secrets = new Secrets(path.join(data, 'secrets.json'), opts.cipher || memoryCipher);
   s.confirmations = new Confirmations(bus);
   s.gemini = new Gemini({ ...s, genaiSdk: opts.genaiSdk });
@@ -154,3 +157,4 @@ function createCore(opts) {
 }
 
 module.exports = { createCore };
+

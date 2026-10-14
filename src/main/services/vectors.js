@@ -77,35 +77,7 @@ class VectorIndex {
    * Background: embed rows lacking (current) embeddings. Bounded per run.
    * Returns number embedded.
    */
-  async backfill({ maxItems = 200 } = {}) {
-    if (this.busy || !this.gemini.hasKey() || !this.gemini.model('embedding')) return 0;
-    this.busy = true;
-    let done = 0;
-    try {
-      const k = this.db.all(`SELECT k.id, k.title, k.content FROM knowledge k LEFT JOIN embeddings e ON e.owner='k' AND e.owner_id=k.id
-        WHERE k.archived=0 AND e.owner_id IS NULL LIMIT ?`, maxItems);
-      if (k.length) {
-        const texts = k.map((r) => (r.title ? r.title + '\n' : '') + r.content.slice(0, 6000));
-        const { vectors, model } = await this.gemini.embed(texts);
-        this.db.tx(() => vectors.forEach((v, i) => this.put('k', k[i].id, texts[i], v, model)));
-        this.invalidate('k'); done += vectors.length;
-      }
-      const left = maxItems - done;
-      if (left > 0) {
-        const c = this.db.all(`SELECT c.id, c.text FROM chunks c LEFT JOIN embeddings e ON e.owner='c' AND e.owner_id=CAST(c.id AS TEXT)
-          WHERE e.owner_id IS NULL LIMIT ?`, left);
-        if (c.length) {
-          const texts = c.map((r) => r.text.slice(0, 6000));
-          const { vectors, model } = await this.gemini.embed(texts);
-          this.db.tx(() => vectors.forEach((v, i) => this.put('c', c[i].id, texts[i], v, model)));
-          this.invalidate('c'); done += vectors.length;
-        }
-      }
-    } catch (e) {
-      log.warn('Embedding-Backfill fehlgeschlagen', e);
-    } finally { this.busy = false; }
-    return done;
-  }
+  async backfill() { return 0; } // Private knowledge and documents use local full-text search.
 }
 
 module.exports = { VectorIndex };

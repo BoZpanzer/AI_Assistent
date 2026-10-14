@@ -113,3 +113,8 @@ JARVIS.exe --smoke        # Selbsttest der gebauten/installierten App (Exit-Code
 ## Bekannte Grenzen
 
 Ehrliche, vollständige Liste mit Teststatus: **[TESTBERICHT.md](TESTBERICHT.md)**. Kurz: Gemini Live, Google OAuth, Riot/tarkov.dev-Abrufe und die echte Windows-Installation sind implementiert und gegen Fakes/Mocks getestet, aber noch nicht mit deinen echten Konten auf deinem PC abgenommen. Die Installer-Datei ist nicht code-signiert (Windows SmartScreen zeigt beim ersten Start eine Warnung).
+
+
+## Private, lokale KI und neue Planung
+
+Einrichtung, Datenschutzgrenzen, geplante Ausgaben-Buckets und Tarkov-Ziele: [Anleitung](docs/PRIVATE_LOCAL.md).

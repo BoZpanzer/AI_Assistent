@@ -216,7 +216,7 @@ class Birthdays {
     for (const b of this.upcoming(7, now)) {
       if (b.inDays === 7) {
         let ideas = null;
-        if (this.s.gemini.hasKey()) ideas = await this.giftIdeas(b.name).catch((e) => { log.debug('gifts', e); return null; });
+        if ((this.s.localLLM?.cfg().model || this.s.gemini.hasKey())) ideas = await this.giftIdeas(b.name).catch((e) => { log.debug('gifts', e); return null; });
         const body = `${b.name} hat am ${b.day}.${b.month}. Geburtstag${b.turns ? ` (wird ${b.turns})` : ''}.${ideas?.ideas?.length ? ' Ideen: ' + ideas.ideas.map((x) => x.idea).join(' · ') : ''}`;
         if (this.s.notifications.push({ category: 'system', origin: 'system', dedupeKey: `bday7:${normText(b.name)}:${b.date}`, title: `In einer Woche: Geburtstag von ${b.name}`, body })) n++;
       }
@@ -232,3 +232,4 @@ class Birthdays {
 }
 
 module.exports = { Birthdays, findBirthdays, parseDate };
+
