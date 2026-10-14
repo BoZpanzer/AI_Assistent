@@ -56,6 +56,15 @@ async function runDiagnostics(s, { live = true } = {}) {
     }
   });
 
+  if (s.gemini.hasKey() && s.costGuard) {
+    await check('budget', 'Gemini-Budget', () => {
+      const b = s.costGuard.status();
+      const eur = (v) => v.toFixed(2).replace('.', ',') + ' €';
+      const txt = `geschätzt ${eur(b.eur)} von ${eur(b.budget)}${b.projected != null ? `, Hochrechnung ${eur(b.projected)}` : ''}${b.calibrated ? '' : ' (nicht geeicht)'}`;
+      return b.level === 'ok' ? { detail: txt } : { status: 'warn', detail: txt + (b.braking ? ' – Sparstufe aktiv' : ''), fix: { label: 'Verbrauch ansehen', action: 'settings' } };
+    });
+  }
+
   // ---- Google
   const g = s.settings.get('google') || {};
   const scopes = g.scopes || [];

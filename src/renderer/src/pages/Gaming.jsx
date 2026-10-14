@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Gamepad2, CircleCheck, X, Search, Plus, Globe, BarChart3, Upload, Timer, ChevronDown, Info, Power } from 'lucide-preact';
-import { rpc, useRpc } from '../lib/api.js';
+import { Gamepad2, CircleCheck, X, Search, Plus, Globe, BarChart3, Upload, Timer, ChevronDown, Info, Power, Sparkles } from 'lucide-preact';
+import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
-import { Empty, ask } from '../components/ui.jsx';
+import { Empty, ask, Spinner } from '../components/ui.jsx';
 import { WIDGETS, SPAN } from './gaming/widgets.jsx';
 
 const GENRE_LABEL = { survival: 'Survival', shooter: 'Shooter', racing: 'Racing', sports: 'Sport', builder: 'Aufbau & Simulation', rpg: 'Rollenspiel', training: 'Aim-Training', casual: 'Casual & Party' };
@@ -15,7 +15,7 @@ export function Gaming() {
   const active = game.active;
   const [viewId, setViewId] = useState(active?.id || null);
   useEffect(() => { if (active?.id) setViewId(active.id); }, [active?.id]);
-  const [layout, reloadLayout] = useRpc('game.layout', { id: viewId }, { events: ['game:focus'], enabled: !!viewId, deps: [viewId] });
+  const [layout, reloadLayout] = useRpc('game.layout', { id: viewId }, { events: ['game:focus', 'game:profiles'], enabled: !!viewId, deps: [viewId] });
   const [picker, setPicker] = useState(false);
   const discussed = game.discussed;
   const p = layout?.game;
@@ -29,11 +29,12 @@ export function Gaming() {
               <div class="col" style={{ gap: 2, maxWidth: 300, flex: 'none' }}>
                 <div class="hud-label">{active?.id === p.id ? 'Aktuelles Spiel' : 'Ansicht'}</div>
                 {active?.id === p.id ? <div class="detected"><CircleCheck size={15} />{SOURCE_LABEL[active.source] || 'Aktiv'}</div> : <div class="small muted">Nicht als aktives Spiel gesetzt</div>}
-                {p.integration === 'generic' && (p.kit ? <div class="tiny muted">{GENRE_LABEL[p.genre] || 'Spiel'}-Oberfläche{p.wiki ? ` · Wiki: ${p.wiki.label}` : ''}</div> : <div class="tiny muted">Universelle Oberfläche: Recherche, {p.wiki ? 'Wiki, ' : ''}Notizen, Timer, Quellen</div>)}
+                {p.integration === 'generic' && (p.kit ? <div class="tiny muted" title={p.design?.summary || ''}>{p.designed ? 'Von JARVIS gestaltet · ' : ''}{GENRE_LABEL[p.genre] || 'Spiel'}-Oberfläche{p.wiki ? ` · Wiki: ${p.wiki.label}` : ''}</div> : <div class="tiny muted">Universelle Oberfläche: Recherche, {p.wiki ? 'Wiki, ' : ''}Notizen, Timer, Quellen</div>)}
                 {p.playtimeMin > 0 && <div class="tiny" style={{ color: 'var(--text-2)' }}>Steam: {fmtHours(p.playtimeMin)}{p.lastPlayed ? ` · zuletzt ${new Date(p.lastPlayed).toLocaleDateString('de-DE')}` : ''}</div>}
               </div>
               <h2 class="ellipsis" style={{ marginLeft: 18, minWidth: 0, flex: '0 1 auto' }} title={p.name}>{p.name}</h2>
               <span class="grow" />
+              {p.integration === 'generic' && <DesignButton p={p} onDone={reloadLayout} />}
               {discussed && discussed.id !== p.id && <span class="chip" title="Wird gerade besprochen – ersetzt nicht das aktive Spiel" onClick={() => setViewId(discussed.id)}>Besprochen: {discussed.profile.name}</span>}
               {active?.id !== p.id && <button class="btn sm" onClick={() => guard(() => rpc('game.setActive', { id: p.id }), `${p.name} ist jetzt aktiv`)}><CircleCheck size={14} />Als aktiv setzen</button>}
               {active?.id === p.id && <button class="btn sm ghost" onClick={() => guard(() => rpc('game.clear'))}><Power size={14} />Nicht mehr aktiv</button>}
@@ -146,4 +147,19 @@ function initials(p) {
   if (p.short && p.short.length <= 3) return p.short.toUpperCase();
   const w = p.name.replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter((x) => x && !['of', 'the', 'from', 'der', 'die', 'das'].includes(x.toLowerCase()));
   return (w.length > 1 ? w[0][0] + w[1][0] : p.name.slice(0, 2)).toUpperCase();
+}
+
+/** „Seite gestalten“: JARVIS recherchiert das Spiel und baut die Seite aus dem Baukasten (läuft auch automatisch beim ersten Spielen). */
+function DesignButton({ p, onDone }) {
+  const [st, reload] = useRpc('game.designState', { id: p.id }, { deps: [p.id] });
+  const [busy, setBusy] = useState(false);
+  useEvent('game:design', (d) => { if (d.game !== p.id) return; setBusy(d.state === 'running'); if (d.state === 'done') { toast(`Seite für ${p.name} gestaltet`); onDone?.(); } if (d.state === 'error') toast(d.error, 'error', 7000); reload(); });
+  const running = busy || st?.running;
+  const go = async () => { setBusy(true); await guard(() => rpc('game.design', { id: p.id })); setBusy(false); reload(); onDone?.(); };
+  return (
+    <div class="row gap-s">
+      <button class="btn sm" disabled={running} title="JARVIS recherchiert das Spiel (Google-Suche) und stellt die Seite aus geprüften Bausteinen zusammen" onClick={go}>{running ? <Spinner size={14} /> : <Sparkles size={14} />}{running ? 'Gestalte Seite …' : p.designed ? 'Neu gestalten' : 'Seite gestalten'}</button>
+      {p.design?.sources?.length > 0 && <span class="tiny muted" title={p.design.sources.map((x) => x.title).join('\n')}>{p.design.sources.length} Quellen</span>}
+    </div>
+  );
 }

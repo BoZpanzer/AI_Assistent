@@ -33,7 +33,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'app.relaunch': () => relaunch(),
     'shell.openExternal': ({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); },
     'shell.openPath': ({ which }) => shell.openPath({ data: s.paths.data, logs: path.join(s.paths.data, 'logs'), backups: path.join(s.paths.data, 'backups') }[which] || s.paths.data),
-    'shell.showDocument': ({ docId }) => { const d = s.study.document(docId); if (d?.fullPath && fs.existsSync(d.fullPath)) shell.openPath(d.fullPath); else if (d?.url) shell.openExternal(d.url); },
+    'shell.showDocument': ({ docId }) => { const d = s.study.document(docId); if (d?.fullPath && fs.existsSync(d.fullPath)) shell.openPath(d.fullPath); else if (d?.url && /^https:\/\//.test(d.url)) shell.openExternal(d.url); },
     'sound.pick': async () => {
       const f = (await pick({ properties: ['openFile'], filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }] }))?.[0];
       if (!f) return null;
@@ -60,6 +60,8 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return { ok: r.ok, error: r.error, chosen: r.chosen, requested: r.requested, count: r.models?.length || 0, models: (r.models || []).map((m) => m.name) };
     },
     'gemini.usage': () => s.gemini.usage,
+    'ai.budget': () => s.costGuard.status(),
+    'ai.calibrate': ({ eur }) => { const r = s.costGuard.calibrate(eur); s.costGuard.check(); return r; },
     'gemini.usageReport': ({ days } = {}) => s.gemini.usageReport(Math.min(31, Math.max(1, Number(days) || 7))),
 
     // --- chat ---
@@ -130,6 +132,15 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
         return { ...r, calendars: s.calendar.calendars() };
       } finally { showWindow(); } // JARVIS nach der Browser-Anmeldung wieder nach vorne holen – auch bei Fehlern
     },
+    // --- Klausurmodus ---
+    'exams.list': ({ archived } = {}) => s.exams.list({ archived: !!archived }),
+    'exams.create': (input) => s.exams.create(input || {}),
+    'exams.update': ({ id, patch }) => s.exams.update(id, patch || {}),
+    'exams.remove': ({ id }) => s.exams.remove(id),
+    'exams.propose': ({ id }) => s.exams.proposePlan(id),
+    // Übernehmen = ausdrücklicher Klick des Nutzers auf den angezeigten Plan
+    'exams.apply': ({ id, sessions }) => s.exams.applyPlan(id, (sessions || []).slice(0, 80).map((x) => ({ start: String(x.start), end: String(x.end), topic: String(x.topic || '').slice(0, 200) }))),
+    'exams.session': ({ id, status }) => s.exams.setSessionStatus(id, status),
     'feeds.list': () => s.feeds.list(),
     'feeds.add': ({ name, url, color, lecture, campusDual }) => s.feeds.add({ name, url, color, lecture, campusDual }),
     'feeds.addFile': async ({ name }) => { const f = (await pick({ properties: ['openFile'], filters: [{ name: 'Kalender (.ics)', extensions: ['ics'] }] }))?.[0]; return f ? s.feeds.add({ name: name || path.basename(f, '.ics'), file: f }) : null; },
@@ -152,7 +163,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'campusdual.status': async () => {
       const cd = s.platform?.campusDual;
       const j = (k) => { try { return JSON.parse(s.system.meta(k) || 'null'); } catch { return null; } };
-      return { available: !!cd, loggedIn: cd ? await cd.loggedIn() : false, hasCreds: !!cd?.hasCreds?.(), events: j('campusdual:eventstats'), eventFields: j('campusdual:eventfields'), results: s.campusResults.status() };
+      return { available: !!cd, loggedIn: cd ? await cd.loggedIn() : false, hasCreds: !!cd?.hasCreds?.(), events: j('campusdual:eventstats'), eventFields: j('campusdual:eventfields'), results: s.campusResults.status(), exams: j('campusdual:exams:status') };
     },
     'campusdual.testLogin': async () => {
       const cd = s.platform?.campusDual;
@@ -162,6 +173,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       if (ok) s.feeds.refreshAll().catch(() => {});
       return { ok, reason: cd.lastReason };
     },
+    'campusdual.syncExams': async () => { const r = await s.campusExams.sync(); return { found: r.found, created: (r.created || []).length, moved: (r.moved || []).length, serviceError: r.serviceError || null }; },
     'campusdual.checkResults': async () => { const r = await s.campusResults.check({ notify: true }); return { ...s.campusResults.status(), newResults: r.newResults, firstRun: r.firstRun, tileChanged: r.tileChanged }; },
     'backup.driveStatus': () => s.driveBackup.status(),
     'backup.driveConnect': async () => {
@@ -249,6 +261,9 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.clear': () => s.gaming.context.clearActive(),
     'game.installed': () => s.gaming.context.detectInstalled(),
     'game.layout': ({ id }) => s.gaming.layout(id),
+    'game.design': ({ id }) => s.gaming.designer.create(String(id || '')),
+    'game.designReset': ({ id }) => s.gaming.designer.reset(String(id || '')),
+    'game.designState': ({ id }) => ({ running: s.gaming.designer.running.has(String(id || '')), needs: s.gaming.designer.needsDesign(s.gaming.context.profile(String(id || ''))) }),
     'game.pushWidget': ({ game, type, params }) => s.gaming.pushWidget(game, type, params),
     'game.clearFocus': () => { s.gaming.focus = null; return true; },
     'game.timers': (p = {}) => s.gaming.timers(p),
@@ -315,6 +330,12 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'tarkov.importMaps': ({ map, force } = {}) => s.gaming.tarkovMaps.importAll({ only: map ? String(map) : undefined, force: !!force }),
     'tarkov.maps': async () => { const r = await s.gaming.tarkov.maps(); return { maps: r.value.map((m) => ({ name: m.name, id: m.normalizedName, players: m.players, raidDuration: m.raidDuration })), source: r.source, fetchedAt: r.fetchedAt, offline: r.offline }; },
     'tarkov.map': async ({ map }) => { const r = await s.gaming.tarkov.map(map); return r ? { map: r.value, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline } : null; },
+    'tarkov.questMarkers': async ({ map }) => {
+      const items = s.gaming.progress.list('eft');
+      const done = new Set(items.filter((x) => x.category === 'quest' && x.status === 'done').map((x) => x.name));
+      const lvl = Number(s.gaming.tracker.status?.level ?? String(items.find((x) => /(pmc[- ]?)?level/i.test(x.name))?.value || '').match(/\d+/)?.[0]);
+      return s.gaming.tarkov.questMarkers(String(map || ''), { done, level: Number.isFinite(lvl) && lvl > 0 ? lvl : null, gameMode: s.gaming.tracker.tdMode() });
+    },
     'tarkov.quests': ({ map, q }) => s.gaming.tarkov.searchTasks(q, { map, limit: 30 }),
     'tarkov.items': ({ q, keysOnly }) => s.gaming.tarkov.items(q, { keysOnly, limit: 20 }),
     'tarkov.keys': ({ map }) => s.gaming.tarkov.keysForMap(map),

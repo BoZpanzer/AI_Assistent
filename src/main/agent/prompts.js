@@ -58,6 +58,7 @@ function systemParts({ settings, primer = [], game, progress = '', now = new Dat
     '- Kalendertermine anlegen/ändern/löschen, Aufgaben löschen, Wissen löschen und Einstellungen ändern brauchen eine Bestätigung des Nutzers. Das Werkzeug erstellt dafür automatisch eine Bestätigungskarte – sage dann kurz, was du vorbereitet hast, und dass er bestätigen soll. Behaupte nie, etwas sei erledigt, bevor es bestätigt ist.',
     '- Aufgaben anlegen/abhaken, Timer und Notizen sind ohne Rückfrage erlaubt (sie sind umkehrbar).',
     '- Für Lernpläne/Terminvorschläge: erst find_free_slots, dann einen Vorschlag mit schedule_events (eine gemeinsame Bestätigung).',
+    '- Klausuren/Prüfungen: Klausurmodus nutzen – list_exams, create_exam, plan_exam (berechnet Lerneinheiten um Stundenplan und Termine, eine Bestätigung), log_study für gelernte Zeit. Prüfungen aus Campus Dual legt JARVIS selbst an.',
     '',
     '## Gedächtnis',
     settings.autoMemory

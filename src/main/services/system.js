@@ -31,12 +31,26 @@ class System {
   // ---------- Backups ----------
   backupDir() { return path.join(this.s.paths.data, 'backups'); }
 
-  /** Full backup: DB snapshot + encrypted secrets + map images → .zip */
-  createBackup(dest) {
+  /** Tagesmarker (Briefing, Verbrauch …) älter als `days` Tage entfernen – sonst wächst die Tabelle endlos. */
+  pruneMeta(days = 120) {
+    const cut = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const rows = this.s.db.all("SELECT key FROM meta WHERE key GLOB '*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'");
+    let n = 0;
+    for (const r of rows) { const d = r.key.match(/(\d{4}-\d{2}-\d{2})/)?.[1]; if (d && d < cut) { this.s.db.run('DELETE FROM meta WHERE key=?', r.key); n++; } }
+    try { require('../core/logger').rotate(); } catch { /* ignore */ }
+    return n;
+  }
+
+  /**
+   * Full backup: DB snapshot + encrypted secrets + map images → .zip
+   * secrets=false (Drive): Schlüssel/Passwörter/Sitzungen bleiben auf dem PC – sie sind ohnehin nur mit
+   * deinem Windows-Konto entschlüsselbar und hätten in der Cloud nur Risiko, keinen Nutzen.
+   */
+  createBackup(dest, { secrets = true } = {}) {
     const tmp = this.s.db.snapshot('export');
     const files = { 'jarvis.sqlite3': new Uint8Array(fs.readFileSync(tmp)), 'manifest.json': Buffer.from(JSON.stringify({ app: 'JARVIS', version: this.s.version, schema: this.s.db.version, created: nowIso(), host: os.hostname() })) };
     const sec = path.join(this.s.paths.data, 'secrets.json');
-    if (fs.existsSync(sec)) files['secrets.json'] = new Uint8Array(fs.readFileSync(sec));
+    if (secrets && fs.existsSync(sec)) files['secrets.json'] = new Uint8Array(fs.readFileSync(sec));
     const mapsDir = path.join(this.s.paths.data, 'maps');
     if (fs.existsSync(mapsDir)) {
       for (const g of fs.readdirSync(mapsDir)) for (const f of fs.readdirSync(path.join(mapsDir, g))) files[`maps/${g}/${f}`] = new Uint8Array(fs.readFileSync(path.join(mapsDir, g, f)));
@@ -92,8 +106,16 @@ class System {
     const stage = path.join(this.s.paths.data, 'restore-pending');
     fs.mkdirSync(stage, { recursive: true });
     fs.writeFileSync(path.join(stage, 'jarvis.sqlite3'), dbBytes);
-    if (secrets) fs.writeFileSync(path.join(stage, 'secrets.json'), secrets);
-    return { staged: true, restartRequired: true };
+    // Schlüssel aus der Sicherung nur übernehmen, wenn sie auf DIESEM PC/Windows-Konto lesbar sind –
+    // sonst würden funktionierende Schlüssel durch unlesbare ersetzt (z. B. Sicherung von einem anderen PC)
+    let secretsNote = null;
+    if (secrets) {
+      let readable = false;
+      try { const j = JSON.parse(secrets.toString('utf8')); const v = Object.values(j)[0]; readable = !v || typeof this.s.secrets.cipher.decrypt(Buffer.from(v, 'base64')) === 'string'; } catch { readable = false; }
+      if (readable) fs.writeFileSync(path.join(stage, 'secrets.json'), secrets);
+      else secretsNote = 'Die Schlüssel in der Sicherung stammen von einem anderen PC/Windows-Konto – deine aktuellen Schlüssel bleiben erhalten.';
+    }
+    return { staged: true, restartRequired: true, secretsNote };
   }
 
   /** Called at startup BEFORE the database is opened. */

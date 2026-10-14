@@ -28,11 +28,15 @@ const { Drive } = require('./services/drive');
 const { Feeds } = require('./services/ics');
 const { DriveBackup } = require('./services/drivebackup');
 const { CampusResults } = require('./services/campusresults');
+const { CostGuard } = require('./services/costguard');
+const { CampusExams } = require('./services/campusexams');
+const { Exams } = require('./services/exams');
 const { Birthdays } = require('./services/birthdays');
 const { TarkovTracker } = require('./services/gaming/tarkovtracker');
 const { LolFlow } = require('./services/gaming/lolflow');
 const { GameBrainSync } = require('./services/gaming/brainsync');
 const { Steam } = require('./services/gaming/steam');
+const { GameDesigner } = require('./services/gaming/designer');
 
 /**
  * Composition root. Pure Node (no Electron imports) so the complete service
@@ -71,14 +75,21 @@ function createCore(opts) {
   s.gaming.tracker = new TarkovTracker(s);
   s.gaming.lolflow = new LolFlow(s);
   s.gaming.brainSync = new GameBrainSync(s);
+  s.gaming.designer = new GameDesigner(s);
+  // Unbekanntes Spiel wird gespielt/besprochen → eigene Seite gestalten (einmal, im Hintergrund)
+  bus.on('game:context', (st) => { for (const x of [st?.active, st?.discussed]) if (x?.id) { clearTimeout(s._designTimer); s._designTimer = setTimeout(() => { if (!s.stopped) s.gaming.designer.maybeAuto(x.id); }, 1500); } });
   s.gaming.steam = new Steam(s);
   s.gaming.context.steam = s.gaming.steam;
   s.system = new System(s);
   s.updater = new Updater(s);
   s.driveBackup = new DriveBackup(s);
   s.campusResults = new CampusResults(s);
+  s.costGuard = new CostGuard(s);
+  s.exams = new Exams(s);
+  s.campusExams = new CampusExams(s);
+  s.gemini.guard = s.costGuard;
   s.briefing = () => briefing(s);
-  s.contextProviders = [];
+  s.contextProviders = [() => s.exams.contextText()];
   s.screen = new ScreenVision(s);
   s.orchestrator = new Orchestrator(s);
   s.voice = new LiveVoice(s);
@@ -98,7 +109,8 @@ function createCore(opts) {
     });
   };
   s.stop = () => {
-    try { clearTimeout(s._brainSyncTimer); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
+    s.stopped = true;
+    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

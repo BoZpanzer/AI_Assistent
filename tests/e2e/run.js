@@ -220,10 +220,32 @@ app.whenReady().then(async () => {
     await waitFor(() => core.voice.state === 'off', 5000);
     if (!global.__fakeLive.closed) throw new Error('Live-Sitzung nicht geschlossen');
   });
+  await step('Klausurmodus auf der Studium-Seite + Lernplan-Vorschlag', async () => {
+    core.exams.create({ title: 'Klausur Mathematik II', subject: 'Mathematik', date: new Date(Date.now() + 21 * 86400000).toISOString(), targetHours: 12, notes: 'Aus Campus-Dual-Stundenplan übernommen. Raum: Aula' });
+    await nav('study'); await sleep(600);
+    await waitFor(() => js(`document.body.textContent.includes('Klausur Mathematik II')`), 5000);
+    await js(`[...document.querySelectorAll('.btn')].find(b=>b.textContent.trim()==='Lernplan').click()`);
+    await waitFor(() => js(`!!document.querySelector('.modal') && document.querySelector('.modal').textContent.includes('In den Kalender eintragen')`), 8000);
+    await shot('52-study-exam-plan');
+    await js(`[...document.querySelectorAll('.modal .btn')].find(b=>b.textContent.includes('In den Kalender eintragen')).click()`);
+    await waitFor(() => js(`document.body.textContent.includes('h geplant')`), 8000);
+    await shot('51-study-exams');
+  });
+  await step('Gestaltete Seite für ein unbekanntes Spiel', async () => {
+    const p = core.gaming.context.resolve('Valheim');
+    core.gaming.context.setState('design:' + p.id, { genre: 'survival', summary: 'Wikinger-Survival.', widgets: [{ type: 'ask', params: {} }, { type: 'progress', params: {} }, { type: 'checklist', params: { name: 'Bosse' } }, { type: 'timers', params: { kinds: ['build', 'custom'] } }, { type: 'game-research', params: { query: '' } }, { type: 'notes', params: {} }, { type: 'other-games', params: {} }],
+      questions: ['Wie besiege ich …?', 'Was baue ich zuerst?'], progressCats: [['bosse', 'Bosse', 'Eikthyr', ''], ['base', 'Basis', '', '']], checklists: [{ name: 'Bosse', items: ['Eikthyr', 'The Elder', 'Bonemass'] }], links: [], wiki: null, timerKinds: ['build'], sources: [{ title: 'Valheim Wiki', url: 'https://valheim.fandom.com' }], createdAt: new Date().toISOString() });
+    core.gaming.context.setActive(p.id, 'manual');
+    await nav('dashboard'); await nav('gaming'); await sleep(900);
+    await waitFor(() => js(`document.body.textContent.includes('Von JARVIS gestaltet') && document.body.textContent.includes('Eikthyr')`), 6000);
+    await shot('68-gaming-designed');
+  });
   await step('Einstellungen', async () => {
     await nav('settings'); await shot('80-settings');
     if (!(await js(`[...document.querySelectorAll('.panel')].some(p=>p.textContent.includes('Campus Dual') && p.textContent.includes('Prüfungsergebnisse'))`))) throw new Error('Campus-Dual-Karte fehlt');
     await js(`[...document.querySelectorAll('.panel')].find(p=>p.textContent.includes('Prüfungsergebnisse melden')).scrollIntoView()`); await shot('80b-settings-campusdual');
+    await js(`[...document.querySelectorAll('.panel')].find(p=>p.textContent.includes('Monatsbudget')).scrollIntoView()`); await shot('80c-settings-budget');
+    if (!(await js(`document.body.textContent.includes('Monatsbudget Gemini')`))) throw new Error('Budget fehlt');
   });
   await step('Systemcheck: Probleme mit Lösungs-Knopf', async () => {
     core.updater.check = async () => ({});

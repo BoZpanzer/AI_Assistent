@@ -44,6 +44,38 @@ class Tarkov {
     });
   }
 
+  /**
+   * Orte der Questziele (Zonen, mögliche Fundorte von Quest-Items) – eigene Abfrage, damit ein
+   * geändertes API-Schema nicht die normale Questliste kaputt macht.
+   */
+  async taskZones(gameMode = 'regular') {
+    return this.cache.wrap('eft:taskzones:' + gameMode, SOURCE, 2 * DAY, async () => {
+      const Z = 'zones { map { normalizedName } position { x y z } }';
+      const d = await this.gql(`query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel objectives { id description optional
+        ... on TaskObjectiveBasic { ${Z} }
+        ... on TaskObjectiveMark { ${Z} }
+        ... on TaskObjectiveUseItem { ${Z} }
+        ... on TaskObjectiveShoot { ${Z} }
+        ... on TaskObjectiveQuestItem { ${Z} possibleLocations { map { normalizedName } positions { x y z } } } } } }`, { gm: gameMode });
+      return d.tasks.map((t) => ({ id: t.id, name: t.name, minPlayerLevel: t.minPlayerLevel, objectives: (t.objectives || []).map((o) => ({
+        description: o.description, optional: !!o.optional,
+        points: [...(o.zones || []).map((z) => ({ map: z.map?.normalizedName, ...z.position })), ...(o.possibleLocations || []).flatMap((l) => (l.positions || []).map((p) => ({ map: l.map?.normalizedName, ...p, item: true })))].filter((p) => p.map && Number.isFinite(p.x) && Number.isFinite(p.z)),
+      })).filter((o) => o.points.length) })).filter((t) => t.objectives.length);
+    });
+  }
+
+  /** Questziele auf einer Karte – ohne erledigte Quests (Spielstand/TarkovTracker), optional bis zum eigenen Level. */
+  async questMarkers(map, { done = new Set(), level = null, gameMode } = {}) {
+    const z = await this.taskZones(gameMode);
+    const out = [];
+    for (const t of z.value) {
+      if (done.has(t.name)) continue;
+      if (level != null && t.minPlayerLevel > level) continue;
+      for (const o of t.objectives) for (const p of o.points) if (p.map === map) out.push({ x: p.x, z: p.z, y: p.y, task: t.name, objective: o.description, item: !!p.item, optional: o.optional });
+    }
+    return { markers: out.slice(0, 250), total: out.length, source: z.source, fetchedAt: z.fetchedAt, offline: z.offline };
+  }
+
   async searchTasks(q, { map, limit = 8, gameMode } = {}) {
     const t = await this.tasks(gameMode);
     const needle = String(q || '').toLowerCase();

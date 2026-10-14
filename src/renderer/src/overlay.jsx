@@ -17,6 +17,22 @@ function Card({ icon: Icon, title, children, accent, onClose }) {
   );
 }
 
+/** Objective-Timer: Spielzeit zwischen den Abfragen (alle 5 s) lokal weiterzählen. */
+function Objectives({ live, now }) {
+  const drift = Math.max(0, (now - (live.receivedAt || now)) / 1000);
+  const fmt = (s) => (s <= 0 ? 'steht' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
+  const list = live.objectives.map((o) => ({ ...o, rem: o.remaining - drift })).filter((o) => o.rem > -90).slice(0, 5);
+  if (!list.length) return null;
+  return (
+    <Card icon={Timer} title="Objectives" accent={list.some((o) => o.rem > 0 && o.rem <= 60) ? '#c8aa6e' : undefined}>
+      {list.map((o) => (
+        <div class="ov-row" title={o.note || ''}><span class="grow ov-ell">{o.label}{o.estimated ? <span class="ov-dim"> ≈</span> : null}</span><b class={o.rem <= 0 ? 'ok' : o.rem <= 60 ? 'warn' : ''}>{fmt(o.rem)}</b></div>
+      ))}
+      {list.some((o) => o.estimated) && <div class="ov-dim" style={{ fontSize: 10 }}>≈ Standard-Startzeit, je nach Patch anders</div>}
+    </Card>
+  );
+}
+
 function App() {
   const [game, setGame] = useState(null);
   const [voice, setVoice] = useState('off');
@@ -75,6 +91,7 @@ function App() {
         </Card>
       )}
       {live && live.tips?.length > 0 && <Card icon={Sparkles} title={`Live · ${live.champion}`}><ul>{live.tips.map((t) => <li>{t}</li>)}</ul></Card>}
+      {live && live.objectives?.length > 0 && <Objectives live={live} now={now} />}
 
       {open.length > 0 && (
         <Card icon={Timer} title="Timer">

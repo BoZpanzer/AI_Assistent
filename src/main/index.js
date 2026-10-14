@@ -162,7 +162,7 @@ function applyDesktopSettings() {
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
-    'game:context', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
+    'game:context', 'game:design', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
     'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported',
     'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
@@ -202,7 +202,7 @@ app.whenReady().then(async () => {
     }
     if (u.pathname.startsWith('/map-image/')) {
       const [, , gid, ...rest] = u.pathname.split('/');
-      const p = core.gaming.mapImagePath(decodeURIComponent(gid), decodeURIComponent(rest.join('/')));
+      const p = core.gaming.mapImagePath(decodeURIComponent(gid), decodeURIComponent(rest.join('/')), u.searchParams.get('layer'));
       if (!p) return new Response('Not found', { status: 404 });
       return net.fetch(pathToFileURL(p).href);
     }

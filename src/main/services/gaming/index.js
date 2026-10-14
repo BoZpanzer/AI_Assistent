@@ -78,7 +78,7 @@ class Gaming {
     if (!p) return null;
     const base = LAYOUTS[p.integration] || LAYOUTS.generic;
     const custom = safeJson(this.context.getState('layout:' + gid), null);
-    let widgets = (custom || (p.kit && p.integration === 'generic' ? kitLayout(p) : base)).map((w) => ({ ...w, params: w.params || {} }));
+    let widgets = (custom || (p.designWidgets && p.integration === 'generic' ? p.designWidgets : p.kit && p.integration === 'generic' ? kitLayout(p) : base)).map((w) => ({ ...w, params: w.params || {} }));
     if (p.integration === 'generic' && !p.wiki) widgets = widgets.filter((w) => w.type !== 'wiki');
     const focus = this.focus && this.focus.game === gid ? this.focus : null;
     return { game: p, widgets, focus, widgetTitles: Object.fromEntries(Object.entries(WIDGETS).map(([k, v]) => [k, v.title])) };
@@ -170,14 +170,27 @@ class Gaming {
     const old = this.db.get('SELECT image_file FROM game_maps WHERE game=? AND name=?', gid, name)?.image_file;
     fs.writeFileSync(path.join(dir, file), buf);
     if (old && old !== file && !/[\\/]/.test(old)) fs.rmSync(path.join(dir, old), { force: true });
+    // Stockwerk-Varianten gehören zur alten Karte → weg (werden beim tarkov.dev-Import neu angelegt)
+    try { for (const f of fs.readdirSync(dir)) if (f.startsWith(base + '@')) fs.rmSync(path.join(dir, f), { force: true }); } catch { /* ignore */ }
     this.db.run(`INSERT INTO game_maps(id,game,name,image_file,width,height,created_at) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(game,name) DO UPDATE SET image_file=excluded.image_file, width=excluded.width, height=excluded.height`, id('map'), gid, name, file, width || null, height || null, nowIso());
     this.bus.emit('game:markers', { game: gid, map: name });
     return this.maps(gid).find((m) => m.name === name);
   }
-  mapImagePath(gid, name) {
+  /** Stockwerk-Variante einer Karte ablegen (Datei „<karte>@<ebene>.svg“ neben der Karte). */
+  saveLayerFile(gid, name, layer, buf) {
+    if (!/^[\w-]{1,40}$/.test(layer)) throw new Error('Ungültige Ebene');
+    const dir = path.join(this.dataDir, 'maps', gid);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${String(name).replace(/[^\w\-]+/g, '_').slice(0, 40)}@${layer}.svg`), buf);
+  }
+  mapImagePath(gid, name, layer = null) {
     const m = this.db.get('SELECT image_file FROM game_maps WHERE game=? AND name=?', gid, name);
     if (!m?.image_file) return null;
+    if (layer && /^[\w-]{1,40}$/.test(layer)) {
+      const lp = path.join(this.dataDir, 'maps', gid, m.image_file.replace(/(\.[a-z]+)$/i, `@${layer}$1`));
+      if (lp.startsWith(path.join(this.dataDir, 'maps')) && fs.existsSync(lp)) return lp;
+    }
     const p = path.join(this.dataDir, 'maps', gid, m.image_file);
     return p.startsWith(path.join(this.dataDir, 'maps')) && fs.existsSync(p) ? p : null;
   }

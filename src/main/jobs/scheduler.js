@@ -40,6 +40,13 @@ class Scheduler {
     }, { initialDelayMs: 8_000 });
     // Kalender-Abos (z. B. Campus-Dual-Stundenplan): alle 15 Minuten, ersetzt Einträge komplett → entfernte Termine verschwinden
     this.add('calendar-feeds', 15 * 60_000, async () => { if (s.db.get('SELECT COUNT(*) c FROM calendar_feeds').c) await s.feeds.refreshAll(); }, { initialDelayMs: 20_000 });
+    // Klausurmodus: verpasste Lerneinheiten erkennen, vorbei gegangene Klausuren archivieren
+    this.add('exam-missed', 3600_000, async () => s.exams.checkMissed(), { initialDelayMs: 2 * 60_000 });
+    // Prüfungen aus Campus Dual (Stundenplan-Abo + Prüfungsanmeldung) → Klausurmodus; alle 6 h
+    this.add('campusdual-exams', 6 * 3600_000, async () => { if (s.campusExams.enabled()) await s.campusExams.sync(); }, { heavy: true, initialDelayMs: 6 * 60_000 });
+    s.bus.on('feeds:changed', () => { clearTimeout(this._examT); this._examT = setTimeout(() => !s.stopped && s.campusExams.sync({ withService: false }).catch(() => {}), 5000); });
+    // Gemini-Budget: Hochrechnung prüfen, bei 80 % warnen, bei 95 % Sparstufe
+    this.add('cost-guard', 20 * 60_000, async () => { if (s.gemini.hasKey()) s.costGuard.check(); }, { initialDelayMs: 60_000 });
     // Campus Dual: neue Prüfungsergebnisse? (nur wenn angemeldet oder Zugangsdaten gespeichert; Standard alle 3 h)
     this.add('campusdual-results', 15 * 60_000, async () => {
       const cfg = s.settings.get('campusDualResults') || {};
@@ -93,7 +100,7 @@ class Scheduler {
         if (n) s.notifications.push({ category: 'tasks', origin: 'task', title: `${n} überfällige Aufgabe${n > 1 ? 'n' : ''}`, body: 'Öffne „Aufgaben → Überfällig“, um sie neu zu planen.', dedupeKey: 'overdue:' + today });
       }
     });
-    this.add('housekeeping', 24 * 3600_000, async () => { s.notifications.prune(); s.system.autoBackup(); }, { initialDelayMs: 5 * 60_000 });
+    this.add('housekeeping', 24 * 3600_000, async () => { s.notifications.prune(); s.system.pruneMeta(); s.system.autoBackup(); }, { initialDelayMs: 5 * 60_000 });
     // Alle 6 h nach Updates schauen – nie während eines Spiels (heavy), installiert wird nur auf Klick.
     this.add('update-check', 6 * 3600_000, async () => { if (s.settings.get('updateCheck') !== false) await s.updater.check({ silent: true }); }, { heavy: true, initialDelayMs: 2 * 60_000 });
     this.add('lol-sync', 10 * 60_000, async () => {
@@ -118,7 +125,8 @@ class Scheduler {
     // Nach einer Tarkov-Session sofort abgleichen
     s.bus.on('game:running', ({ stopped = [] }) => { if (stopped.includes('eft')) setTimeout(() => this.runNow('tarkovtracker'), 30_000); });
     this.add('lol-live', 5_000, async () => {
-      if (!s.settings.get('gaming').lolLiveCoach) return;
+      const g = s.settings.get('gaming');
+      if (!g.lolLiveCoach && g.lolObjectives === false) return;
       const st = s.gaming.context.state();
       if (!st.running.some((p) => p.id === 'league')) return;
       const live = await s.gaming.league.live();

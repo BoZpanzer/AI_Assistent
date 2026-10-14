@@ -53,8 +53,8 @@ class Gemini {
     if (role === 'liveThinking') return pickModel('liveThinking', avail);
     const anyFlash = avail.map((n) => String(n).replace(/^models\//, '')).find((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|lite|omni)/.test(n));
     const chosen = m[role] || pickModel(role, avail) || (['fast', 'research', 'reasoning'].includes(role) ? anyFlash : null) || pickModel(role, all) || '';
-    // Reasoning-Modell gerade nicht nutzbar (z. B. nicht im kostenlosen Tarif) → schnelles Modell
-    if (role === 'reasoning' && (!chosen || this.blocked(chosen))) return this.model('fast');
+    // Reasoning-Modell gerade nicht nutzbar (z. B. nicht im kostenlosen Tarif) oder Kostenbremse aktiv → schnelles Modell
+    if (role === 'reasoning' && (!chosen || this.blocked(chosen) || this.guard?.braking())) return this.model('fast');
     return chosen;
   }
 
@@ -153,7 +153,8 @@ class Gemini {
    */
   thinkingFor(model, effort) {
     if (!effort || effort === 'default' || this.noThinkingCfg.has(model)) return undefined;
-    if (this.settings.get('aiCostMode') === 'max' && effort === 'low') return undefined;
+    if (this.guard?.braking()) effort = 'low'; // Kostenbremse: immer kurz denken
+    else if (this.settings.get('aiCostMode') === 'max' && effort === 'low') return undefined;
     if (/gemini-2\.5/.test(model)) return effort === 'low' ? { thinkingBudget: /pro/.test(model) ? 128 : 512 } : undefined;
     if (/gemini-(1|2\.0)/.test(model) || /lite/.test(model)) return undefined;
     return { thinkingLevel: effort === 'low' ? 'low' : 'high' };
@@ -210,6 +211,7 @@ class Gemini {
   }
 
   async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low' }) {
+    if (['lol', 'study'].includes(feature) && this.guard?.braking()) throw new Error('Gemini-Budget fast aufgebraucht – Hintergrund-KI pausiert (Kostenbremse).');
     const base = { systemInstruction: system, temperature: temperature ?? 0.3 };
     if (json) { base.responseMimeType = 'application/json'; if (schema) base.responseSchema = schema; }
     if (tools) base.tools = tools;
@@ -326,6 +328,7 @@ class Gemini {
 
   /** Multimodal transcription of one PDF page (handwriting / formulas). */
   async transcribePdf(pdfBytes) {
+    if (this.guard?.braking()) throw new Error('Gemini-Budget fast aufgebraucht – Seitenanalyse pausiert (Kostenbremse).');
     const model = this.requireModel('vision');
     const t = this.thinkingFor(model, 'low');
     const r = await this.client().models.generateContent({

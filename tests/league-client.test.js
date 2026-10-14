@@ -170,3 +170,28 @@ test('LoL-Fehleranalyse über den Client: Timeline nachladen, Muster, Tool + Bra
     assert.equal((await core.gaming.league.deepSync()).analyzed, 0, 'schon analysiert → nicht nochmal laden');
   } finally { srv.close(); cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('LoL Objective-Timer: Respawns aus echten Kills, Seele → Elder, einmalige Objectives verschwinden', () => {
+  const { objectives } = require('../src/main/services/gaming/lolobjectives');
+  const players = [{ riotIdGameName: 'Ich', team: 'ORDER' }, { riotIdGameName: 'Gegner', team: 'CHAOS' }];
+  // 3:00 – noch nichts passiert: Standard-Startzeiten (geschätzt)
+  let o = objectives([], players, 180, 'ORDER');
+  const d = o.find((x) => x.id === 'dragon');
+  assert.equal(d.spawnAt, 300); assert.equal(d.estimated, true); assert.equal(d.remaining, 120);
+  assert.ok(o.some((x) => x.id === 'baron' && x.estimated));
+  // Drache bei 6:10 von uns, Grubs bei 9:00 → nächster Drache 11:10 (nicht geschätzt), Grubs weg
+  o = objectives([{ EventName: 'DragonKill', EventTime: 370, DragonType: 'Fire', KillerName: 'Ich', Stolen: 'False' }, { EventName: 'HordeKill', EventTime: 540, KillerName: 'Gegner' }], players, 600, 'ORDER');
+  const d2 = o.find((x) => x.id === 'dragon');
+  assert.equal(d2.spawnAt, 670); assert.equal(d2.estimated, false); assert.match(d2.note, /Fire.*dein Team/);
+  assert.ok(!o.some((x) => x.id === 'grubs'));
+  // 4 Drachen für den Gegner → Seele → Elder 6:00 nach dem letzten
+  const four = [1, 2, 3, 4].map((i) => ({ EventName: 'DragonKill', EventTime: 300 * i + 10, DragonType: 'Water', KillerName: 'Gegner' }));
+  o = objectives(four, players, 1300, 'ORDER');
+  const e = o.find((x) => x.id === 'elder');
+  assert.equal(e.spawnAt, 1210 + 360); assert.match(e.note, /Seele: Gegner/);
+  // Baron-Kill bei 26:00 → nächster 32:00, Buff bis 29:00; eigene Startzeiten aus den Einstellungen
+  o = objectives([{ EventName: 'BaronKill', EventTime: 1560, KillerName: 'Ich' }], players, 1600, 'ORDER', { dragon: 330 });
+  const b = o.find((x) => x.id === 'baron');
+  assert.equal(b.spawnAt, 1920); assert.match(b.note, /29:00/);
+  assert.equal(objectives([], players, 0, 'ORDER', { dragon: 330 }).find((x) => x.id === 'dragon').spawnAt, 330);
+});

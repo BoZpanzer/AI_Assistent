@@ -1,4 +1,5 @@
 'use strict';
+const { objectives } = require('./lolobjectives');
 const https = require('node:https');
 const { id, nowIso } = require('../../core/util');
 const log = require('../../core/logger').scope('league');
@@ -59,7 +60,10 @@ class League {
         this.db.run('INSERT INTO lol_samples(session,at,game_seconds,champion,level,gold,k,d,a,cs) VALUES(?,?,?,?,?,?,?,?,?,?)', this.liveSession, nowIso(), seconds, state.champion, state.level, state.gold, sc.kills, sc.deaths, sc.assists, sc.creepScore);
         state.loggedAt = seconds;
       } else state.loggedAt = this.lastLive.loggedAt;
-      state.tips = this.liveTips(state);
+      const g = this.settings.get('gaming') || {};
+      state.tips = g.lolLiveCoach ? this.liveTips(state) : [];
+      state.objectives = g.lolObjectives !== false ? objectives(all.events?.Events || [], players, all.gameData?.gameTime || seconds, self.team, g.lolObjectiveTimes || {}) : [];
+      state.receivedAt = Date.now();
       this.lastLive = state;
       // Letzten Live-Stand merken – wird angezeigt, wenn gerade kein Match läuft
       if (!this._lastSaved || Date.now() - this._lastSaved > 20000) { this._lastSaved = Date.now(); this.cache.set('lol:lastlive', { ...state, at: nowIso() }, 'Live Client Data API (lokal)', 365 * 86400000); }

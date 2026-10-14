@@ -2,6 +2,16 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.18.0 – Spielseiten für neue Spiele, Klausurmodus, Kostenbremse, LoL-Objectives, Tarkov-Stockwerke
+
+- **Eigene Seite für unbekannte Spiele:** Spielst du ein Spiel, das JARVIS noch nicht kennt (oder sprichst darüber), recherchiert JARVIS es mit der Google-Suche und stellt eine passende Seite aus den festen Bausteinen zusammen: Fragen, Spielstand-Kategorien, Timer, Karte, Wiki, Checklisten, Links. Dabei wird kein eigener Code erzeugt. JARVIS prüft alles selbst: Ein Wiki kommt nur auf die Seite, wenn es wirklich antwortet, Links nur, wenn sie erreichbar sind, und Checklisten-Einträge nur, wenn sie wörtlich in den Quellen stehen. Auf der Gaming-Seite gibt es dafür „Seite gestalten“ bzw. „Neu gestalten“, im Chat „Bau mir eine Seite für …“.
+- **Klausurmodus ist jetzt erreichbar:** Den Lernplaner gab es schon im Code, er war aber nirgends aufrufbar. Das ist jetzt behoben. Unter Studium → Klausuren legst du Klausuren an, siehst deinen Lernstand und lässt dir einen Lernplan um Stundenplan und Termine herum vorschlagen. Erst nach deiner Bestätigung wird er eingetragen. Im Chat geht das auch („Plane Mathe II“, „Ich hab heute 2 h gelernt“).
+- **Prüfungen aus Campus Dual automatisch:** Termine mit „Klausur“ oder „Prüfung“ im Titel aus deinem Stundenplan (und, falls lesbar, aus der Prüfungsanmeldung) landen als Klausur im Klausurmodus. Verschiebt Campus Dual einen Termin, zieht die Klausur mit. Was du löschst, legt JARVIS nicht neu an.
+- **Kostenbremse:** Einstellungen → Gemini / KI zeigt die geschätzten Kosten des Monats und eine Hochrechnung. Du kannst den echten Stand aus AI Studio eintragen, um die Schätzung zu eichen. Ab 80 % kommt eine Warnung. Ab 95 % laufen Analysen über das schnelle Modell, und Hintergrund-KI (LoL-Tipps, Seitenanalyse) pausiert. Chat und Sprache laufen weiter.
+- **LoL Objective-Timer im Overlay:** Drache/Elder, Baron, Herold, Voidgrubs und Atakhan. Respawns werden aus den echten Kills im Match berechnet, inklusive Seele → Elder und Baron-Buff. Die ersten Spawnzeiten sind Standardwerte („≈“), die du in den Einstellungen anpassen kannst, falls ein Patch sie ändert.
+- **Tarkov-Karte:** Stockwerke und Untergeschosse lassen sich umschalten. Die Ziele deiner offenen Quests erscheinen als Marker, ohne erledigte Quests und bis zu deinem Level. Klick auf einen Marker zeigt das Questziel. Bereits geladene Karten werden einmal automatisch erneuert.
+- **Sicherheit & Pflege:** Das Drive-Backup enthält keine Schlüssel, Passwörter oder Anmeldungen mehr. Sie bleiben verschlüsselt nur auf dem PC. Beim Wiederherstellen einer Sicherung von einem anderen PC bleiben deine aktuellen Schlüssel erhalten. Das Log wird auch im Dauerbetrieb gekürzt, alte Tagesmarker werden aufgeräumt. Dokument-Links öffnen nur noch https-Adressen.
+
 ## 3.17.0 – Gemini deutlich sparsamer, gleiche Antworten
 
 - **Googles Prompt-Cache greift jetzt:** Bisher stand die aktuelle Uhrzeit ganz oben in JARVIS' Anweisung. Dadurch war jede Anfrage für Google „neu“, und rund 5.500 Token Anweisung und Werkzeuge wurden jedes Mal voll berechnet. Jetzt bleibt dieser Teil gleich, und Uhrzeit, Spiel und Gedächtnis hängen an deiner neuesten Nachricht. Googles Cache liest den gleichbleibenden Teil (auch den bisherigen Verlauf und Werkzeugschritte) deutlich günstiger.

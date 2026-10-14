@@ -8,8 +8,7 @@ const log = require('../core/logger').scope('drive-backup');
 /**
  * Automatische Sicherung von JARVIS nach Google Drive (Standard: Ordner „coding“).
  * - einmal pro Tag (nicht während eines Spiels), zusätzlich „Jetzt sichern“
- * - die Sicherung ist dieselbe .zip wie lokal (Datenbank + verschlüsselte Schlüssel + Karten);
- *   die Schlüssel bleiben mit Windows-DPAPI verschlüsselt und sind nur auf deinem PC lesbar
+ * - Datenbank + Karten; KEINE Schlüssel/Passwörter/Anmeldungen (die bleiben nur auf dem PC, DPAPI)
  * - JARVIS rührt in Drive nur seine eigenen Sicherungsdateien an (Markierung appProperties.jarvis=backup)
  *   und behält die neuesten N; alles andere im Ordner bleibt unangetastet
  */
@@ -87,7 +86,7 @@ class DriveBackup {
     this.s.bus.emit('backup:drive', this.status());
     const tmp = path.join(os.tmpdir(), `JARVIS-Backup-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`);
     try {
-      const { size } = this.s.system.createBackup(tmp);
+      const { size } = this.s.system.createBackup(tmp, { secrets: false });
       const parent = await this.folderId(c.folder || 'coding');
       const name = path.basename(tmp);
       const up = await this.upload(tmp, name, parent);

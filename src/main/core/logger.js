@@ -31,8 +31,14 @@ function init(dir, lvl = 'info') {
   fs.mkdirSync(dir, { recursive: true });
   file = path.join(dir, 'jarvis.log');
   level = lvl;
+  rotate();
+}
+/** Log > 4 MB → in jarvis.log.1 verschieben (beim Start und täglich, damit es bei Dauerbetrieb nicht wächst). */
+let writes = 0;
+function rotate() {
   try {
-    if (fs.existsSync(file) && fs.statSync(file).size > 4 * 1024 * 1024) {
+    if (file && fs.existsSync(file) && fs.statSync(file).size > 4 * 1024 * 1024) {
+      fs.rmSync(file + '.1', { force: true });
       fs.renameSync(file, file + '.1');
     }
   } catch { /* ignore */ }
@@ -47,7 +53,7 @@ function write(lvl, scope, msg, extra) {
   }
   line = redact(line);
   if (process.env.JARVIS_LOG_STDOUT) console.log(line);
-  if (file) { try { fs.appendFileSync(file, line + '\n'); } catch { /* ignore */ } }
+  if (file) { try { fs.appendFileSync(file, line + '\n'); if (++writes % 2000 === 0) rotate(); } catch { /* ignore */ } }
 }
 
 function scope(name) {
@@ -61,4 +67,4 @@ function scope(name) {
 
 function registerSecret(v) { if (v) extraSecrets.add(String(v)); }
 
-module.exports = { init, scope, redact, registerSecret };
+module.exports = { init, scope, redact, registerSecret, rotate };

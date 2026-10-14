@@ -115,9 +115,29 @@ function Ai({ s, secrets }) {
       <Field label="Wichtiges automatisch merken (Brain)" hint="Sensibles nur auf ausdrücklichen Wunsch"><Toggle checked={s.autoMemory} onChange={(v) => upd({ autoMemory: v })} /></Field>
       <Field label="Geburtstage aus dem Brain in den Kalender" hint="ganztägig, jährlich – auch nach Google"><Toggle checked={s.birthdaysToCalendar !== false} onChange={(v) => upd({ birthdaysToCalendar: v })} /></Field>
       <div class="row mt"><button class="btn xs" disabled={busy || !secrets['gemini.api_key']} onClick={() => test('')}><RefreshCw size={12} />Modelle neu prüfen</button><span class="tiny muted grow">Diese Sitzung: {usage?.requests || 0} Anfragen · {Math.round(((usage?.inputTokens || 0) + (usage?.outputTokens || 0)) / 1000)}k Tokens</span></div>
+      <BudgetField s={s} />
       <UsageTable />
       <div class="tiny muted mt">Hinweis: Ein Google-AI-Abo (Gemini App) ist nicht automatisch API-Kontingent – Limits gelten pro API-Schlüssel.</div>
     </Panel>
+  );
+}
+
+function BudgetField({ s }) {
+  const [st, reload] = useRpc('ai.budget', {}, {});
+  const [cal, setCal] = useState('');
+  const b = s.aiBudget || {};
+  const eur = (v) => (v == null ? '–' : v.toFixed(2).replace('.', ',') + ' €');
+  const color = st?.level === 'brake' ? 'var(--red)' : st?.level === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--text-2)';
+  return (
+    <>
+      <div class="hr" />
+      <Field label="Monatsbudget Gemini (€)" hint="Warnung ab 80 %, ab 95 % Sparstufe: Analysen übers schnelle Modell, Hintergrund-KI pausiert"><input class="inp" type="number" min="0" step="0.5" style={{ width: 90 }} value={b.monthlyEur ?? 5} onChange={(e) => upd({ aiBudget: { monthlyEur: Math.max(0, Number(e.currentTarget.value) || 0) } }).then(reload)} /></Field>
+      {st && <Field label="Diesen Monat (Schätzung)"><span class="small" style={{ color, textAlign: 'right' }}>{eur(st.eur)} von {eur(st.budget)} ({st.pct} %){st.projected != null ? ` · Hochrechnung ${eur(st.projected)}` : ''}{st.braking ? ' · Sparstufe aktiv' : ''}</span></Field>}
+      <Field label="Echten Stand aus AI Studio eintragen" hint={st?.calibrated ? `geeicht ${ago(st.calibratedAt)} – danach wird geschätzt` : 'macht die Schätzung genauer (AI Studio → Abrechnung)'}>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" inputMode="decimal" placeholder="z. B. 0,69" value={cal} onInput={(e) => setCal(e.currentTarget.value)} /><button class="btn xs" disabled={!cal.trim()} onClick={async () => { const r = await guard(() => rpc('ai.calibrate', { eur: cal }), 'Stand übernommen'); if (r) { setCal(''); reload(); } }}>Übernehmen</button></div>
+      </Field>
+      <Field label="Sparstufe bei 95 % automatisch"><Toggle checked={b.brake !== false} onChange={(v) => upd({ aiBudget: { brake: v } }).then(reload)} /></Field>
+    </>
   );
 }
 
@@ -244,6 +264,9 @@ function CampusDualCard({ s }) {
         <button class="btn xs primary" disabled={!user.trim() || !pw || !!busy} onClick={save}>{busy === 'save' ? <Spinner /> : <KeyRound size={12} />}Speichern</button>
       </div>
       <div class="hr" />
+      <Field label="Prüfungstermine in den Klausurmodus" hint={st?.exams ? `zuletzt ${ago(st.exams.at)}: ${st.exams.found} Prüfungen gefunden${st.exams.created ? `, ${st.exams.created} neu` : ''}` : 'aus Stundenplan (Klausur/Prüfung im Titel) und Prüfungsanmeldung'}>
+        <div class="row gap-s"><button class="btn xs" disabled={!!busy} onClick={async () => { setBusy('exams'); const x = await guard(() => rpc('campusdual.syncExams')); if (x) toast(x.created ? `${x.created} Prüfung(en) im Klausurmodus angelegt` : `${x.found} Prüfung(en) gefunden – nichts Neues`); setBusy(''); load(); }}>{busy === 'exams' ? <Spinner /> : null}Jetzt suchen</button><Toggle checked={s.campusDualExams?.enabled !== false} onChange={(v) => upd({ campusDualExams: { enabled: v } })} /></div>
+      </Field>
       <Field label="Neue Prüfungsergebnisse melden" hint={`prüft alle ${cfg.intervalHours || 3} h, nur wenn angemeldet oder Zugangsdaten gespeichert`}><Toggle checked={cfg.enabled !== false} onChange={(v) => upd({ campusDualResults: { enabled: v } })} /></Field>
       <Field label="Letzte Prüfung"><span class="small muted">{r?.lastCheck ? ago(r.lastCheck) : 'noch nie'}{r?.tile ? ' · Kachel: ' + r.tile : ''}</span></Field>
       {r?.lastError && <div class="notice warn small"><FixText text={r.lastError} /></div>}
@@ -303,6 +326,11 @@ function GamingCard({ s, secrets }) {
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['riot.api_key'] ? '••••••••' : 'RGAPI-…'} value={riotKey} onInput={(e) => setRiotKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'riot.api_key', value: riotKey }), 'Gespeichert'); setRiotKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
       </Field>
       <Field label="LoL Live-Coach (Hinweise im Match)"><Toggle checked={g.lolLiveCoach} onChange={(v) => upd({ gaming: { lolLiveCoach: v } })} /></Field>
+      <Field label="LoL Objective-Timer im Overlay" hint="Drache, Baron, Herold, Grubs, Atakhan – Respawns aus echten Kills"><Toggle checked={g.lolObjectives !== false} onChange={(v) => upd({ gaming: { lolObjectives: v } })} /></Field>
+      {g.lolObjectives !== false && <Field label="Erste Spawnzeiten (Min.)" hint="Standardwerte; nach einem Patch hier anpassen">
+        <div class="row gap-s" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>{[['dragon', 'Drache', 5], ['grubs', 'Grubs', 8], ['herald', 'Herold', 15], ['atakhan', 'Atakhan', 20], ['baron', 'Baron', 25]].map(([k, l, d]) => (
+          <label class="tiny muted" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{l}<input class="inp" type="number" min="0" max="60" step="0.25" style={{ width: 58 }} value={(g.lolObjectiveTimes?.[k] ?? d * 60) / 60} onChange={(e) => upd({ gaming: { lolObjectiveTimes: { ...(g.lolObjectiveTimes || {}), [k]: Math.round(Math.max(0, Number(e.currentTarget.value) || 0) * 60) } } })} /></label>))}</div>
+      </Field>}
       <Field label="LoL Championauswahl: Matchup-Tipps" hint="Nur Champions, keine Spielerdaten"><Toggle checked={g.lolChampSelect !== false} onChange={(v) => upd({ gaming: { lolChampSelect: v } })} /></Field>
       <Field label="LoL Nachbesprechung nach jedem Spiel"><Toggle checked={g.lolReview !== false} onChange={(v) => upd({ gaming: { lolReview: v } })} /></Field>
       {g.lolReview !== false && <Field label="… mit KI-Zusammenfassung (Gemini)"><Toggle checked={g.lolReviewAi !== false} onChange={(v) => upd({ gaming: { lolReviewAi: v } })} /></Field>}
@@ -414,7 +442,7 @@ function Data() {
       <Field label="Datenordner" wide><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={info?.dataDir || ''} /><button class="btn icon xs" onClick={() => rpc('shell.openPath', { which: 'data' })}><FolderOpen size={14} /></button></div></Field>
       <div class="row gap-s">
         <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.backup')); if (r) { toast('Sicherung erstellt'); reload(); } }}><Download size={12} />Sicherung erstellen</button>
-        <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.restore', {})); if (r?.staged && await ask('Sicherung geprüft. JARVIS jetzt neu starten und wiederherstellen?', '', { confirmOnly: true, okLabel: 'Neu starten' })) rpc('app.relaunch'); }}><Upload size={12} />Wiederherstellen…</button>
+        <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('system.restore', {})); if (r?.staged && await ask('Sicherung geprüft. JARVIS jetzt neu starten und wiederherstellen?' + (r.secretsNote ? ' ' + r.secretsNote : ''), '', { confirmOnly: true, okLabel: 'Neu starten' })) rpc('app.relaunch'); }}><Upload size={12} />Wiederherstellen…</button>
       </div>
       <DriveBackupField s={s} />
       <div class="tiny muted mt">Automatische Tagessicherungen (7 Tage): {backups.filter((b) => b.auto).length} · zuletzt {backups[0] ? ago(backups[0].at) : '—'} · vor jeder Schema-Migration wird zusätzlich gesichert.</div>

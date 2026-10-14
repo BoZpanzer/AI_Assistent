@@ -23,8 +23,11 @@ class GameContext {
   profiles() {
     const custom = safeJson(this.getState('custom_profiles'), []) || [];
     const stats = safeJson(this.getState('steam:stats'), {}) || {};
-    return [...PROFILES, ...custom].map((p) => {
-      const st = stats[p.id];
+    return [...PROFILES, ...custom].map((p0) => {
+      const st = stats[p0.id];
+      // Von JARVIS gestaltete Seite (unbekanntes Spiel) einmischen
+      const d = p0.integration === 'generic' ? safeJson(this.getState('design:' + p0.id), null) : null;
+      const p = d ? { ...p0, genre: d.genre, questions: d.questions, progressCats: d.progressCats || p0.progressCats, checklists: d.checklists, links: d.links, wiki: p0.wiki || d.wiki || undefined, timerKinds: d.timerKinds, designWidgets: d.widgets, design: { summary: d.summary, sources: d.sources, createdAt: d.createdAt, grounded: d.grounded }, designed: true } : p0;
       const q = applyKit(p);
       if (!st) return q;
       return { ...q, steamAppId: q.steamAppId || st.appid, steamAppIds: st.appids, playtimeMin: st.minutes, lastPlayed: st.lastPlayed, header: q.header || st.header };

@@ -19,14 +19,14 @@ const SVG_SOURCES = ['https://assets.tarkov.dev/maps/svg/', 'https://raw.githubu
 const ATTRIBUTION = 'Karte: Shebuka / tarkov.dev (CC BY-NC-SA 4.0)';
 // Stand der tarkov.dev-Daten (Oktober 2026) – falls maps.json gerade nicht erreichbar ist
 const SNAPSHOT = [
-  { id: 'streets-of-tarkov', svg: 'StreetsOfTarkov.svg', transform: [0.38, 0, 0.38, 0], rotation: 180, bounds: [[323, -295], [-280, 532]], layer: 'Ground_Level' },
-  { id: 'ground-zero', svg: 'GroundZero.svg', transform: [0.524, 167.3, 0.524, 65.1], rotation: 180, bounds: [[249, -124], [-99, 364]], layer: 'Ground_Level' },
-  { id: 'customs', svg: 'Customs.svg', transform: [0.239, 168.65, 0.239, 136.35], rotation: 180, bounds: [[698, -307], [-372, 237]], layer: 'Ground_Level' },
-  { id: 'factory', svg: 'Factory.svg', transform: [1.629, 119.9, 1.629, 139.3], rotation: 90, bounds: [[77, -64.5], [-65.5, 67.4]], layer: 'Ground_Floor' },
-  { id: 'interchange', svg: 'Interchange.svg', transform: [0.265, 150.6, 0.265, 134.6], rotation: 180, bounds: [[598, -442], [-433, 426]], layer: 'Ground_Level' },
+  { id: 'streets-of-tarkov', svg: 'StreetsOfTarkov.svg', transform: [0.38, 0, 0.38, 0], rotation: 180, bounds: [[323, -295], [-280, 532]], layer: 'Ground_Level', layers: [{name: '2nd Floor', svgLayer: 'Second_Floor'}, {name: '3rd Floor', svgLayer: 'Third_Floor'}, {name: '4th Floor', svgLayer: 'Fourth_Floor'}, {name: '5th Floor', svgLayer: 'Fifth_Floor'}, {name: 'Underground', svgLayer: 'Underground_Level'}] },
+  { id: 'ground-zero', svg: 'GroundZero.svg', transform: [0.524, 167.3, 0.524, 65.1], rotation: 180, bounds: [[249, -124], [-99, 364]], layer: 'Ground_Level', layers: [{name: '2nd Floor', svgLayer: 'Second_Floor'}, {name: '3rd Floor', svgLayer: 'Third_Floor'}, {name: 'Garage', svgLayer: 'Underground_Level'}] },
+  { id: 'customs', svg: 'Customs.svg', transform: [0.239, 168.65, 0.239, 136.35], rotation: 180, bounds: [[698, -307], [-372, 237]], layer: 'Ground_Level', layers: [{name: '2nd Floor', svgLayer: 'Second_Floor'}, {name: '3rd Floor', svgLayer: 'Third_Floor'}, {name: 'Underground', svgLayer: 'Underground_Level'}] },
+  { id: 'factory', svg: 'Factory.svg', transform: [1.629, 119.9, 1.629, 139.3], rotation: 90, bounds: [[77, -64.5], [-65.5, 67.4]], layer: 'Ground_Floor', layers: [{name: '2nd Floor', svgLayer: 'Second_Floor'}, {name: '3rd Floor', svgLayer: 'Third_Floor'}, {name: 'Tunnels', svgLayer: 'Basement'}] },
+  { id: 'interchange', svg: 'Interchange.svg', transform: [0.265, 150.6, 0.265, 134.6], rotation: 180, bounds: [[598, -442], [-433, 426]], layer: 'Ground_Level', layers: [{name: '2nd Floor', svgLayer: 'First_Floor'}, {name: '3rd Floor', svgLayer: 'Second_Floor'}] },
   { id: 'lighthouse', svg: 'Lighthouse.svg', transform: [0.2, 0, 0.2, 0], rotation: 180, bounds: [[515, -998], [-545, 725]], layer: 'Ground_Level' },
-  { id: 'reserve', svg: 'Reserve.svg', transform: [0.395, 122.0, 0.395, 137.65], rotation: 180, bounds: [[289, -293], [-303, 244]], svgBounds: [[289, -274], [-303, 272]], layer: 'Ground_Level' },
-  { id: 'shoreline', svg: 'Shoreline.svg', transform: [0.16, 83.2, 0.16, 111.1], rotation: 180, bounds: [[504, -415], [-1056, 618]], layer: 'Ground_Level' },
+  { id: 'reserve', svg: 'Reserve.svg', transform: [0.395, 122.0, 0.395, 137.65], rotation: 180, bounds: [[289, -293], [-303, 244]], svgBounds: [[289, -274], [-303, 272]], layer: 'Ground_Level', layers: [{name: 'Bunkers', svgLayer: 'Bunkers'}] },
+  { id: 'shoreline', svg: 'Shoreline.svg', transform: [0.16, 83.2, 0.16, 111.1], rotation: 180, bounds: [[504, -415], [-1056, 618]], layer: 'Ground_Level', layers: [{name: '2nd Floor', svgLayer: 'Second_Floor'}, {name: '3rd Floor', svgLayer: 'Third_Floor'}, {name: 'Underground', svgLayer: 'Underground_Level'}] },
   { id: 'terminal', svg: 'Terminal.svg', transform: [0.2, 0, 0.2, 0], rotation: 180, bounds: [[463, -580], [-433, 475]], layer: 'Ground_Level' },
   { id: 'woods', svg: 'Woods.svg', transform: [0.1855, 112.95, 0.1855, 167.85], rotation: 180, bounds: [[646, -914], [-761, 442]], layer: 'Ground_Level' },
 ];
@@ -55,8 +55,34 @@ function affineFor(def) {
   return { affine: [a, b2, c, d, e, f], aspect: W / H };
 }
 
-/** SVG für die Anzeige als Bild vorbereiten: nur Erdgeschoss, feste Größe im richtigen Seitenverhältnis, nichts Aktives. */
-function prepareSvg(text, def, aspect) {
+/** Oberste Ebenen (Stockwerke) des SVG: [{ id, keepWith }] – nur direkte Kinder des <svg>. */
+function topGroups(text) {
+  const out = []; let depth = 0;
+  for (const m of String(text).matchAll(/<(\/?)(svg|g)\b([^>]*?)(\/?)>/gi)) {
+    const [, close, tag, attrs, self] = m;
+    if (close) { depth--; continue; }
+    if (tag.toLowerCase() === 'g' && depth === 1) {
+      const id = attrs.match(/\sid\s*=\s*"([^"]+)"/)?.[1];
+      if (id) out.push({ id, keepWith: attrs.match(/data-keep-with-group\s*=\s*"([^"]+)"/)?.[1] || null });
+    }
+    if (!self) depth++;
+  }
+  return out;
+}
+const FLOOR_LABEL = { First_Floor: '1. OG', Second_Floor: '2. OG', Third_Floor: '3. OG', Fourth_Floor: '4. OG', Fifth_Floor: '5. OG', Underground_Level: 'Untergeschoss', Basement: 'Tunnel', Bunkers: 'Bunker', Ground_Floor: 'Erdgeschoss', Ground_Level: 'Erdgeschoss' };
+const LAYER_DE = { '2nd floor': '1. OG', '3rd floor': '2. OG', '4th floor': '3. OG', '5th floor': '4. OG', underground: 'Untergeschoss', tunnels: 'Tunnel', garage: 'Tiefgarage', bunkers: 'Bunker' };
+/** Wählbare Stockwerke (ohne Basisebene und die mit ihr gezeigten). Namen aus maps.json, sonst aus der Ebenen-ID. */
+function floorsOf(text, def) {
+  const base = def.layer || 'Ground_Level';
+  const named = Object.fromEntries((def.layers || []).filter((l) => l.svgLayer).map((l) => [l.svgLayer, LAYER_DE[String(l.name).toLowerCase()] || l.name]));
+  return topGroups(text).filter((g) => g.id !== base && g.keepWith !== base && /^[\w-]+$/.test(g.id)).map((g) => ({ id: g.id, label: named[g.id] || FLOOR_LABEL[g.id] || g.id.replace(/_/g, ' ') }));
+}
+
+/**
+ * SVG für die Anzeige als Bild vorbereiten: feste Größe im richtigen Seitenverhältnis, nichts Aktives.
+ * Ohne `floor` nur die Basisebene (Erdgeschoss); mit `floor` das Stockwerk über der abgedunkelten Basis.
+ */
+function prepareSvg(text, def, aspect, floor = null) {
   let t = String(text);
   if (!/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(t)) throw new Error('Keine SVG-Datei');
   t = t.replace(/<script[\s\S]*?<\/script\s*>/gi, '').replace(/<foreignObject[\s\S]*?<\/foreignObject\s*>/gi, '')
@@ -64,7 +90,10 @@ function prepareSvg(text, def, aspect) {
     .replace(/(\s(?:xlink:)?href\s*=\s*)("|')\s*(?:https?:|javascript:|data:text\/html)[^"']*\2/gi, '$1$2#$2');
   const W = aspect >= 1 ? 4096 : Math.round(4096 * aspect); const H = aspect >= 1 ? Math.round(4096 / aspect) : 4096;
   const layer = String(def.layer || 'Ground_Level').replace(/[^\w-]/g, '');
-  const css = `<style id="jarvis-layers">:root > g[id]:not(#${layer}):not([data-keep-with-group="${layer}"]) { display: none !important; }</style>`;
+  const fl = floor ? String(floor).replace(/[^\w-]/g, '') : null;
+  const css = fl
+    ? `<style id="jarvis-layers">:root > g[id]:not(#${layer}):not([data-keep-with-group="${layer}"]):not(#${fl}):not([data-keep-with-group="${fl}"]) { display: none !important; } :root > g#${layer}, :root > g[data-keep-with-group="${layer}"] { opacity: 0.3; }</style>`
+    : `<style id="jarvis-layers">:root > g[id]:not(#${layer}):not([data-keep-with-group="${layer}"]) { display: none !important; }</style>`;
   t = t.replace(/<svg\b([^>]*)>/i, (m, attrs) => {
     const a = attrs.replace(/\s(width|height|preserveAspectRatio)\s*=\s*("[^"]*"|'[^']*')/gi, '');
     return `<svg${a} width="${W}" height="${H}">${css}`;
@@ -83,7 +112,7 @@ class TarkovMaps {
       const out = [];
       for (const m of j) for (const mp of m.maps || []) {
         if (mp.projection !== 'interactive' || !mp.svgPath || !Array.isArray(mp.transform) || !Array.isArray(mp.bounds)) continue;
-        out.push({ id: m.normalizedName, svg: String(mp.svgPath).split('/').pop(), transform: mp.transform, rotation: mp.coordinateRotation || 0, bounds: mp.bounds, svgBounds: mp.svgBounds, layer: mp.svgLayer || 'Ground_Level' });
+        out.push({ id: m.normalizedName, svg: String(mp.svgPath).split('/').pop(), transform: mp.transform, rotation: mp.coordinateRotation || 0, bounds: mp.bounds, svgBounds: mp.svgBounds, layer: mp.svgLayer || 'Ground_Level', layers: (mp.layers || []).map((l) => ({ name: l.name, svgLayer: l.svgLayer })) });
       }
       if (out.length >= 5) return out;
     } catch (e) { log.info('maps.json nicht erreichbar, nutze gespeicherten Stand: ' + e.message); }
@@ -116,14 +145,20 @@ class TarkovMaps {
     for (const def of defs) {
       const existing = this.g.db.get('SELECT image_file FROM game_maps WHERE game=? AND name=?', 'eft', def.id);
       // vorhandene Karten (eigene Bilder oder schon geladene) nur mit force ersetzen; eigene Bilder nie automatisch
-      const ours = !!this.g.context.getState(`mapsrc:eft:${def.id}`);
-      if (existing?.image_file && this.g.mapImagePath('eft', def.id) && (!force || !ours)) { skipped.push(def.id); continue; }
+      let src = null; try { src = JSON.parse(this.g.context.getState(`mapsrc:eft:${def.id}`) || 'null'); } catch { src = null; }
+      const ours = !!src;
+      // ältere JARVIS-Karten ohne Stockwerke einmal automatisch erneuern
+      const upgrade = ours && !Array.isArray(src.floors);
+      if (existing?.image_file && this.g.mapImagePath('eft', def.id) && (!(force || upgrade) || !ours)) { skipped.push(def.id); continue; }
       try {
         const { affine, aspect } = affineFor(def);
-        const { svg, width, height } = prepareSvg(await this.download(def.svg), def, aspect);
+        const raw = await this.download(def.svg);
+        const { svg, width, height } = prepareSvg(raw, def, aspect);
         this.g.saveMapFile('eft', def.id, Buffer.from(svg, 'utf8'), '.svg', { width, height });
+        const floors = floorsOf(raw, def).slice(0, 8);
+        for (const f of floors) this.g.saveLayerFile('eft', def.id, f.id, Buffer.from(prepareSvg(raw, def, aspect, f.id).svg, 'utf8'));
         this.g.context.setState(`calib:eft:${def.id}`, { affine, source: 'tarkov.dev', attribution: ATTRIBUTION });
-        this.g.context.setState(`mapsrc:eft:${def.id}`, { source: 'tarkov.dev', file: def.svg, at: new Date().toISOString() });
+        this.g.context.setState(`mapsrc:eft:${def.id}`, { source: 'tarkov.dev', file: def.svg, at: new Date().toISOString(), floors });
         done.push(def.id);
       } catch (e) { failed.push({ id: def.id, error: e.message }); log.warn(`Karte ${def.id} nicht geladen`, e); }
     }
@@ -132,4 +167,4 @@ class TarkovMaps {
   }
 }
 
-module.exports = { TarkovMaps, affineFor, project, prepareSvg, SNAPSHOT, ATTRIBUTION };
+module.exports = { TarkovMaps, affineFor, project, prepareSvg, floorsOf, topGroups, SNAPSHOT, ATTRIBUTION };

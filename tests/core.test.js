@@ -352,3 +352,32 @@ test('Kosten: Modell lehnt thinkingConfig ab → einmal ohne wiederholen, danach
     assert.equal(core.gemini.thinkingFor('gemini-x-flash', 'low'), undefined);
   } finally { cleanup(); }
 });
+
+test('Kostenbremse: Schätzung nach Modell, Eichen mit AI-Studio-Stand, Warnung und Sparstufe', async () => {
+  const { costUsd } = require('../src/main/services/costguard');
+  // 1 Mio. Eingabe (davon 800k Cache) + 100k Ausgabe + 100k Denken mit Flash-Preisen
+  assert.ok(Math.abs(costUsd('gemini-3.8-flash', { in: 1e6, cached: 8e5, out: 1e5, think: 1e5 }) - (0.2 * 0.5 + 0.8 * 0.05 + 0.2 * 3)) < 1e-9);
+  const { core, cleanup } = tempCore();
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
+    await core.gemini.discover();
+    core.settings.update({ aiBudget: { monthlyEur: 5 } });
+    assert.equal(core.costGuard.status().level, 'ok');
+    // geeicht: 4,00 € laut AI Studio → 80 % → Warnung
+    core.costGuard.calibrate('4,00');
+    let st = core.costGuard.check();
+    assert.equal(st.level, 'warn'); assert.equal(st.calibrated, true);
+    assert.ok(core.notifications.list({ limit: 10 }).some((n) => /Budget: Achtung/.test(n.title)));
+    // Verbrauch nach dem Eichen kommt dazu (Pro: 1 Mio. Ausgabe ≈ 12 $ → weit über Budget) → Sparstufe
+    core.gemini.record('chat', 'gemini-3.1-pro-preview', { promptTokenCount: 1000, candidatesTokenCount: 1e6 });
+    st = core.costGuard.check();
+    assert.equal(st.level, 'brake'); assert.equal(st.braking, true);
+    assert.equal(core.gemini.model('reasoning'), core.gemini.model('fast'), 'keine Pro-Analysen in der Sparstufe');
+    assert.deepEqual(core.gemini.thinkingFor('gemini-3.8-flash', 'high'), { thinkingLevel: 'low' });
+    await assert.rejects(core.gemini.generate({ feature: 'lol', contents: [] }), /Kostenbremse/);
+    // Sparstufe abschaltbar
+    core.settings.update({ aiBudget: { brake: false } });
+    assert.equal(core.costGuard.braking(), false);
+    assert.throws(() => core.costGuard.calibrate('abc'), /Betrag/);
+  } finally { cleanup(); }
+});

@@ -882,7 +882,7 @@ test('Tarkov-Karten: tarkov.dev-SVG wird geladen, bereinigt und automatisch kali
     fetched.push(url);
     if (/maps\.json$/.test(url)) return new Response('nicht da', { status: 503 }); // → gespeicherter Stand
     if (/Factory\.svg$/.test(url)) return new Response('', { status: 404 });
-    if (/\.svg$/.test(url)) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g id="Ground_Level"/></svg>');
+    if (/\.svg$/.test(url)) return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g id="Ground_Level"><g id="Roads"/></g><g id="First_Floor" data-keep-with-group="Ground_Level"/><g id="Second_Floor"><g id="Inner"/></g><g id="Underground_Level"/></svg>');
     return new Response('', { status: 404 });
   } });
   try {
@@ -898,6 +898,11 @@ test('Tarkov-Karten: tarkov.dev-SVG wird geladen, bereinigt und automatisch kali
     assert.equal(m.hasImage, true); assert.equal(m.width, 4096);
     assert.equal(m.calibration.affine.length, 6); assert.match(m.calibration.attribution, /tarkov\.dev/);
     assert.match(core.gaming.mapImagePath('eft', 'customs'), /customs\.svg$/);
+    // Stockwerke: nur oberste Ebenen, ohne Basis und die mit ihr gezeigte; Namen aus tarkov.dev
+    assert.deepEqual(m.source.floors.map((f) => f.label), ['1. OG', 'Untergeschoss']);
+    const second = fs.readFileSync(core.gaming.mapImagePath('eft', 'customs', 'Second_Floor'), 'utf8');
+    assert.match(second, /:not\(#Second_Floor\)/); assert.match(second, /opacity: 0\.3/);
+    assert.match(core.gaming.mapImagePath('eft', 'customs', '../../x'), /customs\.svg$/, 'ungültige Ebene → normale Karte');
     assert.equal(core.gaming.maps('eft').find((x) => x.name === 'woods').calibration, null);
     // zweiter Lauf lädt nichts neu; eigenes Bild über eine tarkov.dev-Karte → Auto-Kalibrierung entfällt
     const before = fetched.length;
@@ -907,5 +912,123 @@ test('Tarkov-Karten: tarkov.dev-SVG wird geladen, bereinigt und automatisch kali
     const c2 = core.gaming.maps('eft').find((x) => x.name === 'customs');
     assert.equal(c2.calibration, null); assert.match(core.gaming.mapImagePath('eft', 'customs'), /customs\.png$/);
     assert.ok(!fs.existsSync(core.gaming.mapImagePath('eft', 'customs').replace(/\.png$/, '.svg')), 'alte SVG entfernt');
+    assert.match(core.gaming.mapImagePath('eft', 'customs', 'Second_Floor'), /customs\.png$/, 'Stockwerke der alten Karte entfernt');
   } finally { cleanup(); }
+});
+
+test('Tarkov-Questziele: nur offene Quests bis zum eigenen Level, nur diese Karte; Schemafehler bricht die Questliste nicht', async () => {
+  const tasksResp = { data: { tasks: [
+    { id: 't1', name: 'Debut', minPlayerLevel: 1, objectives: [{ id: 'o1', description: 'Töte 5 Scavs', zones: [{ map: { normalizedName: 'customs' }, position: { x: 10, y: 0, z: 20 } }] }] },
+    { id: 't2', name: 'Delivery from the Past', minPlayerLevel: 5, objectives: [{ id: 'o2', description: 'Lege das Paket ab', zones: [{ map: { normalizedName: 'customs' }, position: { x: 1, y: 0, z: 2 } }] }] },
+    { id: 't3', name: 'Shortage', minPlayerLevel: 30, objectives: [{ id: 'o3', description: 'Finde Salewa', possibleLocations: [{ map: { normalizedName: 'customs' }, positions: [{ x: 5, y: 0, z: 5 }] }] }] },
+    { id: 't4', name: 'Woods-Quest', minPlayerLevel: 1, objectives: [{ id: 'o4', description: 'x', zones: [{ map: { normalizedName: 'woods' }, position: { x: 1, y: 0, z: 1 } }] }] },
+  ] } };
+  const { core, cleanup } = tempCore({ fetch: async () => new Response(JSON.stringify(tasksResp), { headers: { 'Content-Type': 'application/json' } }) });
+  try {
+    const r = await core.gaming.tarkov.questMarkers('customs', { done: new Set(['Debut']), level: 10 });
+    assert.deepEqual(r.markers.map((m) => m.task), ['Delivery from the Past']);
+    const all = await core.gaming.tarkov.questMarkers('customs');
+    assert.equal(all.markers.length, 3); assert.equal(all.markers.find((m) => m.task === 'Shortage').item, true);
+  } finally { cleanup(); }
+  // Ändert tarkov.dev das Schema, schlägt nur die Questziel-Abfrage fehl – die normale Questsuche läuft weiter
+  const plain = { data: { tasks: [{ id: 't1', name: 'Debut', minPlayerLevel: 1, trader: { name: 'Prapor' }, map: { name: 'Zoll', normalizedName: 'customs' }, objectives: [{ type: 'shoot', description: 'Töte 5 Scavs', optional: false, maps: [{ normalizedName: 'customs' }] }] }] } };
+  const c2 = tempCore({ fetch: async (_u, init) => new Response(JSON.stringify(/TaskObjectiveBasic/.test(String(init?.body)) ? { errors: [{ message: 'Unknown type TaskObjectiveBasic' }] } : plain), { headers: { 'Content-Type': 'application/json' } }) });
+  try {
+    await assert.rejects(c2.core.gaming.tarkov.questMarkers('customs'), /Unknown type/);
+    assert.equal((await c2.core.gaming.tarkov.searchTasks('debut')).items.length, 1);
+  } finally { c2.cleanup(); }
+});
+
+test('Klausurmodus: Prüfungen aus dem Campus-Dual-Stundenplan → Klausur, Verschiebung erkannt, gelöschte nicht neu; Lernplan nur nach Bestätigung', async () => {
+  const { examsFromRecords } = require('../src/main/services/campusexams');
+  const recs = examsFromRecords([{ __metadata: {}, Stext: 'Mathematik II', ExamDate: '/Date(1893456000000)/', BeginTime: 'PT09H00M00S', Room: 'Aula', RegistrationDate: '/Date(1890000000000)/' }]);
+  assert.equal(recs.length, 1); assert.equal(recs[0].title, 'Mathematik II'); assert.equal(recs[0].room, 'Aula');
+  assert.ok([7, 8].includes(new Date(recs[0].date).getUTCHours()), recs[0].date);
+
+  const { core, cleanup } = tempCore();
+  try {
+    const day = (n, h) => { const d = new Date(); d.setDate(d.getDate() + n); d.setHours(h, 0, 0, 0); return d; };
+    const icsDate = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const ics = (klausurDay) => ['BEGIN:VCALENDAR', 'VERSION:2.0',
+      'BEGIN:VEVENT', 'UID:a', 'SUMMARY:Klausur Mathematik II', `DTSTART:${icsDate(day(klausurDay, 9))}`, `DTEND:${icsDate(day(klausurDay, 11))}`, 'LOCATION:Aula', 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:b', 'SUMMARY:Klausurvorbereitung Mathematik II', `DTSTART:${icsDate(day(3, 9))}`, `DTEND:${icsDate(day(3, 11))}`, 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:c', 'SUMMARY:Algorithmen Vorlesung', `DTSTART:${icsDate(day(2, 9))}`, `DTEND:${icsDate(day(2, 11))}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const file = path.join(os.tmpdir(), 'jarvis-cd-exams.ics');
+    fs.writeFileSync(file, ics(20));
+    await core.feeds.add({ name: 'Stundenplan', file, lecture: true });
+    let r = await core.campusExams.sync({ withService: false });
+    assert.equal(r.created.length, 1, JSON.stringify(r));
+    const ex = core.exams.list()[0];
+    assert.equal(ex.title, 'Klausur Mathematik II'); assert.match(ex.notes, /Campus-Dual-Stundenplan.*Aula/);
+    assert.ok(core.notifications.list({ limit: 5 }).some((n) => /Neue Prüfung aus Campus Dual/.test(n.title)));
+    r = await core.campusExams.sync({ withService: false });
+    assert.equal(r.created.length, 0); assert.equal(core.exams.list().length, 1, 'kein Duplikat');
+    // Termin verschoben → Klausur wandert mit
+    fs.writeFileSync(file, ics(25));
+    await core.feeds.refreshAll();
+    r = await core.campusExams.sync({ withService: false });
+    assert.equal(r.moved.length, 1); assert.equal(core.exams.list().length, 1);
+    assert.equal(new Date(core.exams.list()[0].date).getDate(), day(25, 9).getDate());
+    // Lernplan per Chat-Werkzeug: erst Bestätigungskarte, nichts eingetragen
+    const out = await core.orchestrator.execute('plan_exam', { exam: 'Mathematik' });
+    assert.equal(out.response.status, 'awaiting_user_confirmation');
+    assert.equal(core.exams.list()[0].hoursPlanned, 0);
+    const res = await core.confirmations.resolve(out.card.token, true);
+    assert.ok(res.result.applied.created > 0);
+    assert.ok(core.exams.list()[0].hoursPlanned > 0);
+    // Lerneinheiten liegen nicht auf der Vorlesung
+    const lecture = core.calendar.list(day(2, 0).toISOString(), day(3, 0).toISOString()).find((e) => e.title === 'Algorithmen Vorlesung');
+    const sessions = core.calendar.list(new Date().toISOString(), day(30, 0).toISOString()).filter((e) => e.title.startsWith('📚'));
+    assert.ok(sessions.every((s) => s.end <= lecture.start || s.start >= lecture.end));
+    // vom Nutzer gelöscht → wird nicht wieder angelegt
+    await core.exams.remove(core.exams.list()[0].id);
+    r = await core.campusExams.sync({ withService: false });
+    assert.equal(r.created.length, 0); assert.equal(core.exams.list().length, 0);
+  } finally { cleanup(); }
+});
+
+test('Spielseite für unbekanntes Spiel: Recherche → Bausteine aus dem Baukasten; Wiki/Links geprüft, erfundene Checklisten-Einträge raus', async () => {
+  const research = 'Valheim ist ein Survival-Spiel. Bosse in Reihenfolge: Eikthyr, The Elder, Bonemass, Moder, Yagluth, The Queen. Bauen und Schmelzen dauert Zeit. Wiki: https://valheim.fandom.com/wiki/Valheim_Wiki';
+  const design = { genre: 'survival', summary: 'Wikinger-Survival mit Bossen.', widgets: ['ask', 'timers', 'map', 'wiki', 'links', 'checklist', 'tarkov-raid'], questions: ['Wie besiege ich …?', 'Was baue ich zuerst?'],
+    progressCats: [{ key: 'Bosse!', label: 'Bosse', example: 'Eikthyr' }, { key: 'base', label: 'Basis' }], timerKinds: ['build', 'crafting', 'nonsense'], hasMap: true,
+    wikiUrls: ['https://valheim.fandom.com/wiki/Valheim_Wiki'], links: [{ label: 'Offizielle Seite', url: 'https://www.valheimgame.com/' }, { label: 'Kaputt', url: 'https://example.org/404' }, { label: 'Lokal', url: 'https://192.168.0.10/' }],
+    checklists: [{ name: 'Bosse', items: ['Eikthyr', 'The Elder', 'Bonemass', 'Erfundener Drache'] }] };
+  const fetched = [];
+  // DNS ohne Netz: öffentliche Adresse vortäuschen (die Prüfung auf private Netze bleibt aktiv)
+  const dnsP = require('node:dns').promises; const origLookup = dnsP.lookup;
+  dnsP.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+  const { core, cleanup } = tempCore({ script: [{ text: research, grounding: { groundingChunks: [{ web: { uri: 'https://valheim.fandom.com/wiki/Bosses', title: 'Bosses – Valheim Wiki' } }] } }, { text: JSON.stringify(design) }],
+    fetch: async (url) => {
+      fetched.push(url);
+      if (/valheim\.fandom\.com\/api\.php\?action=query&meta=siteinfo/.test(url)) return new Response(JSON.stringify({ query: { general: { sitename: 'Valheim Wiki' } } }), { headers: { 'Content-Type': 'application/json' } });
+      if (url === 'https://www.valheimgame.com/') return new Response('ok');
+      return new Response('nope', { status: 404 });
+    } });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
+    await core.gemini.discover();
+    const p = core.gaming.context.resolve('Valheim');
+    assert.equal(p.integration, 'generic');
+    assert.equal(core.gaming.designer.needsDesign(p), true);
+    const d = await core.gaming.designer.create(p.id);
+    assert.equal(d.genre, 'survival');
+    assert.deepEqual(d.wiki, { api: 'https://valheim.fandom.com/api.php', label: 'Valheim Wiki' });
+    assert.deepEqual(d.links.map((l) => l.url), ['https://www.valheimgame.com/'], 'nur erreichbare, öffentliche Links');
+    assert.ok(!fetched.some((u) => /192\.168/.test(u)), 'lokale Adresse nie abgefragt');
+    assert.deepEqual(d.checklists[0].items, ['Eikthyr', 'The Elder', 'Bonemass'], 'erfundener Eintrag entfernt');
+    const types = d.widgets.map((w) => w.type);
+    assert.ok(!types.includes('tarkov-raid'), 'nur Baukasten-Bausteine');
+    for (const t of ['ask', 'progress', 'wiki', 'map', 'timers', 'links', 'checklist', 'notes']) assert.ok(types.includes(t), t);
+    assert.deepEqual(d.widgets.find((w) => w.type === 'timers').params.kinds, ['build', 'crafting', 'custom']);
+    assert.equal(d.progressCats[0][0], 'bosse');
+    // Seite nutzt den Entwurf; Profil gilt als gestaltet → kein zweiter automatischer Lauf
+    const layout = core.gaming.layout(p.id);
+    assert.deepEqual(layout.widgets.map((w) => w.type), types);
+    assert.equal(layout.game.designed, true); assert.equal(layout.game.wiki.label, 'Valheim Wiki');
+    assert.deepEqual(core.gaming.checklist(p.id, 'Bosse').items.map((i) => i.text), ['Eikthyr', 'The Elder', 'Bonemass']);
+    assert.equal(core.gaming.designer.needsDesign(core.gaming.context.profile(p.id)), false);
+    assert.equal(core.gaming.designer.maybeAuto(p.id), null);
+    // Spiele mit eigener Oberfläche oder kuratiertem Kit werden nicht umgestaltet
+    assert.equal(core.gaming.designer.needsDesign(core.gaming.context.profile('eft')), false);
+  } finally { dnsP.lookup = origLookup; cleanup(); }
 });
