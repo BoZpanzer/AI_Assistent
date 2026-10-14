@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.28.0 – Checklisten aus dem Wiki + Factorio-Rechner
+
+- **Checklisten aus dem Wiki** für jedes Spiel: „Questlinie Ranni“, „Bosse in Reihenfolge“, „verpassbare Quests Akt 1“ … Quelle ist das Wiki des Spiels, ohne Wiki eine Websuche mit Quellen. Jeder Punkt muss mit einem wörtlichen Zitat aus der Quelle belegt sein, Unbelegtes fliegt raus. Story-Spoiler sind markiert. Die Liste erscheint auf der Spielseite mit Quelle und Stand. Vorschläge für Elden Ring, BG3, Terraria, Cyberpunk, Subnautica u. a. Geht auch per Sprache: „Leg mir eine Checkliste für die Questlinie von Millicent an.“
+- **Factorio – Verhältnis-Rechner:** „Wie viele Maschinen für 2 grüne Schaltkreise pro Sekunde?“ Das ergibt Maschinen pro Rezept (gerundet und genau) und Rohstoffe pro Sekunde. Rezepte und Maschinengeschwindigkeiten kommen aus deiner eigenen Installation (Factorio gibt sie auf Klick selbst aus), auch mit Space Age und Mods.
+
 ## 3.27.0 – Offizielle Schnittstellen: CS2, Assetto Corsa, PUBG, Stardew
 
 - **Counter-Strike 2 – Match-Nachbesprechung** über Valves offizielle Game State Integration. Nach einem Klick auf „Einrichten“ (mit Bestätigung) legt JARVIS die Valve-Konfigurationsdatei an. CS2 schickt dann nur deine eigenen Werte an deinen PC.

@@ -8,7 +8,7 @@ import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12',
   ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -430,9 +430,11 @@ function Checklist({ game, params }) {
   const [cl, reload] = useRpc('game.checklist', { game: game.id, name }, { events: ['game:data'] });
   const [txt, setTxt] = useState('');
   const save = (items) => rpc('game.saveChecklist', { game: game.id, name, items }).then(reload);
+  const [meta] = useRpc('wikilist.meta', { game: game.id, name }, {});
   return (
     <Panel icon={ListChecks} title={name} sub={cl?.items?.length ? `${cl.items.filter((i) => i.done).length}/${cl.items.length} erledigt${cl.preset ? ' · Vorlage, änderbar' : ''}` : undefined} right={<button class="btn xs ghost" onClick={() => save((cl?.items || []).map((i) => ({ ...i, done: false })))}>Zurücksetzen</button>}>
       <div class="col" style={{ gap: 0, maxHeight: 260, overflow: 'auto' }}>{(cl?.items || []).map((i) => <div class={`sub-row ${i.done ? 'done' : ''}`}><Checkbox checked={i.done} onChange={(v) => save(cl.items.map((x) => (x.id === i.id ? { ...x, done: v } : x)))} /><span class="grow">{i.text}</span><X size={13} style={{ cursor: 'pointer', color: 'var(--text-3)' }} onClick={() => save(cl.items.filter((x) => x.id !== i.id))} /></div>)}</div>
+      {meta && <div class="tiny muted mt">Quelle: {meta.label}{meta.sources?.[0]?.url ? <> · <a href={meta.sources[0].url} target="_blank" rel="noreferrer">{meta.sources[0].title || 'Artikel'}</a></> : null} · Stand {fmtDateTime(meta.at)} · <a href="#" onClick={(e) => { e.preventDefault(); guard(() => rpc('wikilist.remove', { game: game.id, name })); }}>Liste ausblenden</a></div>}
       <div class="add-row mt"><Plus size={14} /><input placeholder="Punkt hinzufügen" value={txt} onInput={(e) => setTxt(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter' && txt.trim()) { save([...(cl?.items || []), { text: txt.trim(), done: false }]); setTxt(''); } }} /></div>
     </Panel>
   );
@@ -1323,6 +1325,42 @@ function StardewFarm() {
   );
 }
 
+const WIKI_IDEAS = { eldenring: ['Questlinie Ranni', 'Questlinie Millicent', 'Hauptbosse'], baldursgate3: ['Verpassbare Quests Akt 1', 'Begleiter rekrutieren'], terraria: ['Bosse in Reihenfolge', 'Hardmode-Bosse'], cyberpunk: ['Ikonische Waffen', 'Nebenjobs Watson'], subnautica: ['Story-Fortschritt', 'Baupläne Cyclops'], monsterhunter: ['Hauptquests'], minecraft: ['Erfolge Nether'], palworld: ['Turm-Bosse'], stardew: ['Gemeinschaftszentrum Bündel'] };
+function WikiListsWidget({ game }) {
+  const [topic, setTopic] = useState(''); const [busy, setBusy] = useState(false); const [res, setRes] = useState(null);
+  const make = async (t) => { const q = (t || topic).trim(); if (!q) return; setBusy(true); setRes(await guard(() => rpc('wikilist.create', { game: game.id, topic: q }))); setBusy(false); setTopic(''); };
+  return (
+    <Panel icon={ListChecks} title="Checklisten aus dem Wiki" sub={`${game.wiki ? 'Aus dem Spiel-Wiki' : 'Aus einer Websuche'} – jeder Punkt mit Zitat belegt, Unbelegtes fliegt raus`}>
+      <div class="row gap-s"><input class="inp grow" placeholder="z. B. Questlinie, Bosse in Reihenfolge, verpassbare Quests …" value={topic} onInput={(e) => setTopic(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && make()} /><button class="btn xs" disabled={busy} onClick={() => make()}>{busy ? <Spinner size={12} /> : <Plus size={12} />}Anlegen</button></div>
+      {(WIKI_IDEAS[game.id] || []).length > 0 && <div class="row wrap gap-s mt">{WIKI_IDEAS[game.id].map((t) => <button class="chip" disabled={busy} onClick={() => make(t)}>{t}</button>)}</div>}
+      {res && <div class="small mt">„{res.name}“: {res.items} Punkte angelegt{res.dropped > 0 ? ` (${res.dropped} ohne Beleg verworfen)` : ''}.</div>}
+    </Panel>
+  );
+}
+
+function FactorioCalc() {
+  const [st, reloadSt] = useRpc('factorio.status', {}, {});
+  const [items] = useRpc('factorio.items', {}, { initial: [], enabled: !!st?.dump });
+  const [machines] = useRpc('factorio.machines', {}, { initial: [], enabled: !!st?.dump });
+  const [f, setF] = useState({ item: 'electronic-circuit', rate: 1, crafting: '' }); const [res, setRes] = useState(null); const [busy, setBusy] = useState(false);
+  const dump = async () => { if (!(await ask('Factorio-Spieldaten einlesen? JARVIS startet dafür einmal „factorio.exe --dump-data“ (ohne Fenster, Factorio muss geschlossen sein). Das schreibt die Rezepte deiner Installation in deinen Factorio-Ordner.', '', { confirmOnly: true, okLabel: 'Einlesen' }))) return; setBusy(true); await guard(() => rpc('factorio.dump'), 'Spieldaten eingelesen'); setBusy(false); reloadSt(); };
+  const calc = async () => setRes(await guard(() => rpc('factorio.calc', { item: f.item.trim(), rate: Number(f.rate), machineFor: f.crafting ? { crafting: f.crafting, 'advanced-crafting': f.crafting } : {} })));
+  const crafting = machines.filter((m) => m.categories.includes('crafting'));
+  return (
+    <Panel icon={Hammer} title="Verhältnis-Rechner" sub={st?.dump ? `Spieldaten deiner Installation · ${fmtDateTime(st.dumpAt)}` : 'Rezepte aus deiner Factorio-Installation'}>
+      {!st?.dump ? <div class="notice small">Noch keine Spieldaten. <button class="btn xs" disabled={busy} onClick={dump}>{busy ? <Spinner size={12} /> : null}Spieldaten einlesen</button></div> : <>
+        <div class="row gap-s"><input class="inp grow" list="fac-items" value={f.item} onInput={(e) => setF({ ...f, item: e.currentTarget.value })} /><input class="inp" type="number" min="0.01" step="0.25" style={{ width: 80 }} value={f.rate} onInput={(e) => setF({ ...f, rate: e.currentTarget.value })} /><span class="tiny muted">/s</span>
+          {crafting.length > 0 && <Select style={{ width: 170 }} value={f.crafting} onChange={(v) => setF({ ...f, crafting: v })} options={[{ value: '', label: 'Maschine: Standard' }, ...crafting.map((m) => ({ value: m.name, label: `${m.name} (${m.speed}×)` }))]} />}
+          <button class="btn xs" onClick={calc}>Rechnen</button></div>
+        <datalist id="fac-items">{items.map((x) => <option value={x} />)}</datalist>
+        {res && <div class="mt"><table class="small" style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr class="tiny muted"><th style={{ textAlign: 'left' }}>Rezept</th><th>pro s</th><th>Maschine</th><th>Anzahl</th></tr></thead>
+          <tbody>{res.steps.map((x) => <tr><td>{x.recipe}</td><td style={{ textAlign: 'center' }}>{x.perSec}</td><td class="tiny muted" style={{ textAlign: 'center' }}>{x.machine || '–'}</td><td style={{ textAlign: 'center' }}><b>{x.machinesRounded ?? '–'}</b> <span class="tiny muted">({x.machines})</span></td></tr>)}</tbody></table>
+          <div class="small mt"><b>Rohstoffe:</b> {Object.entries(res.raw).map(([k, v]) => `${k} ${v}/s`).join(' · ')}</div></div>}
+      </>}
+    </Panel>
+  );
+}
+
 function ArkBreeding({ game }) {
   const [list, reload] = useRpc('ark.babies', { game: game.id }, { events: ['game:data', 'game:timers'], initial: [] });
   const [f, setF] = useState({ name: '', species: '', matureIn: '', cuddleIn: '' });
@@ -1378,6 +1416,6 @@ export const WIDGETS = {
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
-  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm,
+  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc,
 };
 export { nextScheduled };

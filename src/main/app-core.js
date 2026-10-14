@@ -43,6 +43,8 @@ const { Cs2 } = require('./services/gaming/cs2');
 const { AcTelemetry } = require('./services/gaming/actelemetry');
 const { Pubg } = require('./services/gaming/pubg');
 const { Stardew } = require('./services/gaming/stardew');
+const { WikiLists } = require('./services/gaming/wikilists');
+const { Factorio } = require('./services/gaming/factorio');
 const { GameBrainSync } = require('./services/gaming/brainsync');
 const { Steam } = require('./services/gaming/steam');
 const { GameDesigner } = require('./services/gaming/designer');
@@ -94,6 +96,8 @@ function createCore(opts) {
   s.gaming.ac = new AcTelemetry(s);
   s.gaming.pubg = new Pubg(s);
   s.gaming.stardew = new Stardew(s);
+  s.gaming.wikiLists = new WikiLists(s);
+  s.gaming.factorio = new Factorio(s);
   s.gaming.brainSync = new GameBrainSync(s);
   s.gaming.designer = new GameDesigner(s);
   s.gaming.eftLogs = new EftLogs(s);

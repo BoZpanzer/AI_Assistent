@@ -219,7 +219,7 @@ test('Spielseiten bekommen das Basis-Paket automatisch, eigene Layouts einmalig'
     assert.ok(types('league').includes('news'));
     assert.equal(types('rust').at(-1), 'other-games');
     core.gaming.context.setState('layout:subnautica', [{ type: 'notes' }]);
-    assert.deepEqual(types('subnautica'), ['notes', 'playtime', 'news', 'deals']);
+    assert.deepEqual(types('subnautica'), ['notes', 'wiki-lists', 'playtime', 'news', 'deals']);
     core.gaming.context.setState('layout:subnautica', [{ type: 'notes' }]); // Nutzer entfernt sie wieder
     assert.deepEqual(types('subnautica'), ['notes'], 'danach entscheidet der Nutzer');
   } finally { cleanup(); }
@@ -394,4 +394,60 @@ test('Stardew Valley: Spielstand lesen – Datum, Geld, Herzen, Geburtstage aus 
   const up = upcomingBirthdays(s, 7);
   assert.deepEqual(up.map((b) => [b.name, b.inDays, b.hearts]), [['Abigail', 3, 5]]);
   assert.equal(upcomingBirthdays(s, 30).length, 2, 'Linus am 3. Winter (21 Tage)');
+});
+
+test('Checklisten aus dem Wiki: nur belegte Einträge, erscheinen auf der Spielseite, mit Quelle', async () => {
+  const { verify } = require('../src/main/services/gaming/wikilists');
+  const src = "Ranni's questline begins at Ranni's Rise. Speak to Ranni at Ranni's Rise and agree to serve her. Travel to Nokron, Eternal City after defeating Starscourge Radahn.";
+  assert.deepEqual(verify([{ text: 'Mit Ranni sprechen', quote: 'Speak to Ranni at Ranni’s Rise and agree to serve her' }, { text: 'Erfunden', quote: 'Kill the dragon in the secret basement of Roundtable Hold' }], src).map((x) => x.text), ['Mit Ranni sprechen']);
+  const page = { parse: { title: 'Ranni the Witch', revid: 1, text: '<p>' + src + '</p>' } };
+  const fetch = async (url) => {
+    if (url.includes('list=search')) return new Response(JSON.stringify({ query: { search: [{ title: 'Ranni the Witch', snippet: 'Ranni' }] } }));
+    if (url.includes('action=parse')) return new Response(JSON.stringify(page));
+    throw new Error('offline');
+  };
+  const raw = { name: 'Questlinie Ranni', items: [
+    { text: 'Questlinie startet bei Rannis Turm', quote: "Ranni's questline begins at Ranni's Rise" },
+    { text: 'Mit Ranni sprechen und ihr dienen', quote: "Speak to Ranni at Ranni's Rise and agree to serve her" },
+    { text: 'Nach Radahn nach Nokron reisen', quote: 'Travel to Nokron, Eternal City after defeating Starscourge Radahn', spoiler: true },
+    { text: 'Erfundener Schritt', quote: 'Give Ranni the golden apple from the moon' },
+  ] };
+  const { core, cleanup } = tempCore({ fetch, script: [{ text: JSON.stringify(raw) }] });
+  const dnsP = require('node:dns').promises; const origLookup = dnsP.lookup;
+  dnsP.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
+    const r = await core.gaming.wikiLists.create('eldenring', 'Questlinie Ranni');
+    assert.deepEqual([r.name, r.items, r.dropped], ['Questlinie Ranni', 3, 1]);
+    const cl = core.gaming.checklist('eldenring', 'Questlinie Ranni');
+    assert.deepEqual(cl.items.map((i) => i.text), ['Questlinie startet bei Rannis Turm', 'Mit Ranni sprechen und ihr dienen', 'Nach Radahn nach Nokron reisen (Spoiler)']);
+    assert.ok(core.gaming.layout('eldenring').widgets.some((w) => w.type === 'checklist' && w.params.name === 'Questlinie Ranni'));
+    assert.match(core.gaming.wikiLists.meta('eldenring', 'Questlinie Ranni').sources[0].url, /Ranni_the_Witch/);
+    core.gaming.wikiLists.remove('eldenring', 'Questlinie Ranni');
+    assert.ok(!core.gaming.layout('eldenring').widgets.some((w) => w.params?.name === 'Questlinie Ranni'));
+  } finally { dnsP.lookup = origLookup; cleanup(); }
+});
+
+test('Factorio: Verhältnis-Rechner aus den Spieldaten (2.0- und 1.1-Format)', () => {
+  const { loadDump, plan } = require('../src/main/services/gaming/factorio');
+  const dump = {
+    recipe: {
+      'iron-plate': { name: 'iron-plate', category: 'smelting', energy_required: 3.2, ingredients: [{ type: 'item', name: 'iron-ore', amount: 1 }], results: [{ type: 'item', name: 'iron-plate', amount: 1 }] },
+      'copper-plate': { name: 'copper-plate', category: 'smelting', energy_required: 3.2, ingredients: [{ type: 'item', name: 'copper-ore', amount: 1 }], results: [{ type: 'item', name: 'copper-plate', amount: 1 }] },
+      'copper-cable': { name: 'copper-cable', energy_required: 0.5, ingredients: [{ type: 'item', name: 'copper-plate', amount: 1 }], results: [{ type: 'item', name: 'copper-cable', amount: 2 }] },
+      'electronic-circuit': { name: 'electronic-circuit', normal: { energy_required: 0.5, ingredients: [['iron-plate', 1], ['copper-cable', 3]], result: 'electronic-circuit' } }, // 1.1-Format
+    },
+    'assembling-machine': { 'assembling-machine-1': { name: 'assembling-machine-1', crafting_speed: 0.5, crafting_categories: ['crafting'] }, 'assembling-machine-2': { name: 'assembling-machine-2', crafting_speed: 0.75, crafting_categories: ['crafting'] }, 'assembling-machine-3': { name: 'assembling-machine-3', crafting_speed: 1.25, crafting_categories: ['crafting'] } },
+    furnace: { 'stone-furnace': { name: 'stone-furnace', crafting_speed: 1, crafting_categories: ['smelting'] }, 'steel-furnace': { name: 'steel-furnace', crafting_speed: 2, crafting_categories: ['smelting'] } },
+  };
+  const d = loadDump(JSON.stringify(dump));
+  const p = plan(d, 'electronic-circuit', 2);
+  const by = Object.fromEntries(p.steps.map((s) => [s.recipe, s]));
+  assert.equal(by['electronic-circuit'].machine, 'assembling-machine-2');
+  assert.equal(by['electronic-circuit'].machines, 1.33); assert.equal(by['electronic-circuit'].machinesRounded, 2);
+  assert.equal(by['copper-cable'].perSec, 6); assert.equal(by['copper-cable'].machines, 2);
+  assert.equal(by['iron-plate'].machine, 'steel-furnace'); assert.equal(by['iron-plate'].machines, 3.2);
+  assert.deepEqual(p.raw, { 'iron-ore': 2, 'copper-ore': 3 });
+  const p3 = plan(d, 'electronic-circuit', 2, { machineFor: { crafting: 'assembling-machine-3' } });
+  assert.equal(p3.steps.find((s) => s.recipe === 'electronic-circuit').machines, 0.8);
 });

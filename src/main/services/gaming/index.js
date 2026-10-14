@@ -55,6 +55,8 @@ const WIDGETS = {
   'racing-laps': { title: 'Rundenanalyse', params: {} },
   'pubg-matches': { title: 'Match-Nachbesprechung', params: {} },
   'stardew-farm': { title: 'Mein Hof', params: {} },
+  'wiki-lists': { title: 'Checklisten aus dem Wiki', params: {} },
+  'factorio-calc': { title: 'Verhältnis-Rechner', params: {} },
   'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
   ask: { title: 'Frag JARVIS', params: {} },
@@ -67,7 +69,7 @@ function extrasFor(p) {
   if (p.integration === 'league') return ['lol-game', 'lol-coach', 'playtime', 'news'];
   if (p.integration === 'tarkov') return ['playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
-  return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), ...(p.id === 'cs2' ? ['cs2-matches'] : []), ...(p.id === 'assettocorsa' ? ['racing-laps'] : []), ...(p.id === 'pubg' ? ['pubg-matches'] : []), ...(p.id === 'stardew' ? ['stardew-farm'] : []), 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
+  return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), ...(p.id === 'cs2' ? ['cs2-matches'] : []), ...(p.id === 'assettocorsa' ? ['racing-laps'] : []), ...(p.id === 'pubg' ? ['pubg-matches'] : []), ...(p.id === 'stardew' ? ['stardew-farm'] : []), ...(p.id === 'factorio' ? ['factorio-calc'] : []), 'wiki-lists', 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
 }
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
@@ -114,6 +116,8 @@ class Gaming {
       }
     }
     let widgets = (custom || (p.designWidgets && p.integration === 'generic' ? p.designWidgets : p.kit && p.integration === 'generic' ? kitLayout(p) : base)).map((w) => ({ ...w, params: w.params || {} }));
+    // Selbst angelegte Checklisten (aus dem Wiki) immer anzeigen
+    for (const name of safeJson(this.context.getState('checklists:' + gid), []) || []) if (!widgets.some((w) => w.type === 'checklist' && w.params?.name === name)) widgets.push({ type: 'checklist', params: { name } });
     if (!custom) {
       const missing = extras.filter((t) => !widgets.some((w) => w.type === t)).map((type) => ({ type, params: {} }));
       const at = widgets.findIndex((w) => w.type === 'other-games');
