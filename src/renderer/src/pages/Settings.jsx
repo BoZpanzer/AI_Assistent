@@ -641,12 +641,52 @@ function ImportModal({ onClose }) {
 
 
 export function LocalAI({ s }) {
-  const [models, setModels] = useState([]);
-  return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub="Private Daten bleiben auf diesem PC">
-    <p class="small">Finanzen, Persönliches, Familie und Termine werden lokal verarbeitet. Ollama mit OLLAMA_NO_CLOUD=1 starten und ein lokales Modell mit Werkzeugunterstützung installieren. Kein Cloud-Fallback.</p>
-    <Field label="Ollama-Port (127.0.0.1)"><input class="inp" type="number" min="1" max="65535" value={s.localLLM?.port || 11434} onChange={(e) => upd({ localLLM: { port: Number(e.currentTarget.value) } })} /></Field>
-    <button class="btn sm" onClick={async () => { const r = await guard(() => rpc('local.models')); if (r) setModels(r); }}>Lokale Modelle laden</button>
-    <Select value={s.localLLM?.model || ''} onChange={(model) => upd({ localLLM: { model } })} options={[{ value: '', label: 'Modell auswählen' }, ...[...new Set([s.localLLM?.model, ...models].filter(Boolean))].map((m) => ({ value: m, label: m }))]} />
-    <p class="tiny muted">Cloud-Gespräche für Uni/Gaming separat starten. Private-Gespräche bleiben dauerhaft lokal. Cloud-Backups, Cloud-Embeddings, Google-Terminänderungen und Gemini Live sind gesperrt; lokale Textsuche und lokale Backups bleiben verfügbar.</p>
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const refresh = async () => {
+    try { setStatus(await rpc('local.status')); setError(''); }
+    catch (e) { setError(String(e.message || e)); }
+  };
+  useEffect(() => { refresh(); }, []);
+  const tiers = status?.tiers || [
+    { id: 'ultra', model: 'qwen3.5:0.8b', label: 'Ultra-Leicht' },
+    { id: 'light', model: 'qwen3.5:2b', label: 'Leicht' },
+    { id: 'balanced', model: 'qwen3.5:4b', label: 'Ausgewogen' },
+    { id: 'strong', model: 'qwen3.5:9b', label: 'Stark' },
+    { id: 'maximum', model: 'qwen3.5:27b', label: 'Maximum' }
+  ];
+  const selected = s.localLLM?.model || '';
+  const recommended = tiers.find(t => t.id === status?.recommended);
+  const install = async model => {
+    setLoading(true); setError('');
+    try {
+      await rpc('local.installTier', { model });
+      await refresh();
+      upd({ localLLM: { model } });
+      toast('Lokales KI-Modell installiert');
+    } catch (e) { setError(String(e.message || e)); }
+    finally { setLoading(false); }
+  };
+  return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub="Gemini für allgemeine Chats · Private Daten ausschließlich lokal">
+    <p class="small">Gemini bleibt für normale Gespräche aktiv. Private Gespräche verwenden nur Ollama auf diesem Rechner – ohne Cloud-Fallback. Modelle werden erst nach Klick heruntergeladen.</p>
+    <Field label="Ollama-Port (nur 127.0.0.1)"><input class="inp" type="number" min="1" max="65535" value={s.localLLM?.port || 11434} onChange={e => upd({ localLLM: { port: Number(e.currentTarget.value) } })} /></Field>
+    <div class="row gap-s mt">
+      <span class="tiny">{status?.online ? '● Ollama erreichbar' : '○ Ollama nicht erreichbar – bitte Ollama installieren und starten'}</span>
+      <button class="btn xs" onClick={refresh} disabled={loading}>Status prüfen</button>
+    </div>
+    {status && <p class="tiny muted">Arbeitsspeicher: {status.ramGB} GB · Hardware-Empfehlung: {recommended?.label || '–'} ({recommended?.model || '–'}). GPU/VRAM werden nicht automatisch gemessen.</p>}
+    <Field label="Lokale Leistungsstufe">
+      <Select value={selected} onChange={model => upd({ localLLM: { model } })}
+        options={[{ value: '', label: 'Bitte Modell auswählen' }, ...tiers.map(t => ({ value: t.model, label: t.label + ' · ' + t.model + (status?.installed?.includes(t.model) ? ' ✓ installiert' : '') }))]} />
+    </Field>
+    <div class="row gap-s mt">
+      <button class="btn sm" disabled={loading || !status?.online || !selected || status?.installed?.includes(selected)} onClick={() => install(selected)}>
+        {loading ? 'Modell wird geladen …' : 'Ausgewähltes Modell herunterladen'}
+      </button>
+      {recommended && <button class="btn sm" disabled={loading} onClick={() => upd({ localLLM: { model: recommended.model } })}>Empfehlung übernehmen</button>}
+    </div>
+    {error && <p class="tiny" role="alert">{error}</p>}
+    <p class="tiny muted mt">Die 27B-Stufe benötigt viel Arbeitsspeicher und kann langsam sein. Modelle und Kontext benötigen zusätzlich RAM/VRAM. Ollama muss zunächst separat installiert sein; Downloads können mehrere GB groß sein. Private Daten bleiben lokal, sofern du keine separate externe Weitergabe erlaubst.</p>
   </Panel>;
 }
