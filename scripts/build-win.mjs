@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
+import { buildBundle } from './build-whisper-assets.mjs';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,6 +26,8 @@ const run = (cmd, args, opts = {}) => {
   }
 };
 
+// No network on the installed app: verified voice binaries/models are included in the installer.
+await buildBundle();
 fs.rmSync(unpacked, { recursive: true, force: true });
 console.log('▶ electron-builder (win x64, dir)');
 run(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['electron-builder', '--win', '--x64', '--dir', '--publish', 'never'], { shell: process.platform === 'win32' });

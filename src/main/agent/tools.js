@@ -17,6 +17,18 @@ const REC = { type: 'object', nullable: true, description: 'Wiederholung', prope
 function buildTools(s) {
   const T = [];
   const def = (t) => T.push(t);
+  const isPrivate = () => require('../core/privacy').isPrivate();
+  // Only a real cloud conversation can disclose private match stats to Gemini.
+  // Background/local tool calls without a valid cloud conversation must keep
+  // their existing behavior (integration tests use a non-existent conversation).
+  const checkLolDisclosure = (conversationId) => {
+    const mode = conversationId && s.conversations.get(conversationId)?.privacy;
+    if ((mode === 'gaming' || mode === 'study') && s.settings.get('gaming')?.lolCloudShare !== true) return {
+      error: 'LoL-Daten sind für Gemini nicht freigegeben. Bitte unter Einstellungen → Gaming „Eigene LoL-Matches im Gaming-Cloud-Chat verwenden“ bewusst aktivieren. Gespeicherte Daten bleiben bis dahin lokal.',
+      needsConsent: true,
+    };
+    return null;
+  };
 
   def({ name: 'expense_buckets', mode: 'write', description: 'Geplantes Geld reservieren, ändern, freigeben oder nach tatsächlicher Zahlung als Ausgabe buchen. Keine echte Ausgabe bis action=book.',
     schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'book'] }, id: { type: 'string' }, name: { type: 'string' }, amount: { type: 'number' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
@@ -302,16 +314,28 @@ function buildTools(s) {
       return { source: m.source, map: m.value.name, bosses: m.value.bosses.map((b) => ({ name: b.boss?.name, chance: Math.round(b.spawnChance * 100) + '%', locations: b.spawnLocations.map((l) => l.name) })) };
     } });
 
+  def({ name: 'league_recent_matches', mode: 'read',
+    description: 'Für „zeige meine letzten LoL-Matches“, „meine letzten Games“, „letzte Spiele ansehen“. Versucht die lokale League-Client-Synchronisierung OHNE Riot-API-Key. Bei Verbindungsproblemen liefert es weiterhin die zuletzt gespeicherten Matches mit Datum, Status und explizitem Hinweis, dass sie nicht frisch sind. Dieses Werkzeug VOR league_live oder allgemeinen LoL-Statistiken für vergangene Spiele verwenden. Niemals behaupten, der League-Client sei verbunden, wenn fresh=false.',
+    schema: { type: 'object', properties: {
+      count: { type: 'integer', minimum: 1, maximum: 20, description: 'Anzahl Matches (Standard 5)' },
+      refresh: { type: 'boolean', description: 'Client-Synchronisierung jetzt versuchen (Standard true)' },
+    } },
+    run: async ({ count = 5, refresh = true }, { conversationId } = {}) =>
+      checkLolDisclosure(conversationId) ||
+      s.gaming.league.recentMatches({ count, refresh: isPrivate() ? false : refresh }) });
   def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights). refresh=true liest neue Matches aus dem laufenden League-Client (kein Schlüssel nötig) bzw. der Riot-API.',
-    schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches von der Riot-API holen' } } },
-    run: async ({ refresh }) => {
+    schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches zuerst über den lokalen League-Client ohne Riot-API-Key holen' } } },
+    run: async ({ refresh }, { conversationId } = {}) => {
+      const blocked = checkLolDisclosure(conversationId);
+      if (blocked) return blocked;
+      if (isPrivate()) refresh = false; // local-only privacy: do not try Riot/remote network
       // Gespeicherte Matches reichen für die Analyse – ein geschlossener Client ist kein Fehler
       let sync = null;
       if (refresh) { try { sync = await s.gaming.league.syncMatches(); } catch (e) { sync = { skipped: e.message }; } }
       const L = s.gaming.league; const st = L.stats();
       const last = L.cache.get('lol:lastsync', { allowStale: true })?.value?.at || null;
       return {
-        ...st, recent: st.recent.slice(0, 5), lastSync: last,
+        ...st, recent: st.recent.slice(0, 5), lastSync: last, refreshStatus: sync || null,
         note: !st.current ? 'Noch keine Matches gespeichert – sobald der League-Client einmal läuft, liest JARVIS sie automatisch aus.'
           : sync?.skipped ? `Analyse aus den gespeicherten Matches (Stand: ${last ? new Date(last).toLocaleString('de-DE') : 'unbekannt'}). Neue Spiele kommen automatisch dazu, wenn der Client das nächste Mal läuft – den Nutzer NICHT bitten, den Client zu starten, sondern direkt analysieren.` : undefined,
       };

@@ -722,19 +722,19 @@ function Wiki({ game, params }) {
 
 // ---------------------------------------------------------------- League
 function useLol() {
-  const [src] = useRpc('lol.source', {}, { events: ['settings:changed', 'game:data', 'game:running'] });
+  const [src, reloadSource] = useRpc('lol.source', {}, { events: ['settings:changed', 'game:data', 'game:running'] });
   const hasKey = !!(src?.client || src?.key);
   const [stats, reload, st] = useRpc('lol.stats', {}, { events: ['game:data'] });
   const [v] = useRpc('lol.version', {}, {});
-  return { hasKey, stats, reload, st, v, src };
+  return { hasKey, stats, reload, reloadSource, st, v, src };
 }
 const icon = (v, c) => (v ? `https://ddragon.leagueoflegends.com/cdn/${v}/img/champion/${String(c).replace(/[^A-Za-z]/g, '')}.png` : '');
 function Delta({ d }) { if (d == null) return <span class="d muted">–</span>; return <span class={`d ${d >= 0 ? 'up' : 'down'}`}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {d >= 0 ? '+' : ''}{d}% vs. vorher</span>; }
 
 function LolOverview() {
-  const { hasKey, stats, st, src } = useLol();
+  const { hasKey, stats, st, src, reloadSource } = useLol();
   const [busy, setBusy] = useState(false);
-  const sync = async () => { setBusy(true); const r = await guard(() => rpc('lol.sync')); setBusy(false); if (r) toast(`${r.added} neue Matches geladen`); };
+  const sync = async () => { setBusy(true); const r = await guard(() => rpc('lol.sync')); setBusy(false); await reloadSource(); if (r) toast(`${r.added} neue Matches geladen`); };
   const c = stats?.current;
   return (
     <section class="panel glow" style={{ padding: 14 }}>
@@ -742,10 +742,12 @@ function LolOverview() {
         <Trophy size={34} style={{ color: '#c8aa6e' }} />
         <div class="grow"><div style={{ fontSize: 20, fontWeight: 700 }}>League of Legends</div><div class="small muted">Performance analysieren. Besser werden. Mit JARVIS.</div></div>
         {src?.me && <span class="small muted">{src.me.name}</span>}
-        <span class="pill"><span class={`status-dot ${src?.client ? 'dot-ok' : 'dot-off'}`} />{src?.client ? 'Client verbunden' : 'Client nicht offen'}</span>
+        <span class="pill"><span class={`status-dot ${src?.client ? 'dot-ok' : 'dot-off'}`} />{src?.client ? 'League-Client verbunden' : 'League-Client nicht erreichbar'}</span>
+        <button class="btn xs" onClick={reloadSource} title="Lokale League-Client-Verbindung erneut prüfen">Verbindung prüfen</button>
         <button class="btn sm" disabled={!hasKey} title={hasKey ? '' : 'League-Client starten'} onClick={sync}>{busy ? <Spinner /> : <RefreshCw size={14} />}Matches laden</button>
       </div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
+      {!src?.client && src?.clientReason && <div class="notice warn mt">{src.clientReason}{src.savedMatches ? ` · ${src.savedMatches} gespeicherte Matches bleiben sichtbar.` : ''}</div>}
       {!c ? <div class="notice mt">Noch keine Ranglisten-Matches gespeichert. {src?.client ? 'Klicke „Matches laden“.' : 'Starte einfach den League-Client – JARVIS liest deine letzten Ranglistenspiele und deinen Rang direkt daraus (kein API-Schlüssel nötig) und aktualisiert alle 10 Minuten, solange der Client offen ist.'}</div> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginTop: 12 }}>
           <div class="panel stat row"><div class="ring" style={{ '--p': c.winrate }}><span>{c.winrate}%</span></div><div><div class="hud-label">Winrate</div><div class="small muted">{c.wins}S – {c.games - c.wins}N</div></div></div>

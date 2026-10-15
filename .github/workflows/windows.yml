@@ -34,6 +34,15 @@ jobs:
         env:
           MAKENSIS: C:\Program Files (x86)\NSIS\makensis.exe
         run: npm run dist:win
+      - name: Mitgeliefertes Offline-Whisper im Windows-Build prüfen
+        shell: pwsh
+        run: |
+          $voice = "release/win-unpacked/resources/voice"
+          if (!(Test-Path "$voice/whisper-cli.exe")) { throw "Mitgelieferte Whisper-Engine fehlt" }
+          if (!(Test-Path "$voice/ggml-base.bin")) { throw "Mitgeliefertes Whisper-Modell fehlt" }
+          $hash = (Get-FileHash "$voice/ggml-base.bin" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe') { throw "Whisper-Modell SHA-256 stimmt nicht" }
+          Write-Host "Verifizierte Whisper-Engine und Modell liegen im Installer-Paket"
       - name: Smoke-Test der gebauten JARVIS.exe
         shell: pwsh
         run: |
@@ -47,6 +56,8 @@ jobs:
           $i = Start-Process -FilePath "release\JARVIS_Setup.exe" -ArgumentList "/S","/D=$dir" -PassThru -Wait
           if ($i.ExitCode -ne 0) { throw "Installation fehlgeschlagen" }
           if (!(Test-Path "$dir\JARVIS.exe")) { throw "JARVIS.exe fehlt nach Installation" }
+          if (!(Test-Path "$dir\resources\voice\whisper-cli.exe")) { throw "Whisper-Engine fehlt nach Installation" }
+          if (!(Test-Path "$dir\resources\voice\ggml-base.bin")) { throw "Whisper-Modell fehlt nach Installation" }
           if (!(Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\JARVIS.lnk")) { throw "Startmenü-Eintrag fehlt" }
           $s = Start-Process -FilePath "$dir\JARVIS.exe" -ArgumentList "--smoke" -PassThru -Wait
           if ($s.ExitCode -ne 0) { throw "Installierte App: Smoke-Test fehlgeschlagen" }
