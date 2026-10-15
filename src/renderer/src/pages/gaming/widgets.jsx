@@ -46,6 +46,37 @@ function MapWidget({ game, params }) {
   const nowT = useNow(5000);
   useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
   useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== baseMap) setMap(p.map); });
+  const [autoAligning, setAutoAligning] = useState(false);
+  const alignWiki = async () => {
+    if (!meta?.hasImage || meta?.source?.source !== 'wiki-bundle') return;
+    setAutoAligning(true);
+    try {
+      const reference = await rpc('tarkov.wikiAlignmentSource', { map });
+      if (!reference) { toast('Zuerst die passende SVG-Karte laden. Für diese Karte ist keine SVG-Referenz verfügbar.', 'error'); return; }
+      const image = async (name) => {
+        const url = `app://jarvis/map-image/eft/${encodeURIComponent(name)}`;
+        const el = new Image();
+        el.src = url;
+        await el.decode();
+        const scale = Math.min(1, 520 / Math.max(el.naturalWidth, el.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(el.naturalWidth * scale);
+        canvas.height = Math.round(el.naturalHeight * scale);
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        return { width: data.width, height: data.height, data: Array.from(data.data) };
+      };
+      const [source, target] = await Promise.all([image(reference), image(map)]);
+      const alignment = await rpc('tarkov.alignWikiImages', { source, target });
+      if (!alignment) { toast('Keine sichere automatische Zuordnung gefunden. Bitte manuell kalibrieren.', 'error'); return; }
+      await rpc('tarkov.saveWikiAlignment', { map, alignment });
+      reloadMaps();
+      toast(`Wiki-Karte kalibriert (${alignment.quality.inliers} übereinstimmende Bildpunkte)`);
+    } catch (e) { toast('Automatische Kalibrierung fehlgeschlagen: ' + cleanErr(e), 'error'); }
+    finally { setAutoAligning(false); }
+  };
   const [loadingMaps, setLoadingMaps] = useState(false);
   useEffect(() => { if (isEft) rpc('tarkov.importWikiMaps').then(reloadMaps).catch(() => toast('Wiki-Karten konnten nicht bereitgestellt werden', 'error')); }, [isEft]);
   const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
@@ -165,6 +196,7 @@ function MapWidget({ game, params }) {
             <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setPlacingGoal(false); setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
             {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}SVG-Karten laden</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
+            {isEft && meta?.source?.source === 'wiki-bundle' && <div class={`tool ${autoAligning ? 'active' : ''}`} onClick={() => !autoAligning && alignWiki()} title="Wiki-Karte anhand der lokalen SVG-Referenz automatisch ausrichten">{autoAligning ? <Spinner /> : <Crosshair size={15} />}Auto-Kalibrieren</div>}
             {isEft && (!meta?.calibration?.affine || meta?.source?.source === 'wiki-bundle') && <div class={`tool ${calib ? 'active' : ''}`} title="Drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
             {calib && <><Select value={landmark} onChange={setLandmark} options={[{ value: 'manual', label: 'Koordinaten eingeben' }, ...references.map((e, i) => ({ value: String(i), label: e.name }))]} /><span class="tiny">Exit auswählen, auf Hauptkarte anklicken. Drei verschiedene Punkte; keine Insets.</span></>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}

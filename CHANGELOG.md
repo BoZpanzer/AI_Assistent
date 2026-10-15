@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.34.0 – Automatische Wiki-Kartenkalibrierung (Beta)
+
+- Wiki-Karten können lokal mit der kalibrierten tarkov.dev-SVG-Karte über Bildmerkmale abgeglichen werden. Die Zuordnung wird nur bei ausreichend vielen konsistenten, weit verteilten Treffern gespeichert.
+- Kein Bild-Upload; unsichere Treffer werden abgelehnt und die manuelle Drei-Punkt-Kalibrierung bleibt verfügbar. Für den Abgleich muss die jeweilige SVG-Referenzkarte geladen sein.
+
 ## 3.33.0 – Private lokale KI, Ausgaben-Buckets und Offline-Tarkov-Karten
 
 - **Private KI lokal über Ollama:** Persönliche Gespräche und Daten bleiben bei einem lokal konfigurierten Modell. Separate, ausdrücklich freigegebene Uni- und Gaming-Chats können Gemini nutzen. Kein Cloud-Fallback, wenn Ollama ausfällt. Ollama und das passende Modell müssen auf dem PC eingerichtet werden.
