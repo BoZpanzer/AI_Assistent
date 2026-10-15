@@ -8,7 +8,6 @@ on:
   push:
     tags: ['v*']
     branches: ['main']
-    paths: ['.github/release-request-v3.34.0.txt']
   workflow_dispatch:
     inputs:
       tag:
