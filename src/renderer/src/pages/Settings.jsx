@@ -674,6 +674,7 @@ export function LocalAI({ s }) {
     <div class="row gap-s mt">
       <span class="tiny">{status?.online ? '● Ollama erreichbar' : '○ Ollama nicht erreichbar – bitte Ollama installieren und starten'}</span>
       <button class="btn xs" onClick={refresh} disabled={loading}>Status prüfen</button>
+      {!status?.online && <button class="btn xs" disabled={loading} onClick={async () => { if (!window.confirm('Ollama über Windows winget installieren? Der Download benötigt Internet und kann eine Windows-Bestätigung erfordern.')) return; setLoading(true); try { await rpc('local.installOllama'); await refresh(); } catch (e) { setError(String(e.message || e)); } finally { setLoading(false); } }}>Ollama installieren (Windows)</button>}
     </div>
     {status && <p class="tiny muted">Arbeitsspeicher: {status.ramGB} GB · Hardware-Empfehlung: {recommended?.label || '–'} ({recommended?.model || '–'}). GPU/VRAM werden nicht automatisch gemessen.</p>}
     <Field label="Lokale Leistungsstufe">
