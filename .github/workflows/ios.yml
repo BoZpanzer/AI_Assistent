@@ -1,0 +1,16 @@
+name: iOS Simulator Build
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  simulator:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: cd ios && xcodegen generate
+      - run: xcodebuild -project ios/JarvisCompanion.xcodeproj -scheme JarvisCompanion -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-iOS-Simulator
+          path: ios/build/Build/Products/Debug-iphonesimulator/JarvisCompanion.app
