@@ -337,6 +337,14 @@ class Calendar {
           this.db.run('UPDATE calendars SET synced_at=? WHERE id=?', nowIso(), c.id);
         });
       }
+      if (this.settings.get('google').exportLocalToGoogle) {
+        const { exportToGoogle } = require('./calendar-google-export');
+        const target = this.defaultCalendarId();
+        if (target !== 'local') {
+          const exported = await exportToGoogle({ db: this.db, google: this.google, calendarId: target, from: timeMin, to: timeMax });
+          if (exported.failed) log.warn('Google-Export: ' + exported.failed + ' Termin(e) fehlgeschlagen');
+        }
+      }
       this.lastSync = nowIso(); this.lastError = null;
       this.bus.emit('calendar:changed', {});
       return { ok: true, at: this.lastSync };
