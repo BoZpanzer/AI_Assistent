@@ -17,6 +17,15 @@ const REC = { type: 'object', nullable: true, description: 'Wiederholung', prope
 function buildTools(s) {
   const T = [];
   const def = (t) => T.push(t);
+  const isPrivate = () => require('../core/privacy').isPrivate();
+  const cloudLolAllowed = () => !isPrivate() && s.settings.get('gaming')?.lolCloudShare === true;
+  const checkLolDisclosure = () => {
+    if (!isPrivate() && !cloudLolAllowed()) return {
+      error: 'LoL-Daten sind für Gemini nicht freigegeben. Bitte unter Einstellungen → Gaming „Eigene LoL-Matches im Gaming-Cloud-Chat verwenden“ bewusst aktivieren. Gespeicherte Daten bleiben bis dahin lokal.',
+      needsConsent: true,
+    };
+    return null;
+  };
 
   def({ name: 'expense_buckets', mode: 'write', description: 'Geplantes Geld reservieren, ändern, freigeben oder nach tatsächlicher Zahlung als Ausgabe buchen. Keine echte Ausgabe bis action=book.',
     schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'book'] }, id: { type: 'string' }, name: { type: 'string' }, amount: { type: 'number' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
@@ -308,10 +317,14 @@ function buildTools(s) {
       count: { type: 'integer', minimum: 1, maximum: 20, description: 'Anzahl Matches (Standard 5)' },
       refresh: { type: 'boolean', description: 'Client-Synchronisierung jetzt versuchen (Standard true)' },
     } },
-    run: async ({ count = 5, refresh = true }) => s.gaming.league.recentMatches({ count, refresh }) });
+    run: async ({ count = 5, refresh = true }) => checkLolDisclosure() ||
+      s.gaming.league.recentMatches({ count, refresh: isPrivate() ? false : refresh }) });
   def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights). refresh=true liest neue Matches aus dem laufenden League-Client (kein Schlüssel nötig) bzw. der Riot-API.',
     schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches zuerst über den lokalen League-Client ohne Riot-API-Key holen' } } },
     run: async ({ refresh }) => {
+      const blocked = checkLolDisclosure();
+      if (blocked) return blocked;
+      if (isPrivate()) refresh = false; // local-only privacy: do not try Riot/remote network
       // Gespeicherte Matches reichen für die Analyse – ein geschlossener Client ist kein Fehler
       let sync = null;
       if (refresh) { try { sync = await s.gaming.league.syncMatches(); } catch (e) { sync = { skipped: e.message }; } }
