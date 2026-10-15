@@ -97,6 +97,15 @@
     "electronLanguages": [
       "de",
       "en-US"
+    ],
+    "extraResources": [
+      {
+        "from": "build/whisper-runtime",
+        "to": "voice",
+        "filter": [
+          "**/*"
+        ]
+      }
     ]
   }
 }
