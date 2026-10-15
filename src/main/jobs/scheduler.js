@@ -9,13 +9,23 @@ const log = require('../core/logger').scope('jobs');
  */
 class Scheduler {
   constructor(s) {
-    this.s = s; this.jobs = []; this.timer = null; this.running = new Set(); this.lastRun = {};
+    this.s = s; this.jobs = []; this.timer = null; this.running = new Set(); this.lastRun = {}; this.jobHealth = {};
   }
 
   add(name, everyMs, fn, { heavy = false, initialDelayMs = 0 } = {}) {
     this.jobs.push({ name, everyMs, fn, heavy, next: Date.now() + initialDelayMs });
   }
 
+  status() {
+    return this.jobs.map(j => ({
+      name: j.name, running: this.running.has(j.name),
+      nextAt: new Date(j.next).toISOString(),
+      lastRunAt: this.jobHealth[j.name]?.lastRunAt || null,
+      lastSuccessAt: this.jobHealth[j.name]?.lastSuccessAt || null,
+      lastError: this.jobHealth[j.name]?.lastError || null,
+      consecutiveFailures: this.jobHealth[j.name]?.consecutiveFailures || 0,
+    }));
+  }
   gamingReduced() {
     return this.s.settings.get('gaming').reduceWhileGaming && this.s.gaming.context.state().gaming;
   }
@@ -158,7 +168,16 @@ class Scheduler {
       if (j.heavy && reduced) { j.next = now + 60_000; continue; }
       j.next = now + j.everyMs;
       this.running.add(j.name);
-      Promise.resolve().then(j.fn).catch((e) => log.warn(`Job ${j.name} fehlgeschlagen`, e)).finally(() => { this.running.delete(j.name); this.lastRun[j.name] = Date.now(); });
+      Promise.resolve().then(j.fn).then(() => {
+        this.jobHealth[j.name] = { ...this.jobHealth[j.name], lastSuccessAt: new Date().toISOString(), lastError: null, consecutiveFailures: 0 };
+      }).catch(e => {
+        const prev = this.jobHealth[j.name] || {};
+        this.jobHealth[j.name] = { ...prev, lastError: String(e?.message || e).slice(0, 300), consecutiveFailures: (prev.consecutiveFailures || 0) + 1 };
+        log.warn(`Job ${j.name} fehlgeschlagen`, e);
+      }).finally(() => {
+        this.jobHealth[j.name] = { ...this.jobHealth[j.name], lastRunAt: new Date().toISOString() };
+        this.running.delete(j.name); this.lastRun[j.name] = Date.now();
+      });
     }
   }
 

@@ -500,6 +500,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return r.canceled ? null : s.system.createBackup(r.filePath);
     },
     'system.backups': () => s.system.listBackups(),
+    'system.jobs': () => s.scheduler?.status?.() || [],
     // --- Schlüssel & Einstellungen sichern ---
     'keys.status': () => ({ backupPassword: s.secrets.has('backup.password'), count: Object.keys(s.secrets.status()).filter((k) => !keyvault.EXCLUDE.test(k)).length }),
     'keys.setBackupPassword': ({ password } = {}) => {
