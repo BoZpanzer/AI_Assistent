@@ -9,11 +9,13 @@ class GameCache {
     if (!r) return null;
     const stale = r.expires_at < nowIso();
     if (stale && !allowStale) return null;
-    return { value: JSON.parse(r.value), source: r.source, fetchedAt: r.fetched_at, stale };
+    try { return { value: JSON.parse(r.value), source: r.source, fetchedAt: r.fetched_at, stale }; }
+    catch { return null; } // Corrupt cache entries should not break the game page.
   }
   set(key, value, source, ttlMs) {
-    this.db.run('INSERT OR REPLACE INTO game_cache(key,value,source,fetched_at,expires_at) VALUES(?,?,?,?,?)', key, JSON.stringify(value), source, nowIso(), new Date(Date.now() + ttlMs).toISOString());
-    return { value, source, fetchedAt: nowIso(), stale: false };
+    const fetchedAt = nowIso();
+    this.db.run('INSERT OR REPLACE INTO game_cache(key,value,source,fetched_at,expires_at) VALUES(?,?,?,?,?)', key, JSON.stringify(value), source, fetchedAt, new Date(Date.now() + ttlMs).toISOString());
+    return { value, source, fetchedAt, stale: false };
   }
   /** Fetch-through with stale fallback when offline. */
   async wrap(key, source, ttlMs, loader) {
