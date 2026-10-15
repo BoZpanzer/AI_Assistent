@@ -50,7 +50,7 @@ class Orchestrator {
     if (conversationId && this.s.conversations.get(conversationId)?.privacy === 'private' && !privacy.isPrivate()) return privacy.local(() => this.execute(name, rawArgs, { conversationId, channel }));
     if (privacy.isPrivate() && !privacy.LOCAL_TOOLS.has(name)) return { response: { error: 'Private: Dieses Werkzeug ist nicht für lokale Verarbeitung freigegeben.' } };
     const cloud = conversationId && ['study', 'gaming'].includes(this.s.conversations.get(conversationId)?.privacy);
-    if (cloud && !privacy.CLOUD_TOOLS.has(name)) return { response: { error: 'Dieses Werkzeug benötigt ein privates, lokales Gespräch.' } };
+    if (cloud && !privacy.cloudTools(this.s.conversations.get(conversationId)?.privacy).has(name)) return { response: { error: 'Dieses Werkzeug benötigt einen passenden Gaming-Chat oder ein privates, lokales Gespräch.' } };
     const tool = this.byName[name];
     if (!tool) return { response: { error: 'Unbekanntes Werkzeug ' + name } };
     const v = validate(tool.schema, rawArgs || {});
@@ -142,7 +142,7 @@ class Orchestrator {
     const model = isLocal ? this.s.localLLM.cfg().model : gemini.model(role) || gemini.requireModel('fast');
     // Fester Teil der Anweisung + Werkzeuge + bisheriger Verlauf bleiben gleich → Googles Cache greift.
     // Wechselnder Kontext (Uhrzeit, Spiel, Gedächtnis) hängt nur an der neuesten Nutzernachricht (wird nicht gespeichert).
-    const { stable, context } = isLocal ? this.systemSplit(channel, text) : { stable: 'Du bist JARVIS. Dieses Gespräch ist ausschließlich für freigegebene Uni-/Gaming-Inhalte. Für persönliche Themen einen neuen privaten Chat verlangen. Kein Zugriff auf private Daten.', context: '' };
+    const { stable, context } = isLocal ? this.systemSplit(channel, text) : { stable: privacy.CLOUD_SYSTEM, context: '' };
     const lastUser = [...contents].reverse().find((c) => c.role === 'user');
     if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts, ...(hint ? [{ text: hint }] : [])]; else contents.push({ role: 'user', parts: [{ text: context }] });
     const cards = []; const sources = []; let full = '';
@@ -151,7 +151,7 @@ class Orchestrator {
       for (let step = 0; step < MAX_STEPS; step++) {
         if (ac.signal.aborted || (!isLocal && conversations.get(cid)?.privacy === 'private')) throw new Error('Gespräch wurde auf Private gesetzt oder abgebrochen. Bitte lokal erneut senden.');
         const r = await provider.stepStream({
-          model, system: stable, contents, tools: isLocal ? [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => privacy.LOCAL_TOOLS.has(t.name)) }] : [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => privacy.CLOUD_TOOLS.has(t.name)) }], signal: ac.signal, feature: channel === 'voice' ? 'voice' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
+          model, system: stable, contents, tools: isLocal ? [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => privacy.LOCAL_TOOLS.has(t.name)) }] : [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => privacy.cloudTools(conversations.get(cid)?.privacy).has(t.name)) }], signal: ac.signal, feature: channel === 'voice' ? 'voice' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
           onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),
           onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); },
         });

@@ -33,7 +33,7 @@ function MapWidget({ game, params }) {
     if (!names.size) names.set('Hauptkarte', 'Hauptkarte');
     return [...names.entries()].map(([value, label]) => ({ value, label }));
   }, [eftMaps, userMaps]);
-  const [map, setMap] = useState(params.map || (isEft ? 'customs-wiki' : 'Hauptkarte'));
+  const [map, setMap] = useState(params.map || (isEft ? 'customs' : 'Hauptkarte'));
   useEffect(() => { if (params.map) setMap(params.map); }, [params.map]);
   useEffect(() => { rpc('game.setLastMap', { game: game.id, map }).catch(() => {}); }, [game.id, map]);
   const [markers, reloadMarkers] = useRpc('game.markers', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
@@ -47,12 +47,18 @@ function MapWidget({ game, params }) {
   useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
   useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== baseMap) setMap(p.map); });
   const [autoAligning, setAutoAligning] = useState(false);
-  const alignWiki = async () => {
+  const autoAttempts = useRef(new Set());
+  const alignWiki = async ({ quiet = false } = {}) => {
     if (!meta?.hasImage || meta?.source?.source !== 'wiki-bundle') return;
     setAutoAligning(true);
     try {
-      const reference = await rpc('tarkov.wikiAlignmentSource', { map });
-      if (!reference) { toast('Zuerst die passende SVG-Karte laden. Für diese Karte ist keine SVG-Referenz verfügbar.', 'error'); return; }
+      let reference = await rpc('tarkov.wikiAlignmentSource', { map });
+      if (!reference) {
+        await rpc('tarkov.importMaps', { map: baseMap });
+        reference = await rpc('tarkov.wikiAlignmentSource', { map });
+        reloadMaps();
+      }
+      if (!reference) { if (!quiet) toast('Für diese Karte ist momentan keine SVG-Referenz verfügbar.', 'error'); return; }
       const image = async (name) => {
         const url = `app://jarvis/map-image/eft/${encodeURIComponent(name)}`;
         const el = new Image();
@@ -70,14 +76,28 @@ function MapWidget({ game, params }) {
       };
       const [source, target] = await Promise.all([image(reference), image(map)]);
       const alignment = await rpc('tarkov.alignWikiImages', { source, target });
-      if (!alignment) { toast('Keine sichere automatische Zuordnung gefunden. Bitte manuell kalibrieren.', 'error'); return; }
+      if (!alignment) { if (!quiet) toast('Keine sichere Bildzuordnung gefunden. Die SVG-Karte ist bereits automatisch kalibriert.', 'error'); return; }
       await rpc('tarkov.saveWikiAlignment', { map, alignment });
       reloadMaps();
-      toast(`Wiki-Karte kalibriert (${alignment.quality.inliers} übereinstimmende Bildpunkte)`);
-    } catch (e) { toast('Automatische Kalibrierung fehlgeschlagen: ' + cleanErr(e), 'error'); }
+      if (!quiet) toast(`Wiki-Karte kalibriert (${alignment.quality.inliers} übereinstimmende Bildpunkte)`);
+    } catch (e) { if (!quiet) toast('Automatische Kalibrierung fehlgeschlagen: ' + cleanErr(e), 'error'); }
     finally { setAutoAligning(false); }
   };
   const [loadingMaps, setLoadingMaps] = useState(false);
+  useEffect(() => {
+    if (!isEft || autoAligning || loadingMaps || meta?.calibration?.affine) return;
+    const key = `${map}:${meta?.hasImage ? 'image' : 'missing'}`;
+    if (autoAttempts.current.has(key)) return;
+    autoAttempts.current.add(key);
+    if (meta?.source?.source === 'wiki-bundle') { alignWiki({ quiet: true }); return; }
+    // Never replace a user-imported image. Download only the selected reference.
+    if (!meta?.hasImage && !map.endsWith('-wiki')) {
+      setLoadingMaps(true);
+      rpc('tarkov.importMaps', { map }).then((r) => {
+        if (r.failed?.length) toast('Karte konnte nicht automatisch geladen werden. Mit „SVG-Karten laden“ erneut versuchen.', 'error');
+      }).catch(() => {}).finally(() => { setLoadingMaps(false); reloadMaps(); });
+    }
+  }, [isEft, map, meta?.hasImage, meta?.calibration, autoAligning, loadingMaps]);
   useEffect(() => { if (isEft) rpc('tarkov.importWikiMaps').then(reloadMaps).catch(() => toast('Wiki-Karten konnten nicht bereitgestellt werden', 'error')); }, [isEft]);
   const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
     setLoadingMaps(true);

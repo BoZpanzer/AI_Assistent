@@ -35,6 +35,8 @@ class LolFlow {
   }
   stop() {
     clearInterval(this.timer); this.timer = null; this.phase = null;
+    clearTimeout(this.reviewPending); this.reviewPending = null;
+    this.gameId = null; this.lastSelectKey = ''; this.adviceKey = '';
     if (this.champ) { this.champ = null; this.s.bus.emit('lol:champselect', { active: false }); }
   }
 
@@ -44,14 +46,15 @@ class LolFlow {
     try {
       const L = this.s.gaming.league;
       const phase = await L.lcuGet('/lol-gameflow/v1/gameflow-phase').catch(() => null);
+      if (!phase) return; // A temporary client outage is not a game phase change.
       const prev = this.phase; this.phase = phase;
       if (phase === 'ChampSelect' && this.cfg().lolChampSelect !== false) await this.champSelect();
       else if (prev === 'ChampSelect' && this.champ) { this.champ = null; this.lastSelectKey = ''; this.s.bus.emit('lol:champselect', { active: false }); }
-      if (phase === 'InProgress' && !this.gameId) {
+      if (['InProgress', 'Reconnect'].includes(phase) && !this.gameId) {
         const sess = await L.lcuGet('/lol-gameflow/v1/session').catch(() => null);
         if (sess?.gameData?.gameId) this.gameId = sess.gameData.gameId;
       }
-      if (prev === 'InProgress' && phase && phase !== 'InProgress' && phase !== 'Reconnect') {
+      if (['InProgress', 'Reconnect'].includes(prev) && !['InProgress', 'Reconnect'].includes(phase)) {
         // Spiel vorbei → das Spiel gezielt per gameId holen (ohne Umweg über die Matchhistorie)
         const gid = this.gameId; this.gameId = null;
         clearTimeout(this.reviewPending);

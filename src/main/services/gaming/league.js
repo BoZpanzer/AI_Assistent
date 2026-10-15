@@ -202,14 +202,14 @@ class League {
   // ---------- Lokaler League-Client (LCU) – ohne API-Schlüssel ----------
   /** Port + Passwort des laufenden Clients (lockfile oder Prozess-Kommandozeile). */
   async lcuCreds() {
-    if (this._lcu && Date.now() - this._lcu.at < 60000) return this._lcu.creds;
+    if (this._lcu && Date.now() - this._lcu.at < (this._lcu.creds ? 60000 : 3000)) return this._lcu.creds;
     const fs = require('node:fs'); const path = require('node:path');
     const dirs = [this.settings.get('gaming').leagueDir, ...['C', 'D', 'E', 'F'].flatMap((d) => [`${d}:\\Riot Games\\League of Legends`, `${d}:\\Program Files\\Riot Games\\League of Legends`, `${d}:\\Games\\Riot Games\\League of Legends`])].filter(Boolean);
     let creds = null;
     for (const d of dirs) {
       try {
         const [, , port, password, protocol] = fs.readFileSync(path.join(d, 'lockfile'), 'utf8').trim().split(':');
-        if (port && password) { creds = { port: Number(port), password, protocol: protocol || 'https' }; this.leagueDirFound = d; break; }
+        if (Number.isInteger(Number(port)) && Number(port) > 0 && Number(port) <= 65535 && password && (!protocol || protocol === 'https')) { creds = { port: Number(port), password, protocol: protocol || 'https' }; this.leagueDirFound = d; break; }
       } catch { /* not here */ }
     }
     if (!creds && process.platform === 'win32') creds = await this.lcuFromProcess();
