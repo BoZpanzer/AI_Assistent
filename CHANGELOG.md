@@ -2,6 +2,15 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 3.33.0 – Private lokale KI, Ausgaben-Buckets und Offline-Tarkov-Karten
+
+- **Private KI lokal über Ollama:** Persönliche Gespräche und Daten bleiben bei einem lokal konfigurierten Modell. Separate, ausdrücklich freigegebene Uni- und Gaming-Chats können Gemini nutzen. Kein Cloud-Fallback, wenn Ollama ausfällt. Ollama und das passende Modell müssen auf dem PC eingerichtet werden.
+- **Geplante Ausgaben (Buckets):** Geld für künftige Zahlungen reservieren, ohne die Buchung vorwegzunehmen. Erst „Bezahlt → buchen“ erfasst die Ausgabe; wiederholte Buchungen werden verhindert.
+- **Tarkov-Raidplanung:** Eigene Ziele auf Karten markieren, speichern und zu Routen hinzufügen. Zwölf mitgelieferte Wiki-Karten funktionieren offline; bestehende SVG-Karten bleiben separat.
+- **Kalibrierung der Wiki-Karten:** Drei Referenzpunkte manuell zuordnen. Automatische Vorkalibrierung ist noch nicht verifiziert. Terminal ist nicht enthalten.
+- **Wichtige Datenschutzänderungen:** Gemini Live, Cloud-Audio, Google-Kalender-Schreibzugriffe, vollständige Google-Drive-Backups und Cloud-Embeddings sind deaktiviert. Lokale Spracheingabe und private Bildauswertung müssen noch ergänzt werden.
+- **Tests:** 118 CI-Tests sowie Windows-Build, Smoke-Test und Installer-Test im Pull Request bestanden. Ein echter Ollama-Test auf dem Ziel-PC steht noch aus.
+
 ## 3.32.0 – Feste Einnahmen, Fixkosten und Saldo
 
 - **Einnahmen & Fixkosten** (Alltag): feste Posten mit Stichtag, monatlich, vierteljährlich oder jährlich, z. B. Vergütung am 28., Kindergeld, Miete am 1., Haftpflicht jährlich im März. Sie zählen jeden Monat automatisch mit, mit Anzeige „schon fällig“ oder „kommt noch“. Per Sprache: „Jarvis, meine Miete ist 380 € am 1.“
