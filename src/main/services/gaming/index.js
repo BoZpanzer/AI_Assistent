@@ -11,6 +11,7 @@ const { TarkovMaps } = require('./tarkovmaps');
 const { League } = require('./league');
 const { Wiki } = require('./wiki');
 const { GameProgress } = require('./progress');
+const { GameReview } = require('./review');
 
 /**
  * Widget registry. The orchestrator may only pick from these types; params are
@@ -99,6 +100,7 @@ class Gaming {
     this.league = new League(sub);
     this.wiki = new Wiki(sub);
     this.progress = new GameProgress(sub);
+    this.review = new GameReview(this);
     this.focus = null; // contextual widget pushed by the orchestrator
   }
 
