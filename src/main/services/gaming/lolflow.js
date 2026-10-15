@@ -16,59 +16,84 @@ const POS = { top: 'Top', jungle: 'Jungle', middle: 'Mid', bottom: 'ADC', utilit
 class LolFlow {
   constructor(s) {
     this.s = s; this.timer = null; this.phase = null; this.champ = null; this.lastSelectKey = ''; this.adviceKey = ''; this.busy = false; this.reviewPending = null;
-    s.bus.on('game:client', ({ league }) => (league ? this.start() : this.stop()));
-    s.bus.on('settings:changed', ({ keys }) => { if (keys.includes('gaming')) this.reconsider(); });
+    this.generation = 0; this.busyGeneration = null; this.disposed = false;
+    this.onClientChange = ({ league }) => (league ? this.start() : this.stop());
+    this.onSettingsChange = ({ keys }) => { if (keys.includes('gaming')) this.reconsider(); };
+    s.bus.on('game:client', this.onClientChange);
+    s.bus.on('settings:changed', this.onSettingsChange);
     this.weeklyTimer = setTimeout(() => { try { this.weeklyCheck(); } catch (e) { log.debug('weekly', e); } }, 60000); this.weeklyTimer.unref?.();
     this.weeklyEvery = setInterval(() => { try { this.weeklyCheck(); } catch (e) { log.debug('weekly', e); } }, 3 * 3600_000); this.weeklyEvery.unref?.();
   }
-  dispose() { clearTimeout(this.weeklyTimer); clearInterval(this.weeklyEvery); this.stop(); }
+  dispose() {
+    this.disposed = true;
+    clearTimeout(this.weeklyTimer); clearInterval(this.weeklyEvery);
+    this.s.bus.off?.('game:client', this.onClientChange);
+    this.s.bus.off?.('settings:changed', this.onSettingsChange);
+    this.stop();
+  }
 
   cfg() { return this.s.settings.get('gaming') || {}; }
   wanted() { const c = this.cfg(); return c.lolChampSelect !== false || c.lolReview !== false; }
   reconsider() { if (this.s.gaming.context.leagueClient && this.wanted()) this.start(); else this.stop(); }
 
   start() {
-    if (this.timer || !this.wanted()) return;
+    if (this.disposed || this.timer || !this.wanted()) return;
+    this.generation++; // invalidate responses from a previous client session
     log.info('League-Client erkannt – Championauswahl/Nachbesprechung aktiv');
     this.timer = setInterval(() => this.tick().catch((e) => log.debug('tick', e)), 4000);
     this.tick().catch(() => {});
   }
   stop() {
+    this.generation++; // pending LCU promises/timers belong to an obsolete session
     clearInterval(this.timer); this.timer = null; this.phase = null;
     clearTimeout(this.reviewPending); this.reviewPending = null;
+    this.busy = false; this.busyGeneration = null;
     this.gameId = null; this.lastSelectKey = ''; this.adviceKey = '';
     if (this.champ) { this.champ = null; this.s.bus.emit('lol:champselect', { active: false }); }
   }
 
   async tick() {
-    if (this.busy) return;
-    this.busy = true;
+    if (this.disposed) return;
+    const generation = this.generation;
+    if (this.busy && this.busyGeneration === generation) return;
+    this.busy = true; this.busyGeneration = generation;
+    const active = () => !this.disposed && this.generation === generation;
     try {
       const L = this.s.gaming.league;
       const phase = await L.lcuGet('/lol-gameflow/v1/gameflow-phase').catch(() => null);
-      if (!phase) return; // A temporary client outage is not a game phase change.
+      if (!active() || !phase) return; // stale result after stop/restart or brief outage
       const prev = this.phase; this.phase = phase;
-      if (phase === 'ChampSelect' && this.cfg().lolChampSelect !== false) await this.champSelect();
+      if (phase === 'ChampSelect' && this.cfg().lolChampSelect !== false) await this.champSelect(generation);
       else if (prev === 'ChampSelect' && this.champ) { this.champ = null; this.lastSelectKey = ''; this.s.bus.emit('lol:champselect', { active: false }); }
+      if (!active()) return;
       if (['InProgress', 'Reconnect'].includes(phase) && !this.gameId) {
         const sess = await L.lcuGet('/lol-gameflow/v1/session').catch(() => null);
+        if (!active()) return;
         if (sess?.gameData?.gameId) this.gameId = sess.gameData.gameId;
       }
+      if (!active()) return;
       if (['InProgress', 'Reconnect'].includes(prev) && !['InProgress', 'Reconnect'].includes(phase)) {
-        // Spiel vorbei → das Spiel gezielt per gameId holen (ohne Umweg über die Matchhistorie)
+        // The callback must still belong to this exact active client session.
         const gid = this.gameId; this.gameId = null;
         clearTimeout(this.reviewPending);
-        this.reviewPending = setTimeout(() => this.afterGame(gid).catch((e) => log.warn('afterGame', e)), 15000);
+        this.reviewPending = setTimeout(() => {
+          if (!active()) return;
+          this.reviewPending = null;
+          this.afterGame(gid, { generation }).catch((e) => log.warn('afterGame', e));
+        }, 15000);
       }
-    } finally { this.busy = false; }
+    } finally {
+      if (this.busyGeneration === generation) { this.busy = false; this.busyGeneration = null; }
+    }
   }
 
   /** Read champ select session (own pick + enemy champions only). */
-  async champSelect() {
+  async champSelect(generation = this.generation) {
     const L = this.s.gaming.league;
     const sess = await L.lcuGet('/lol-champ-select/v1/session').catch(() => null);
-    if (!sess) return;
+    if (!sess || this.disposed || generation !== this.generation) return;
     const champs = await L.champions().then((r) => r.value).catch(() => []);
+    if (this.disposed || generation !== this.generation) return;
     const name = (cid) => (cid ? champs.find((c) => String(c.key) === String(cid))?.name || null : null);
     const me = (sess.myTeam || []).find((x) => x.cellId === sess.localPlayerCellId) || {};
     const myChampion = name(me.championId) || name(me.championPickIntent);
@@ -81,6 +106,7 @@ class LolFlow {
     const tips = [];
     for (const e of enemies.slice(0, 5)) {
       try { const c = await L.champion(e); if (c?.enemytips?.[0]) tips.push(`${c.name}: ${c.enemytips[0]}`); } catch { /* ignore */ }
+      if (this.disposed || generation !== this.generation) return;
     }
     // Wahrscheinlicher Lane-Gegner: nur wenn eindeutig (Bot → einziger Schütze, Support → einziger Supporter)
     const want = role === 'ADC' ? 'Marksman' : role === 'Support' ? 'Support' : null;
@@ -91,7 +117,7 @@ class LolFlow {
     this.s.bus.emit('lol:champselect', this.champ);
     if (myChampion && laneGuess && !this.champ.matchup && this.cfg().lolMatchupCard !== false) {
       this.matchup({ mine: myChampion, vs: laneGuess, role }).then((mu) => {
-        if (this.lastSelectKey !== key || !this.champ) return;
+        if (this.disposed || generation !== this.generation || this.lastSelectKey !== key || !this.champ) return;
         this.champ = { ...this.champ, matchup: { key: `${myChampion}|${laneGuess}`, ...mu } }; this.remember(); this.s.bus.emit('lol:champselect', this.champ);
       }).catch((e) => log.debug('matchup', e));
     }
@@ -154,37 +180,53 @@ class LolFlow {
    * Nach Spielende: gameId aus der Sitzung bzw. dem Endbildschirm, dann das Spiel direkt laden.
    * Riot braucht ein paar Sekunden bis Minuten, bis das Spiel abrufbar ist → bis zu 4 Minuten erneut versuchen.
    */
-  async afterGame(gameId, { tries = 16, delayMs = 15000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  async afterGame(gameId, { tries = 16, delayMs = 15000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), generation = this.generation } = {}) {
+    const active = () => !this.disposed && generation === this.generation;
+    if (!active()) return null;
     const L = this.s.gaming.league;
     if (!gameId) {
       const eog = await L.lcuGet('/lol-end-of-game/v1/eog-stats-block').catch(() => null);
+      if (!active()) return null;
       gameId = eog?.gameId || null;
     }
     let me = null; let m = null;
-    for (let i = 0; i < tries && gameId; i++) {
+    for (let i = 0; i < tries && gameId && active(); i++) {
       try {
         me = me || await L.lcuGet('/lol-summoner/v1/current-summoner');
+        if (!active()) return null;
         const g = await L.clientGame(gameId);
-        if (g?.gameDuration && (g.participants || []).length) { m = await L.storeClientGame(g, me); if (m) break; }
+        if (!active()) return null;
+        if (g?.gameDuration && (g.participants || []).length) {
+          m = await L.storeClientGame(g, me);
+          if (!active()) return null;
+          if (m) break;
+        }
       } catch (e) { log.debug('Spiel noch nicht abrufbar', e); }
-      await sleep(delayMs);
+      if (i < tries - 1 && !m) await sleep(delayMs);
     }
+    if (!active()) return null;
     try { await L.syncFromClient(); } catch { /* Client evtl. schon zu */ }
+    if (!active()) return null;
     let deep = null;
     if (m) { try { deep = await L.deepAnalyze(m.matchId, { me }); } catch (e) { log.debug('deep', e); } }
+    if (!active()) return null;
     this.s.bus.emit('game:data', { game: 'league' });
-    if (this.cfg().lolReview !== false) await this.review({ match: m || undefined, deep });
-    return m;
+    if (this.cfg().lolReview !== false) await this.review({ match: m || undefined, deep, generation });
+    return active() ? m : null;
   }
 
   /** Post-game review of the newest game. */
-  async review({ force = false, match, deep } = {}) {
+  async review({ force = false, match, deep, generation = null } = {}) {
+    // Manually requested reviews are independent; automated ones are cancelled on stop.
+    const active = () => generation === null || (!this.disposed && generation === this.generation);
+    if (!active()) return null;
     const L = this.s.gaming.league;
     const m = match || await L.latestClientGame();
-    if (!m) return null;
+    if (!m || !active()) return null;
     if (!force && this.s.db.get("SELECT 1 x FROM game_reviews WHERE game='league' AND ref=?", m.matchId)) return null;
     if (Date.now() - Date.parse(m.playedAt) - m.duration * 1000 > 3 * 3600_000 && !force) return null; // nur frische Spiele
     try { await L.syncFromClient(); } catch { /* ignore */ }
+    if (!active()) return null;
     const avg = L.stats(20).current;
     deep = deep || L.getDeep(m.matchId);
     const tips = reviewTips(m, avg, L.goals(), deep);
@@ -220,11 +262,13 @@ class LolFlow {
           system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 4 Sätze. Nutze NUR die gelieferten Zahlen und Notizen, erfinde nichts. Wenn Notizen da sind, verknüpfe sie mit den Zahlen (z. B. Notiz „Jungler kam bot“ + Tod mit Jungler-Beteiligung).',
           contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort/beteiligten Gegnern/Gold in der Tasche, Lane-Differenzen, Objectives, gegnerischer Jungler, eigenes Jungling): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives, enemyJungle: deep.enemyJungle, jungle: deep.jungle, wardsBefore14: deep.wardsBefore14, firstBackMin: deep.firstBackMin })}\n` : ''}${notes.length ? `Notizen, die ich mir im Spiel gemacht habe (meine eigene Wahrnehmung): ${JSON.stringify(notes.map((n) => ({ min: n.gameSec != null ? Math.round(n.gameSec / 60) : null, text: n.text })))}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel (review). Stelle außerdem 2–3 kurze, konkrete Reflexionsfragen zu Momenten aus den Daten (z. B. zu einem bestimmten Tod mit Minute), die ich in einem Satz beantworten kann (questions).` }] }],
         });
+        if (!active()) return null;
         const ai = typeof res === 'string' ? res : res?.review;
         if (ai) summary += '\n\n' + String(ai).trim();
         questions = L.setDebriefQuestions(m.matchId, Array.isArray(res?.questions) ? res.questions : []);
       } catch (e) { log.debug('ai review', e); }
     }
+    if (!active()) return null;
     const title = `${m.champion} · ${m.win ? 'Sieg' : 'Niederlage'}`;
     this.s.db.run('INSERT OR REPLACE INTO game_reviews(id,game,ref,title,summary,tips,source,created_at) VALUES(?,?,?,?,?,?,?,?)', id('rv'), 'league', m.matchId, title, summary, JSON.stringify(tips), 'League-Client (lokal)', nowIso());
     this.s.notifications.push({ category: 'gaming', origin: 'client', game: 'league', dedupeKey: 'review:' + m.matchId, title: 'Nachbesprechung: ' + title, body: tips[0] || 'Gutes Spiel – Details im Gaming-Bereich.' });
