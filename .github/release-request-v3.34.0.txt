@@ -1,0 +1,1 @@
+Release v3.34.0 from main. Trigger Windows packaging, smoke tests, signing and GitHub release.
