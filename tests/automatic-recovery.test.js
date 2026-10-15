@@ -11,7 +11,7 @@ function deferred() { let resolve; const promise = new Promise(r => { resolve = 
 function voiceHarness(connect) {
   const messages = [], sessions = [], callbacks = [];
   const s = {
-    bus: new EventEmitter(), settings: { get: () => ({}) },
+    bus: new EventEmitter(), settings: { get: () => ({}), update: () => {} },
     conversations: { get: id => ({ id, privacy: 'gaming' }), history: () => [], add: (id, m) => messages.push({ id, ...m }) },
     orchestrator: { declarations: () => [{ functionDeclarations: [] }], system: () => '', execute: async () => ({ response: { ok: true } }) },
     gemini: { hasKey: () => true, model: () => null, requireModel: () => 'test', client: () => ({ live: { connect: async opts => {
@@ -154,4 +154,109 @@ test('automatic Wiki calibration rejects missing and non-finite quality evidence
     }
     assert.equal(g.context.getState('calib:eft:customs-wiki'), null);
   } finally { cleanup(); }
+});
+
+
+test('speaking forever cannot defer Standby past the original deadline', async () => {
+  const { voice } = voiceHarness();
+  await voice.start({ conversationId: 'a', cloudAudioApproved: true });
+  voice.setState('speaking');
+  assert.equal(voice.requestStandby({ quick: true }).ok, true);
+  assert.equal(voice.standbyPending, true);
+  voice.enterStandby(); // early callback while speaking: still allowed to finish
+  assert.equal(voice.standbyPending, true);
+  assert.equal(voice.state, 'speaking');
+  voice.standbyDeadline = Date.now() - 1; // the original deadline has elapsed
+  voice.enterStandby();
+  assert.equal(voice.state, 'standby');
+  assert.equal(voice.session, null);
+  assert.equal(voice.standbyPending, false);
+  assert.equal(voice.standbyTimer, null);
+  await voice.start({ conversationId: 'a', cloudAudioApproved: true });
+  assert.equal(voice.state, 'listening', 'a new session is not blocked by stale Standby');
+  voice.stop();
+});
+
+test('manual Voice stop discards pending standby and old callback state', async () => {
+  const { voice } = voiceHarness();
+  await voice.start({ conversationId: 'a', cloudAudioApproved: true });
+  voice.requestStandby({ quick: true });
+  voice.stop();
+  assert.equal(voice.standbyPending, false);
+  assert.equal(voice.standbyDeadline, 0);
+  voice.enterStandby();
+  assert.equal(voice.state, 'off');
+  await voice.start({ conversationId: 'b', cloudAudioApproved: true });
+  voice.enterStandby();
+  assert.equal(voice.state, 'listening');
+  voice.stop();
+});
+
+test('stopping League during in-flight phase response never schedules post-game review', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const gate = deferred(); const bus = new EventEmitter(); const reviewed = [];
+  const flow = new LolFlow({
+    bus, settings: { get: () => ({}) }, gaming: { league: { lcuGet: async () => gate.promise } },
+  });
+  flow.phase = 'InProgress'; flow.gameId = 123;
+  flow.afterGame = async (id) => reviewed.push(id);
+  const pending = flow.tick();
+  flow.stop();
+  gate.resolve('EndOfGame'); await pending;
+  t.mock.timers.tick(15000);
+  assert.deepEqual(reviewed, []);
+  assert.equal(flow.reviewPending, null);
+  assert.equal(flow.phase, null);
+  flow.dispose();
+});
+
+test('stale League session answer cannot restore gameId after stop or restart', async () => {
+  const gate = deferred(); let sessionRequests = 0;
+  const bus = new EventEmitter();
+  const flow = new LolFlow({
+    bus, settings: { get: () => ({}) },
+    gaming: { league: { lcuGet: async p => {
+      if (p.endsWith('gameflow-phase')) return 'InProgress';
+      sessionRequests++; return gate.promise;
+    } } },
+  });
+  const first = flow.tick();
+  while (sessionRequests === 0) await Promise.resolve();
+  flow.stop();
+  gate.resolve({ gameData: { gameId: 999 } }); await first;
+  assert.equal(flow.gameId, null);
+  assert.equal(flow.busy, false, 'stale requests do not block future polling');
+  flow.dispose();
+});
+
+test('stopping League while an afterGame request is pending prevents automatic review', async () => {
+  const gate = deferred(), bus = new EventEmitter();
+  let stored = 0, reviewed = 0;
+  const flow = new LolFlow({
+    bus, settings: { get: () => ({}) },
+    gaming: { league: {
+      lcuGet: async p => p.includes('current-summoner') ? gate.promise : { gameId: 444 },
+      clientGame: async () => { stored++; return { gameDuration: 90, participants: [{}] }; },
+      storeClientGame: async () => ({ matchId: '444' }),
+    } },
+  });
+  flow.review = async () => { reviewed++; };
+  const pending = flow.afterGame(444, { tries: 1, delayMs: 0 });
+  flow.stop();
+  gate.resolve({ puuid: 'player' }); await pending;
+  assert.equal(stored, 0);
+  assert.equal(reviewed, 0);
+  flow.dispose();
+});
+
+test('disposed League flow cannot be restarted by late client or settings events', () => {
+  const bus = new EventEmitter();
+  const flow = new LolFlow({
+    bus, settings: { get: () => ({}) },
+    gaming: { context: { leagueClient: true }, league: { lcuGet: async () => 'None' } },
+  });
+  flow.dispose();
+  bus.emit('game:client', { league: true });
+  bus.emit('settings:changed', { keys: ['gaming'] });
+  assert.equal(flow.timer, null);
 });

@@ -5,6 +5,7 @@ import { guard, toast, setState, getState, useStore } from '../../lib/store.js';
 import { Panel, Checkbox, Empty, SourceTag, Spinner, useNow, ask, Select } from '../../components/ui.jsx';
 import { countdown, ago, fmtDateTime } from '../../lib/format.js';
 import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
+import { createMapAutoRetry } from '../../lib/map-auto-retry.mjs';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
@@ -47,9 +48,10 @@ function MapWidget({ game, params }) {
   useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
   useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== baseMap) setMap(p.map); });
   const [autoAligning, setAutoAligning] = useState(false);
-  const autoAttempts = useRef(new Set());
+  const autoAttempts = useRef(createMapAutoRetry());
+  const [autoRetryTick, setAutoRetryTick] = useState(0);
   const alignWiki = async ({ quiet = false } = {}) => {
-    if (!meta?.hasImage || meta?.source?.source !== 'wiki-bundle') return;
+    if (!meta?.hasImage || meta?.source?.source !== 'wiki-bundle') return false;
     setAutoAligning(true);
     try {
       let reference = await rpc('tarkov.wikiAlignmentSource', { map });
@@ -58,7 +60,7 @@ function MapWidget({ game, params }) {
         reference = await rpc('tarkov.wikiAlignmentSource', { map });
         reloadMaps();
       }
-      if (!reference) { if (!quiet) toast('Für diese Karte ist momentan keine SVG-Referenz verfügbar.', 'error'); return; }
+      if (!reference) { if (!quiet) toast('Für diese Karte ist momentan keine SVG-Referenz verfügbar.', 'error'); return false; }
       const image = async (name) => {
         const url = `app://jarvis/map-image/eft/${encodeURIComponent(name)}`;
         const el = new Image();
@@ -76,28 +78,53 @@ function MapWidget({ game, params }) {
       };
       const [source, target] = await Promise.all([image(reference), image(map)]);
       const alignment = await rpc('tarkov.alignWikiImages', { source, target });
-      if (!alignment) { if (!quiet) toast('Keine sichere Bildzuordnung gefunden. Die SVG-Karte ist bereits automatisch kalibriert.', 'error'); return; }
+      if (!alignment) { if (!quiet) toast('Keine sichere Bildzuordnung gefunden. Die SVG-Karte ist bereits automatisch kalibriert.', 'error'); return false; }
       await rpc('tarkov.saveWikiAlignment', { map, alignment });
       reloadMaps();
       if (!quiet) toast(`Wiki-Karte kalibriert (${alignment.quality.inliers} übereinstimmende Bildpunkte)`);
-    } catch (e) { if (!quiet) toast('Automatische Kalibrierung fehlgeschlagen: ' + cleanErr(e), 'error'); }
+      return true;
+    } catch (e) { if (!quiet) toast('Automatische Kalibrierung fehlgeschlagen: ' + cleanErr(e), 'error'); return false; }
     finally { setAutoAligning(false); }
   };
   const [loadingMaps, setLoadingMaps] = useState(false);
   useEffect(() => {
     if (!isEft || autoAligning || loadingMaps || meta?.calibration?.affine) return;
-    const key = `${map}:${meta?.hasImage ? 'image' : 'missing'}`;
-    if (autoAttempts.current.has(key)) return;
-    autoAttempts.current.add(key);
-    if (meta?.source?.source === 'wiki-bundle') { alignWiki({ quiet: true }); return; }
-    // Never replace a user-imported image. Download only the selected reference.
-    if (!meta?.hasImage && !map.endsWith('-wiki')) {
-      setLoadingMaps(true);
-      rpc('tarkov.importMaps', { map }).then((r) => {
-        if (r.failed?.length) toast('Karte konnte nicht automatisch geladen werden. Mit „SVG-Karten laden“ erneut versuchen.', 'error');
-      }).catch(() => {}).finally(() => { setLoadingMaps(false); reloadMaps(); });
+    const wiki = meta?.hasImage && meta?.source?.source === 'wiki-bundle';
+    const missingSvg = !meta?.hasImage && !map.endsWith('-wiki');
+    // Never auto-register a user-imported image. Only verified wiki images and
+    // absent SVG references are eligible.
+    if (!wiki && !missingSvg) return;
+    const key = `${map}:${wiki ? 'wiki:' + (meta?.source?.at || '') : 'svg'}`;
+    const retry = autoAttempts.current;
+    const waitMs = retry.due(key);
+    if (waitMs === null) return; // succeeded, running, or retry limit reached
+    if (waitMs > 0) {
+      const timer = setTimeout(() => setAutoRetryTick((v) => v + 1), waitMs);
+      return () => clearTimeout(timer);
     }
-  }, [isEft, map, meta?.hasImage, meta?.calibration, autoAligning, loadingMaps]);
+    if (!retry.start(key)) return;
+    (async () => {
+      let success = false;
+      try {
+        if (wiki) {
+          success = await alignWiki({ quiet: true });
+        } else {
+          setLoadingMaps(true);
+          const result = await rpc('tarkov.importMaps', { map });
+          success = !result?.failed?.length && !!(result?.done?.includes(map) || result?.skipped?.includes(map));
+          reloadMaps();
+        }
+      } catch (e) {
+        // Transient network or image-decoding failure: retry with backoff.
+      } finally {
+        retry.finish(key, success);
+        if (!wiki) setLoadingMaps(false);
+        // A re-render schedules the next attempt only after its backoff.
+        setAutoRetryTick((v) => v + 1);
+      }
+    })();
+  }, [isEft, map, baseMap, meta?.hasImage, meta?.source?.source, meta?.source?.at,
+    meta?.calibration?.affine, autoAligning, loadingMaps, autoRetryTick]);
   useEffect(() => { if (isEft) rpc('tarkov.importWikiMaps').then(reloadMaps).catch(() => toast('Wiki-Karten konnten nicht bereitgestellt werden', 'error')); }, [isEft]);
   const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
     setLoadingMaps(true);

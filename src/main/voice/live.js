@@ -28,6 +28,7 @@ class LiveVoice {
     this.lastUserUtterance = { text: '', at: 0 };
     this.model = null; this.extended = false;
     this.connectionGeneration = 0;
+    this.standbyPending = false; this.standbyDeadline = 0; this.standbyTimer = null;
     // A conversation can be marked private while a cloud session is active.
     // Tear down immediately instead of waiting for the next microphone frame.
     this.s.bus.on('conversations:changed', () => {
@@ -307,29 +308,46 @@ class LiveVoice {
     const vs = this.s.settings.get('voice') || {};
     let wakeEnabled = false;
     if (!vs.wakeWord) { this.s.settings.update({ voice: { wakeWord: true } }); wakeEnabled = true; }
+    if (this.standbyPending) return { ok: true, note: 'Standby ist bereits angefordert.' };
     this.standbyPending = true;
     log.info('Standby angefordert (' + reason + ')');
     clearTimeout(this.standbyTimer);
-    // Falls das Modell nicht mehr antwortet: spätestens nach ein paar Sekunden pausieren
-    this.standbyTimer = setTimeout(() => this.enterStandby(), quick ? 6000 : 4000);
+    // Absolute deadline: an endlessly speaking model must never keep the mic open.
+    this.standbyDeadline = Date.now() + (quick ? 6000 : 4000);
+    const generation = this.connectionGeneration;
+    this.standbyTimer = setTimeout(() => {
+      if (generation === this.connectionGeneration) this.enterStandby();
+    }, quick ? 6000 : 4000);
     this.s.bus.emit('voice:standby', { pending: true, wakeEnabled });
     return { ok: true, note: 'Standby: Bestätige in zwei, drei Wörtern. Danach hört JARVIS nur noch auf „Hey Jarvis“.' + (wakeEnabled ? ' Das Wake-Word wurde dafür eingeschaltet.' : '') };
   }
 
   enterStandby() {
     clearTimeout(this.standbyTimer);
+    this.standbyTimer = null;
     if (!this.standbyPending) return;
-    this.standbyPending = false;
-    if (this.state === 'speaking') { this.standbyTimer = setTimeout(() => { this.standbyPending = true; this.enterStandby(); }, 1500); return; }
+    const remaining = this.standbyDeadline - Date.now();
+    if (this.state === 'speaking' && remaining > 0) {
+      // Give the current sentence a brief chance to finish, but never extend
+      // the original deadline (even if no turnComplete arrives).
+      const generation = this.connectionGeneration;
+      this.standbyTimer = setTimeout(() => {
+        if (generation === this.connectionGeneration) this.enterStandby();
+      }, Math.min(500, remaining));
+      return;
+    }
     this.stop({ standby: true });
-    this.s.bus.emit('voice:standby', { pending: false });
   }
 
   stop({ standby = false } = {}) {
     this.connectionGeneration++;
     clearTimeout(this.standbyTimer);
-    if (!standby) this.standbyPending = false;
+    this.standbyTimer = null;
+    const wasStandbyPending = this.standbyPending;
+    this.standbyPending = false;
+    this.standbyDeadline = 0;
     this.closing = true;
+    if (wasStandbyPending) this.s.bus.emit('voice:standby', { pending: false });
     clearTimeout(this.idleTimer);
     this.flushTurn(false);
     try { this.session?.close(); } catch { /* ignore */ }
