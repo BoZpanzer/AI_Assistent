@@ -511,19 +511,18 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return { privacy: c.privacy };
     },
     'voice.localStatus': () => {
-      const { checkInstallation } = require('./voice/local-whisper');
-      const voice = s.settings.get('voice');
-      try { checkInstallation(voice.whisperExecutable, voice.whisperModel); return { ready: true }; }
-      catch (e) { return { ready: false, error: e.message }; }
+      const { resolveWhisperPaths } = require('./voice/local-whisper');
+      try {
+        const paths = resolveWhisperPaths(s.settings.get('voice'));
+        return { ready: true, bundled: paths.bundled };
+      } catch (e) { return { ready: false, error: e.message }; }
     },
     'voice.transcribeLocal': async ({ conversationId, audio } = {}) => {
       const getPrivate = () => s.conversations.get(conversationId)?.privacy === 'private';
       if (!getPrivate()) throw new Error('Datenschutz: Lokale Spracheingabe nur in privaten Gesprächen.');
-      const { transcribeLocal } = require('./voice/local-whisper');
-      const voice = s.settings.get('voice');
-      const text = await transcribeLocal({
-        audio, executable: voice.whisperExecutable, model: voice.whisperModel,
-      });
+      const { resolveWhisperPaths, transcribeLocal } = require('./voice/local-whisper');
+      const { executable, model } = resolveWhisperPaths(s.settings.get('voice'));
+      const text = await transcribeLocal({ audio, executable, model });
       // Prevent a private audio transcript being routed to a cloud chat if the
       // user switched the same conversation's privacy during transcription.
       if (!getPrivate()) throw new Error('Gesprächsmodus während der Aufnahme geändert; nichts gesendet.');
