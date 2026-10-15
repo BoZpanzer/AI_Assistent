@@ -55,7 +55,6 @@ class LiveVoice {
   }
 
   async start({ conversationId, cloudAudioApproved = false } = {}) {
-    if (this.session || this.state === 'connecting') return { state: this.state };
     const { gemini, settings, conversations } = this.s;
     const conversation = conversationId ? conversations.get(conversationId) : conversations.current();
     if (!conversation || !['study', 'gaming'].includes(conversation.privacy)) {
@@ -63,6 +62,10 @@ class LiveVoice {
     }
     if (cloudAudioApproved !== true) {
       throw new Error('Datenschutz: Audioübertragung an Gemini benötigt vor jeder Sitzung deine ausdrückliche Zustimmung.');
+    }
+    if (this.session || this.state === 'connecting') {
+      if (this.conversationId !== conversation.id) throw new Error('Eine andere Sprachsitzung ist aktiv. Bitte diese zuerst beenden.');
+      return { state: this.state };
     }
     if (!gemini.hasKey()) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
     const vs = settings.get('voice');
