@@ -72,12 +72,25 @@ function Speech({ s }) {
     try { const stop = await audio.meter(setLevel, v.inputDeviceId); setTimeout(() => { stop(); setLevel(null); }, 5000); } catch (e) { toast('Mikrofon nicht verfügbar: ' + e.message, 'error'); setLevel(null); }
   };
   return (
-    <Panel icon={Globe} title="Sprache" sub="Spracheingabe und Sprachausgabe (Gemini Live)">
+    <Panel icon={Globe} title="Sprache" sub="Offline-Spracherkennung für Private · Gemini Live nur mit Cloud-Freigabe">
       <Field label="Oberflächensprache"><Select value="de-DE" onChange={() => {}} options={[{ value: 'de-DE', label: 'Deutsch (DE)' }]} /></Field>
       <Field label="Stimme (Gemini Live)"><Select value={v.voiceName} onChange={(x) => upd({ voice: { voiceName: x } })} options={VOICES} /></Field>
       <Field label="Mikrofon"><Select value={v.inputDeviceId} onChange={(x) => upd({ voice: { inputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.in.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Mikrofon' }))]} /></Field>
       <Field label="Lautsprecher"><Select value={v.outputDeviceId} onChange={(x) => upd({ voice: { outputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
       <Field label="Mikrofon testen">{level === null ? <button class="btn xs" onClick={test}><Mic size={12} />Pegel testen</button> : <div class="meter" style={{ width: '100%' }}><i style={{ width: `${level * 100}%` }} /></div>}</Field>
+      <div class="notice tiny">🔒 Private: Die Spracherkennung läuft offline über whisper.cpp. Zum Einrichten einmal <b>whisper-cli.exe</b> und ein mehrsprachiges <b>ggml-*.bin</b>-Modell lokal auswählen. Nach dem Aufnehmen Mikrofon erneut drücken; JARVIS sendet nur den erkannten Text an den lokalen Chat. ☁ Uni/Gaming: Vor jeder Gemini-Live-Sitzung wird um Zustimmung für die Audioübertragung an Google gebeten.</div>
+      <Field label="Offline-Engine (whisper-cli.exe)" hint={v.whisperExecutable ? v.whisperExecutable : 'Noch nicht eingerichtet'}>
+        <button class="btn xs" onClick={async () => {
+          const files = await guard(() => rpc('dialog.pickFiles', { kind: 'whisper-cli' }));
+          if (files?.[0]) await upd({ voice: { whisperExecutable: files[0] } });
+        }}><FolderOpen size={12} />{v.whisperExecutable ? 'Engine ändern' : 'Engine auswählen'}</button>
+      </Field>
+      <Field label="Offline-Modell (.bin)" hint={v.whisperModel ? v.whisperModel : 'Mehrsprachiges GGML-Whisper-Modell erforderlich'}>
+        <button class="btn xs" onClick={async () => {
+          const files = await guard(() => rpc('dialog.pickFiles', { kind: 'whisper-model' }));
+          if (files?.[0]) await upd({ voice: { whisperModel: files[0] } });
+        }}><FolderOpen size={12} />{v.whisperModel ? 'Modell ändern' : 'Modell auswählen'}</button>
+      </Field>
       <Field label="„Hey Jarvis“ (lokal, offline)" hint="Mikrofon bleibt lokal – nichts wird übertragen, bis das Wake-Word erkannt wird"><Toggle checked={v.wakeWord} onChange={(x) => upd({ voice: { wakeWord: x } })} /></Field>
       {v.wakeWord && <Field label="Empfindlichkeit"><input class="range" type="range" min="0.2" max="0.9" step="0.05" value={v.wakeSensitivity} onChange={(e) => upd({ voice: { wakeSensitivity: Number(e.currentTarget.value) } })} /></Field>}
       <Field label="Push-to-Talk-Taste (global)"><input class="inp" value={v.pushToTalkKey} onChange={(e) => upd({ voice: { pushToTalkKey: e.currentTarget.value } })} /></Field>
