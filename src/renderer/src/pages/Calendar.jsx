@@ -73,6 +73,14 @@ export function Calendar() {
               {status?.pending > 0 && <div class="small warn">{status.pending} Änderung(en) warten auf Upload</div>}
               {status?.error && <div class="small err">{status.error}</div>}
               <button class="btn sm mt" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}>{status?.syncing ? <Spinner /> : <RefreshCw size={14} />}Jetzt synchronisieren</button>
+              <button class="btn sm mt" onClick={async () => {
+                const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
+                if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
+                const ok = await ask('JARVIS-Termine und Vorlesungen der letzten 30 und nächsten 180 Tage in Google Kalender „' + target.name + '“ kopieren? Die Daten werden an Google übertragen.', '', { confirmOnly: true, okLabel: 'Zu Google kopieren' });
+                if (!ok) return;
+                const result = await guard(() => rpc('calendar.exportToGoogle', { calendarId: target.id }));
+                if (result) toast('Google: ' + result.created + ' neu, ' + result.updated + ' aktualisiert, ' + result.failed + ' Fehler');
+              }}><Cloud size={14} />JARVIS & Vorlesungen zu Google kopieren</button>
             </> : <><div class="small muted">Termine bleiben lokal, bis du Google verbindest.</div><button class="btn sm mt" onClick={() => setState({ page: 'settings' })}>Verbinden…</button></>}
           </Panel>
           <Panel title="Kalender" sub="Sichtbarkeit">
