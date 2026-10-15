@@ -337,10 +337,14 @@ function TarkovRaidPlan({ params }) {
   const [plan, reload, st] = useRpc('tarkov.raidPlan', { map: map || undefined }, { deps: [map], events: ['game:progress'] });
   const [all] = useRpc('tarkov.raidPlan', {}, { events: ['game:progress'] });
   const ranking = all?.maps || plan?.maps || [];
-  const [goal] = useRpc('tarkov.routeGoal', { map }, { enabled: !!map, deps: [map], events: ['game:markers'] });
+  const [images] = useRpc('game.maps', { game: 'eft' }, { initial: [], events: ['game:markers'] });
+  useEffect(() => { guard(() => rpc('tarkov.importWikiMaps')); }, []);
+  const imageFor = id => images.some(m => m.name === id && m.hasImage) ? id : images.find(m => m.hasImage && m.source?.baseMap === id)?.name || id;
+  const targetMap = imageFor(map);
+  const [goal] = useRpc('tarkov.routeGoal', { map: targetMap }, { enabled: !!map, deps: [targetMap], events: ['game:markers'] });
   const [goalText, setGoalText] = useState('');
-  useEffect(() => { setGoalText(goal?.label || ''); }, [goal?.label, map]);
-  const showOnMap = (id) => rpc('game.setLastMap', { game: 'eft', map: id }).then(() => rpc('game.pushWidget', { game: 'eft', type: 'map', params: { map: id } })).catch(() => {});
+  useEffect(() => { setGoalText(goal?.label || ''); }, [goal?.label, targetMap]);
+  const showOnMap = (id) => guard(async () => { const selected = imageFor(id); await rpc('game.setLastMap', { game: 'eft', map: selected }); return rpc('game.pushWidget', { game: 'eft', type: 'map', params: { map: selected } }); });
   return (
     <Panel icon={Route} title="Raid-Planer" sub={`Aus deinen offenen Quests${all?.level ? ` · Level ${all.level}` : ''} · tarkov.dev`} right={<Select style={{ width: 170 }} value={map} onChange={setMap} options={[{ value: '', label: 'Beste Karte finden' }, ...ranking.map((m) => ({ value: m.id, label: `${m.name} (${m.tasks})` }))]} />}>
       {st.error && <div class="notice warn small">{st.error}</div>}
@@ -352,7 +356,7 @@ function TarkovRaidPlan({ params }) {
         ))}</div>
         {plan.anywhere?.length > 0 && <details class="mt"><summary class="small">Geht auf jeder Karte ({plan.anywhere.length})</summary>{plan.anywhere.map((t) => <div class="small"><b>{t.task}</b> <span class="muted">– {t.objectives.join('; ')}</span></div>)}</details>}
       </>}
-      {map && <div class="row wrap gap-s mb"><input class="inp grow" placeholder="Mein Ziel: z. B. Med-Loot, Quest, Exit" value={goalText} onInput={(e) => setGoalText(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { if (await guard(() => rpc('tarkov.setRouteGoal', { map, goal: { ...(goal || {}), label: goalText } }))) await showOnMap(map); }}>Ziel speichern & Karte</button><span class="tiny muted">Auf der Karte „Mein Ziel setzen“ wählen und Position oder Marker anklicken. Route manuell zeichnen.</span></div>}
+      {map && <div class="row wrap gap-s mb"><input class="inp grow" placeholder="Mein Ziel: z. B. Med-Loot, Quest, Exit" value={goalText} onInput={(e) => setGoalText(e.currentTarget.value)} /><button class="btn xs" disabled={!images.some(m => m.name === targetMap && m.hasImage)} onClick={async () => { if (await guard(() => rpc('tarkov.setRouteGoal', { map: targetMap, goal: { ...(goal || {}), label: goalText } }))) await showOnMap(map); }}>Ziel speichern & Karte</button><span class="tiny muted">Auf der Karte „Mein Ziel setzen“ wählen und Position oder Marker anklicken. Route manuell zeichnen.</span></div>}
       {plan && map && <>
         <div class="row small"><span class="grow muted">{plan.tasks?.length || 0} Quests mit Zielen auf dieser Karte</span><button class="btn xs" onClick={() => showOnMap(map)}><MapIcon size={12} />Auf Karte zeigen</button></div>
         {(plan.bring?.items?.length > 0 || plan.bring?.keys?.length > 0) && <div class="notice small mt"><b>Mitnehmen:</b> {[...plan.bring.items.map((x) => `${x.count > 1 ? x.count + '× ' : ''}${x.short}`), ...plan.bring.keys.map((k) => '🔑 ' + k.short)].join(' · ')}</div>}
