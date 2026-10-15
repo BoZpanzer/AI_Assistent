@@ -85,6 +85,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
+    'local.installOllama': () => s.localLLM.installOllama(),
     'local.installTier': ({ model }) => s.localLLM.installTier(model),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),
     'conv.remove': ({ id }) => s.conversations.remove(id),

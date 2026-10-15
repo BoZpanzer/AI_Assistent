@@ -495,6 +495,7 @@ function Proactive({ s }) {
       {p.dailyBriefing && <Field label="Uhrzeit"><input class="inp" type="time" value={p.briefingTime} onChange={(e) => upd({ proactive: { briefingTime: e.currentTarget.value } })} /></Field>}
       <Field label="Hinweis auf überfällige Aufgaben (1× täglich)"><Toggle checked={p.overdueReminders} onChange={(v) => upd({ proactive: { overdueReminders: v } })} /></Field>
       {[['tasks', 'Aufgaben & Erinnerungen'], ['calendar', 'Kalender'], ['gaming', 'Spiel-Timer'], ['study', 'Studium'], ['system', 'System & Updates']].map(([k, l]) => <Field label={'Pop-ups: ' + l}><Toggle checked={cats[k] !== false} onChange={(v) => upd({ notifyCategories: { [k]: v } })} /></Field>)}
+      <Field label="Gleiche Pop-ups frühestens wieder nach (Minuten)"><input class="inp" type="number" min="0" max="1440" value={s.notificationCooldownMinutes ?? 10} onChange={e => upd({ notificationCooldownMinutes: Math.max(0, Math.min(1440, Number(e.currentTarget.value) || 0)) })} /></Field>
     </Panel>
   );
 }
@@ -519,8 +520,9 @@ function Data() {
         }}><Upload size={12} />Wiederherstellen…</button>
       </div>
       <KeysBackupField />
+      <Field label="Automatische lokale Sicherungen aufbewahren" hint="Anzahl täglicher Backups; bleiben auf diesem PC"><input class="inp" type="number" min="1" max="100" value={s.localBackup?.keep || 7} onChange={e => upd({ localBackup: { keep: Math.max(1, Math.min(100, Number(e.currentTarget.value) || 7)) } })} /></Field>
       <DriveBackupField s={s} />
-      <div class="tiny muted mt">Automatische Tagessicherungen (7 Tage): {backups.filter((b) => b.auto).length} · zuletzt {backups[0] ? ago(backups[0].at) : '—'} · vor jeder Schema-Migration wird zusätzlich gesichert.</div>
+      <div class="tiny muted mt">Automatische Tagessicherungen ({s.localBackup?.keep || 7} Tage): {backups.filter((b) => b.auto).length} · zuletzt {backups[0] ? ago(backups[0].at) : '—'} · vor jeder Schema-Migration wird zusätzlich gesichert.</div>
       <div class="hr" />
       <UpdateSection s={s} />
     </Panel>
@@ -674,6 +676,7 @@ export function LocalAI({ s }) {
     <div class="row gap-s mt">
       <span class="tiny">{status?.online ? '● Ollama erreichbar' : '○ Ollama nicht erreichbar – bitte Ollama installieren und starten'}</span>
       <button class="btn xs" onClick={refresh} disabled={loading}>Status prüfen</button>
+      {!status?.online && <button class="btn xs" disabled={loading} onClick={async () => { if (!window.confirm('Ollama über Windows winget installieren? Der Download benötigt Internet und kann eine Windows-Bestätigung erfordern.')) return; setLoading(true); try { await rpc('local.installOllama'); await refresh(); } catch (e) { setError(String(e.message || e)); } finally { setLoading(false); } }}>Ollama installieren (Windows)</button>}
     </div>
     {status && <p class="tiny muted">Arbeitsspeicher: {status.ramGB} GB · Hardware-Empfehlung: {recommended?.label || '–'} ({recommended?.model || '–'}). GPU/VRAM werden nicht automatisch gemessen.</p>}
     <Field label="Lokale Leistungsstufe">

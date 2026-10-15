@@ -19,6 +19,8 @@ const SCHEMA = {
     closeToTray: { type: 'boolean' },
     notifications: { type: 'boolean' },
     notifyCategories: { type: 'object' },
+    notificationCooldownMinutes: { type: 'integer', minimum: 0, maximum: 1440 },
+    localBackup: { type: 'object', properties: { keep: { type: 'integer', minimum: 1, maximum: 100 } } },
     quietHours: { type: 'object', properties: { enabled: { type: 'boolean' }, from: { type: 'string', maxLength: 5 }, to: { type: 'string', maxLength: 5 } } },
     animations: { type: 'string', enum: ['full', 'reduced', 'off'] },
     hudTransparency: { type: 'number', minimum: 0.4, maximum: 1 },
