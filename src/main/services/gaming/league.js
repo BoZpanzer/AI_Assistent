@@ -202,7 +202,7 @@ class League {
   // ---------- Lokaler League-Client (LCU) – ohne API-Schlüssel ----------
   /** Port + Passwort des laufenden Clients (lockfile oder Prozess-Kommandozeile). */
   async lcuCreds() {
-    if (this._lcu && Date.now() - this._lcu.at < 60000) return this._lcu.creds;
+    if (this._lcu && Date.now() - this._lcu.at < (this._lcu.creds ? 60000 : 5000)) return this._lcu.creds;
     const fs = require('node:fs'); const path = require('node:path');
     const dirs = [this.settings.get('gaming').leagueDir, ...['C', 'D', 'E', 'F'].flatMap((d) => [`${d}:\\Riot Games\\League of Legends`, `${d}:\\Program Files\\Riot Games\\League of Legends`, `${d}:\\Games\\Riot Games\\League of Legends`])].filter(Boolean);
     let creds = null;
@@ -588,9 +588,34 @@ class League {
     throw new Error('Starte den League-Client – JARVIS liest deine Matches dann direkt aus (kein API-Schlüssel nötig).');
   }
 
+  /** Diagnose three independent sources: local client, optional Riot Web API, and previously saved results. */
   async source() {
     const last = this.cache.get('lol:lastsync', { allowStale: true })?.value || null;
-    return { client: await this.clientAvailable(), key: this.hasKey(), lastSync: last, me: this.cache.get('lol:me', { allowStale: true })?.value || null };
+    const me = this.cache.get('lol:me', { allowStale: true })?.value || null;
+    let client = false;
+    let clientReason = null;
+    try {
+      const creds = await this.lcuCreds();
+      if (!creds) {
+        clientReason = 'League-Client nicht erkannt. Öffne den League-Client; kein Riot-API-Key erforderlich.';
+      } else {
+        await this.lcuGet('/lol-summoner/v1/current-summoner');
+        client = true;
+      }
+    } catch (error) {
+      clientReason = /Zugriff verweigert/.test(error.message || '')
+        ? 'League-Client gefunden, aber lokale Anmeldung fehlgeschlagen. Client neu starten oder League-Ordner prüfen.'
+        : 'League-Client erkannt, aber die lokale Schnittstelle antwortet nicht. Bitte Client neu starten.';
+    }
+    return {
+      client,
+      key: this.hasKey(),
+      lastSync: last,
+      me,
+      clientReason,
+      cached: !!(last || me || this.db.get('SELECT 1 x FROM lol_matches LIMIT 1')),
+      liveHint: 'Live-Spielwerte sind nur während eines laufenden Matches über 127.0.0.1:2999 verfügbar.',
+    };
   }
 
   /** Riot-Web-API (optional, mit eigenem Schlüssel). */
