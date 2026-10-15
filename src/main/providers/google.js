@@ -134,7 +134,7 @@ class GoogleClient {
   }
 
   async api(method, path, { query, body } = {}, base = CAL) {
-    if (method !== 'GET' && /calendar\/v3/.test(base)) throw new Error('Termine bleiben lokal: Google-Kalender-Schreibzugriff gesperrt.');
+    if (method !== 'GET' && /calendar\/v3/.test(base) && !this.settings.get('google').exportLocalToGoogle) throw new Error('Google-Kalender-Schreibzugriff nicht freigegeben.');
     const url = new URL(base + path);
     if (query) for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     for (let attempt = 0; attempt < 3; attempt++) {
