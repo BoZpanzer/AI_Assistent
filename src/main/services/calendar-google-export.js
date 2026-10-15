@@ -85,7 +85,7 @@ async function exportToGoogle({ db, google, calendarId, from, to }) {
   if (!(Date.parse(from) < Date.parse(to))) throw new Error('Ungültiger Zeitraum');
 
   const rows = db.all(
-    "SELECT * FROM events WHERE ((start_at>=? AND start_at<?) OR (calendar_id='local' AND rrule IS NOT NULL)) AND (calendar_id='local' OR calendar_id LIKE 'feed:%') ORDER BY start_at LIMIT 3001",
+    "SELECT * FROM events WHERE ((start_at>=? AND start_at<?) OR (calendar_id='local' AND rrule IS NOT NULL)) AND (calendar_id='local' OR calendar_id IN (SELECT 'feed:' || id FROM calendar_feeds WHERE lecture=1)) ORDER BY start_at LIMIT 3001",
     from, to,
   );
   if (rows.length > MAX_EVENTS) throw new Error('Zu viele JARVIS-Termine; kein unvollständiger Abgleich');
