@@ -435,6 +435,17 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.plan': ({ game }) => s.gaming.plan(game),
     'game.savePlan': ({ game, plan }) => s.gaming.savePlan(game, plan),
     'game.notes': ({ game }) => s.gaming.notes(game),
+    'game.memory': ({ game }) => s.gaming.review.memory(game),
+    'game.reviewScreenshot': async ({ game }) => {
+      const active = s.gaming.context.state().active?.id;
+      if (!active || active !== game) throw new Error('Bitte zuerst das betreffende Spiel als aktiv auswählen');
+      const question = 'Lies nur sicher sichtbare Spielstand-Daten für ' + game + '. Antworte AUSSCHLIESSLICH als JSON-Array (max. 20 Objekte) mit category (character,quest,commander,building,research,hero,item,skill,creature,base,achievement,resource,other), name, value, note und status (todo,in_progress,done,failed oder null). Bei Unsicherheit antworte []. Keine weiteren Zeichen.';
+      const result = await s.screen.ask(question);
+      return { content: result.answer };
+    },
+    'game.reviewStage': ({ game, entries }) => s.gaming.review.stage(game, entries),
+    'game.reviewConfirm': ({ token, indices }) => s.gaming.review.confirm(token, indices),
+    'game.reviewReject': ({ token }) => s.gaming.review.reject(token),
     'game.progress': ({ game }) => ({ items: s.gaming.progress.list(game), categories: require('./services/gaming/progress').CATEGORIES, statuses: require('./services/gaming/progress').STATUS }),
     'game.progressUpsert': ({ game, item }) => s.gaming.progress.upsert(game, { ...item, source: 'manual' }).item,
     'game.progressRemove': ({ id }) => s.gaming.progress.remove(id),
