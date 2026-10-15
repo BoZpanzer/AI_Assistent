@@ -13,3 +13,7 @@ tests/e2e/e2e-report.json
 # wird vom Release-Workflow erzeugt
 build/update-config.json
 .env
+
+# Verified Whisper engine/model are generated only during the Windows build.
+build/whisper-runtime/
+build/whisper-runtime-stage/
