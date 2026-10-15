@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 /** Explicit Google Calendar copy of JARVIS-local and subscribed lecture events. */
 function eligible(row) {
   return row && (row.calendar_id === 'local' || String(row.calendar_id).startsWith('feed:')) &&
-    row.sync_state !== 'pending_delete' && row.status !== 'cancelled' && row.start_at && row.end_at;
+    row.sync_state !== 'pending_delete' && row.status !== 'cancelled' && Boolean(row.start_at) && Boolean(row.end_at);
 }
 function googleId(row) {
   return 'jarvis' + crypto.createHash('sha256').update(row.calendar_id + ':' + (row.google_id || row.id)).digest('hex').slice(0, 40);
