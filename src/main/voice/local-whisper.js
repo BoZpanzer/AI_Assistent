@@ -59,6 +59,31 @@ function checkInstallation(executable, model) {
   }
 }
 
+/** Locate an embedded runtime in the installed Electron resources directory.
+ * Custom paths still work for development/advanced users. If they are missing,
+ * use the bundled, checksum-verified Windows runtime. No auto-download at runtime.
+ */
+function resolveWhisperPaths(settings = {}, { resourcesPath = process.resourcesPath } = {}) {
+  const custom = { executable: settings.whisperExecutable || '', model: settings.whisperModel || '' };
+  try {
+    checkInstallation(custom.executable, custom.model);
+    return { ...custom, bundled: false };
+  } catch { /* custom files missing: try official packaged defaults */ }
+  if (resourcesPath && path.isAbsolute(resourcesPath)) {
+    const bundled = {
+      executable: path.join(resourcesPath, 'voice', 'whisper-cli.exe'),
+      model: path.join(resourcesPath, 'voice', 'ggml-base.bin'),
+    };
+    try {
+      checkInstallation(bundled.executable, bundled.model);
+      return { ...bundled, bundled: true };
+    } catch { /* packaged runtime absent */ }
+  }
+  // Keep useful error messages in development; never fall back to a cloud service.
+  checkInstallation(custom.executable, custom.model);
+  throw new Error('Lokales Whisper fehlt. Bitte die JARVIS-Version mit mitgelieferter Spracheingabe installieren.');
+}
+
 async function transcribeLocal({ audio, executable, model }, { run = spawn, timeoutMs = TIMEOUT_MS } = {}) {
   checkInstallation(executable, model);
   const wav = decodePcm(audio);
@@ -97,4 +122,4 @@ async function transcribeLocal({ audio, executable, model }, { run = spawn, time
   }
 }
 
-module.exports = { decodePcm, pcmToWav, checkInstallation, transcribeLocal, MAX_SECONDS, MAX_BYTES, SAMPLE_RATE };
+module.exports = { decodePcm, pcmToWav, checkInstallation, resolveWhisperPaths, transcribeLocal, MAX_SECONDS, MAX_BYTES, SAMPLE_RATE };
