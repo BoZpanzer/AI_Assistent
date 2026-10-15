@@ -302,8 +302,15 @@ function buildTools(s) {
       return { source: m.source, map: m.value.name, bosses: m.value.bosses.map((b) => ({ name: b.boss?.name, chance: Math.round(b.spawnChance * 100) + '%', locations: b.spawnLocations.map((l) => l.name) })) };
     } });
 
+  def({ name: 'league_recent_matches', mode: 'read',
+    description: 'Für „zeige meine letzten LoL-Matches“, „meine letzten Games“, „letzte Spiele ansehen“. Versucht die lokale League-Client-Synchronisierung OHNE Riot-API-Key. Bei Verbindungsproblemen liefert es weiterhin die zuletzt gespeicherten Matches mit Datum, Status und explizitem Hinweis, dass sie nicht frisch sind. Dieses Werkzeug VOR league_live oder allgemeinen LoL-Statistiken für vergangene Spiele verwenden. Niemals behaupten, der League-Client sei verbunden, wenn fresh=false.',
+    schema: { type: 'object', properties: {
+      count: { type: 'integer', minimum: 1, maximum: 20, description: 'Anzahl Matches (Standard 5)' },
+      refresh: { type: 'boolean', description: 'Client-Synchronisierung jetzt versuchen (Standard true)' },
+    } },
+    run: async ({ count = 5, refresh = true }) => s.gaming.league.recentMatches({ count, refresh }) });
   def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights). refresh=true liest neue Matches aus dem laufenden League-Client (kein Schlüssel nötig) bzw. der Riot-API.',
-    schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches von der Riot-API holen' } } },
+    schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches zuerst über den lokalen League-Client ohne Riot-API-Key holen' } } },
     run: async ({ refresh }) => {
       // Gespeicherte Matches reichen für die Analyse – ein geschlossener Client ist kein Fehler
       let sync = null;
@@ -311,7 +318,7 @@ function buildTools(s) {
       const L = s.gaming.league; const st = L.stats();
       const last = L.cache.get('lol:lastsync', { allowStale: true })?.value?.at || null;
       return {
-        ...st, recent: st.recent.slice(0, 5), lastSync: last,
+        ...st, recent: st.recent.slice(0, 5), lastSync: last, refreshStatus: sync || null,
         note: !st.current ? 'Noch keine Matches gespeichert – sobald der League-Client einmal läuft, liest JARVIS sie automatisch aus.'
           : sync?.skipped ? `Analyse aus den gespeicherten Matches (Stand: ${last ? new Date(last).toLocaleString('de-DE') : 'unbekannt'}). Neue Spiele kommen automatisch dazu, wenn der Client das nächste Mal läuft – den Nutzer NICHT bitten, den Client zu starten, sondern direkt analysieren.` : undefined,
       };
