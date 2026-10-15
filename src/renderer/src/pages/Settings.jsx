@@ -63,6 +63,7 @@ function General({ s }) {
 
 function Speech({ s }) {
   const v = s.voice;
+  const [voiceLocal, refreshVoiceLocal] = useRpc('voice.localStatus', {}, { events: ['settings:changed'] });
   const [devs, setDevs] = useState({ in: [], out: [] });
   const [level, setLevel] = useState(null);
   useEffect(() => { navigator.mediaDevices.enumerateDevices().then((d) => setDevs({ in: d.filter((x) => x.kind === 'audioinput'), out: d.filter((x) => x.kind === 'audiooutput') })).catch(() => {}); }, [level !== null]);
@@ -78,7 +79,12 @@ function Speech({ s }) {
       <Field label="Mikrofon"><Select value={v.inputDeviceId} onChange={(x) => upd({ voice: { inputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.in.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Mikrofon' }))]} /></Field>
       <Field label="Lautsprecher"><Select value={v.outputDeviceId} onChange={(x) => upd({ voice: { outputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
       <Field label="Mikrofon testen">{level === null ? <button class="btn xs" onClick={test}><Mic size={12} />Pegel testen</button> : <div class="meter" style={{ width: '100%' }}><i style={{ width: `${level * 100}%` }} /></div>}</Field>
-      <div class="notice tiny">🔒 Private: Die Spracherkennung läuft offline über whisper.cpp. Zum Einrichten einmal <b>whisper-cli.exe</b> und ein mehrsprachiges <b>ggml-*.bin</b>-Modell lokal auswählen. Nach dem Aufnehmen Mikrofon erneut drücken; JARVIS sendet nur den erkannten Text an den lokalen Chat. ☁ Uni/Gaming: Vor jeder Gemini-Live-Sitzung wird um Zustimmung für die Audioübertragung an Google gebeten.</div>
+      <div class="notice tiny">🔒 <b>Private – lokale Spracheingabe:</b> In der normalen Windows-Version sind Whisper und ein mehrsprachiges deutschtaugliches Modell enthalten. Mikrofon einmal drücken, sprechen und erneut drücken – keine Cloud, kein zusätzlicher Download am PC. ☁ Uni/Gaming: Vor jeder Gemini-Live-Sitzung ist deine Zustimmung für die Audioübertragung an Google nötig.</div>
+      <div class="row gap-s mt">
+        <span class="small">{voiceLocal?.ready ? (voiceLocal.bundled ? '● Whisper bereits im JARVIS-Installer enthalten – einsatzbereit' : '● Eigenes Whisper installiert – einsatzbereit') : '○ Whisper nicht gefunden: ' + (voiceLocal?.error || 'Verfügbarkeit wird geprüft …')}</span>
+        <button class="btn xs" onClick={refreshVoiceLocal}>Spracherkennung prüfen</button>
+      </div>
+      <div class="tiny muted mt">Expertenoption: Nur wenn du bewusst eine andere Whisper-Version oder ein eigenes Modell verwenden möchtest, kannst du unten Dateien auswählen. Sonst nichts ändern.</div>
       <Field label="Offline-Engine (whisper-cli.exe)" hint={v.whisperExecutable ? v.whisperExecutable : 'Noch nicht eingerichtet'}>
         <button class="btn xs" onClick={async () => {
           const files = await guard(() => rpc('dialog.pickFiles', { kind: 'whisper-cli' }));
