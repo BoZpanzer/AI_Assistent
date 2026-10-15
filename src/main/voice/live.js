@@ -2,6 +2,7 @@
 const { toGeminiSchema } = require('../core/validate');
 const { friendlyError } = require('../providers/gemini');
 const log = require('../core/logger').scope('voice');
+const privacy = require('../core/privacy');
 
 const YES = /\b(ja|jo|jep|klar|okay|ok|passt|bestätig\w*|mach (das|es|mal)|leg (es|ihn|sie) an|trag (es|ihn) ein|genau|gerne|einverstanden)\b/i;
 const NO = /\b(nein|nö|nee|abbrechen|stopp|lass es|doch nicht|nicht machen|verwerfen)\b/i;
@@ -26,6 +27,7 @@ class LiveVoice {
     this.lastActivity = Date.now(); this.idleTimer = null; this.pendingTools = 0;
     this.lastUserUtterance = { text: '', at: 0 };
     this.model = null; this.extended = false;
+    this.connectionGeneration = 0;
     // A conversation can be marked private while a cloud session is active.
     // Tear down immediately instead of waiting for the next microphone frame.
     this.s.bus.on('conversations:changed', () => {
@@ -71,7 +73,9 @@ class LiveVoice {
     const vs = settings.get('voice');
     this.extended = !!vs.extendedThinking && !!gemini.model('liveThinking');
     this.model = this.extended ? gemini.model('liveThinking') : gemini.requireModel('live');
+    if (this.conversationId !== conversation.id) this.handle = null;
     this.conversationId = conversation.id;
+    this.reconnects = 0;
     this.closing = false;
     this.setState('connecting');
     await this.connect();
@@ -82,6 +86,8 @@ class LiveVoice {
   config() {
     const vs = this.s.settings.get('voice');
     const decl = this.s.orchestrator.declarations({ nonBlocking: this.extended });
+    const allowed = privacy.cloudTools(this.s.conversations.get(this.conversationId)?.privacy);
+    decl[0].functionDeclarations = decl[0].functionDeclarations.filter(t => allowed.has(t.name));
     decl[0].functionDeclarations.push({
       name: 'confirm_pending_action',
       description: 'Bestätigt oder verwirft die zuletzt vorgeschlagene Aktion, NACHDEM der Nutzer mündlich eindeutig zugestimmt oder abgelehnt hat.',
@@ -90,7 +96,7 @@ class LiveVoice {
     });
     const cfg = {
       responseModalities: ['AUDIO'],
-      systemInstruction: this.s.orchestrator.system('voice'),
+      systemInstruction: privacy.CLOUD_SYSTEM + ' Antworte auf Deutsch, kurz und gut verständlich. Nutze die freigegebenen Werkzeuge für aktuelle Spielinformationen; erfinde keine Ergebnisse.',
       tools: decl,
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
       inputAudioTranscription: {}, outputAudioTranscription: {},
@@ -104,23 +110,30 @@ class LiveVoice {
   }
 
   async connect() {
+    if (this.closing) return;
     this.assertCloudConversation();
+    const generation = ++this.connectionGeneration;
+    let closed = false;
     const client = this.s.gemini.client();
     const fresh = !this.handle;
     try {
-      this.session = await client.live.connect({
+      const session = await client.live.connect({
         model: this.model,
         config: this.config(),
         callbacks: {
           onopen: () => log.info('Live verbunden: ' + this.model),
-          onmessage: (m) => this.onMessage(m).catch((e) => log.warn('onMessage', e)),
+          onmessage: (m) => { if (generation === this.connectionGeneration && !this.closing) this.onMessage(m).catch((e) => log.warn('onMessage', e)); },
           onerror: (e) => { log.warn('Live-Fehler', e?.message || e); },
-          onclose: (e) => this.onClose(e),
+          onclose: (e) => { closed = true; if (generation === this.connectionGeneration) this.onClose(e); },
         },
       });
+      if (generation !== this.connectionGeneration || this.closing) { session.close(); return; }
+      if (closed) throw new Error('Sprachverbindung während des Aufbaus geschlossen');
+      this.session = session;
     } catch (e) {
+      if (generation !== this.connectionGeneration || this.closing) return;
       this.session = null;
-      this.setState('error', { error: friendlyError(e) });
+      if (!this.reconnects) this.setState('error', { error: friendlyError(e) });
       throw new Error(friendlyError(e));
     }
     this.assertCloudConversation();
@@ -215,21 +228,28 @@ class LiveVoice {
 
   async onToolCall(calls) {
     if (!this.cloudConversationAllowed()) { this.stop(); return; }
+    const session = this.session;
+    const conversationId = this.conversationId;
+    const generation = this.connectionGeneration;
     this.setState('thinking');
     this.pendingTools++;
     const responses = [];
     try {
       for (const fc of calls) {
+        if (generation !== this.connectionGeneration || this.closing) break;
         let response;
-        if (fc.name === 'confirm_pending_action') response = await this.voiceConfirm(!!fc.args?.approve);
-        else {
-          const out = await this.s.orchestrator.execute(fc.name, fc.args, { conversationId: this.conversationId, channel: 'voice' });
-          if (out.card) this.s.conversations.add(this.conversationId, { role: 'tool', content: '', channel: 'voice', meta: { cards: [out.card] } });
-          response = out.response;
-        }
+        try {
+          if (fc.name === 'confirm_pending_action') response = await this.voiceConfirm(!!fc.args?.approve);
+          else {
+            const out = await this.s.orchestrator.execute(fc.name, fc.args, { conversationId, channel: 'voice' });
+            if (out.card) this.s.conversations.add(conversationId, { role: 'tool', content: '', channel: 'voice', meta: { cards: [out.card] } });
+            response = out.response;
+          }
+        } catch (e) { response = { error: friendlyError(e) }; }
+        if (!response || typeof response !== 'object' || Array.isArray(response)) response = { result: response ?? null };
         responses.push({ id: fc.id, name: fc.name, response: this.extended ? { ...response, scheduling: 'WHEN_IDLE' } : response });
       }
-      this.session?.sendToolResponse({ functionResponses: responses });
+      if (generation === this.connectionGeneration && !this.closing && this.cloudConversationAllowed()) session?.sendToolResponse({ functionResponses: responses });
     } catch (e) { log.warn('Tool-Antwort', e); } finally { this.pendingTools--; }
   }
 
@@ -252,14 +272,21 @@ class LiveVoice {
   }
 
   async reconnect() {
+    if (this.closing) return;
     if (!this.cloudConversationAllowed()) { this.stop(); return; }
+    const generation = ++this.connectionGeneration;
     const old = this.session; this.session = null;
     try { old?.close(); } catch { /* ignore */ }
     if (this.closing) return;
     if (this.reconnects++ >= 3) { this.setState('error', { error: 'Verbindung verloren' }); return; }
     this.setState('connecting', { reconnect: true });
     await new Promise((r) => setTimeout(r, 400 * this.reconnects));
-    try { await this.connect(); } catch (e) { log.warn('Reconnect fehlgeschlagen', e); if (this.reconnects < 3) this.reconnect(); }
+    if (this.closing || generation !== this.connectionGeneration) return;
+    try { await this.connect(); } catch (e) {
+      log.warn('Reconnect fehlgeschlagen', e);
+      if (!this.closing && this.reconnects < 3) return this.reconnect();
+      if (!this.closing) this.setState('error', { error: friendlyError(e) });
+    }
   }
 
   onClose(e) {
@@ -299,6 +326,7 @@ class LiveVoice {
   }
 
   stop({ standby = false } = {}) {
+    this.connectionGeneration++;
     clearTimeout(this.standbyTimer);
     if (!standby) this.standbyPending = false;
     this.closing = true;

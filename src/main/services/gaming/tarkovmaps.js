@@ -102,7 +102,7 @@ function prepareSvg(text, def, aspect, floor = null) {
 }
 
 class TarkovMaps {
-  constructor(gaming, ctx) { this.g = gaming; this.fetch = ctx.fetch; this.busy = null; }
+  constructor(gaming, ctx) { this.g = gaming; this.fetch = ctx.fetch; this.busy = null; this.imports = new Map(); }
 
   /** Bundled Wiki images use separate IDs: pixel routes/calibration must never leak across images. */
   importWiki() {
@@ -135,9 +135,9 @@ class TarkovMaps {
     const hash = require('node:crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     if (hash !== def.sha256) throw new Error('Wiki-Kartenbild verändert');
     const base = JSON.parse(this.g.context.getState('calib:eft:' + def.baseMap) || 'null');
-    if (!Array.isArray(base?.affine) || base.affine.length !== 6) throw new Error('Zuerst SVG-Referenzkarte laden');
+    if (!Array.isArray(base?.affine) || base.affine.length !== 6 || !base.affine.every(Number.isFinite)) throw new Error('Zuerst SVG-Referenzkarte laden');
     const { affine: a, quality: q } = alignment || {};
-    if (!Array.isArray(a) || a.length !== 6 || !a.every(Number.isFinite) || !q || q.inliers < 12 || q.spread < .28 || q.medianError > .007) throw new Error('Bildzuordnung nicht ausreichend sicher');
+    if (!Array.isArray(a) || a.length !== 6 || !a.every(Number.isFinite) || !q || !['inliers', 'candidates', 'spread', 'medianError'].every(k => Number.isFinite(q[k])) || q.inliers < 12 || q.candidates < q.inliers || q.inliers / q.candidates < .45 || q.spread < .28 || q.medianError < 0 || q.medianError > .007) throw new Error('Bildzuordnung nicht ausreichend sicher');
     // compose game->SVG with SVG->Wiki
     const b = base.affine;
     const composed = [a[0]*b[0]+a[1]*b[3],a[0]*b[1]+a[1]*b[4],a[0]*b[2]+a[1]*b[5]+a[2],a[3]*b[0]+a[4]*b[3],a[3]*b[1]+a[4]*b[4],a[3]*b[2]+a[4]*b[5]+a[5]];
@@ -186,8 +186,14 @@ class TarkovMaps {
 
   /** Alle (oder eine) Karte laden. Eigene, selbst importierte Kartenbilder werden nicht überschrieben (außer force). */
   importAll({ only, force = false } = {}) {
-    if (!this.busy) this.busy = this._import({ only, force }).finally(() => { this.busy = null; });
-    return this.busy;
+    const key = JSON.stringify([only || null, force]);
+    if (this.imports.has(key)) return this.imports.get(key);
+    const job = (this.busy || Promise.resolve()).catch(() => {}).then(() => this._import({ only, force }));
+    this.busy = job;
+    this.imports.set(key, job);
+    const cleanup = () => { this.imports.delete(key); if (this.busy === job) this.busy = null; };
+    job.then(cleanup, cleanup);
+    return job;
   }
 
   async _import({ only, force }) {

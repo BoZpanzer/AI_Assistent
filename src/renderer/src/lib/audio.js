@@ -19,41 +19,74 @@ class AudioEngine {
     this.noiseFloor = 0.004; this.speechMs = 0; this.playing = false; this.outRms = 0;
     this.lastActivityPing = 0;
     this.muted = false;
-    on('voice:audio', (d) => this.play(d.data));
+    this.micPending = null; this.playerPending = null; this.starting = false; this.startGeneration = 0; this.playbackGeneration = 0;
+    on('voice:audio', (d) => this.play(d.data).catch((e) => toast('Audioausgabe: ' + e.message, 'error')));
     on('voice:interrupted', () => this.flush());
     on('voice:state', ({ state }) => this.onVoiceState(state));
     on('tts:speak', ({ text }) => this.speakLocal(text));
   }
 
   async ensureMic() {
-    if (this.stream) return;
+    if (this.micPending) return this.micPending;
+    if (this.stream?.getAudioTracks().some(t => t.readyState === 'live')) return;
+    this.micPending = this.openMic();
+    try { await this.micPending; } finally { this.micPending = null; }
+  }
+
+  async openMic() {
     const s = getState().settings?.voice || {};
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    const constraints = {
       audio: { deviceId: s.inputDeviceId && s.inputDeviceId !== 'default' ? { exact: s.inputDeviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-    });
-    this.inCtx = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
-    await this.inCtx.audioWorklet.addModule('audio/capture-worklet.js');
-    const src = this.inCtx.createMediaStreamSource(this.stream);
-    this.capture = new AudioWorkletNode(this.inCtx, 'jarvis-capture');
-    this.capture.port.onmessage = (e) => this.onFrame(e.data.pcm, e.data.rms);
-    src.connect(this.capture);
-    // Keep the graph alive without audible output.
-    const mute = this.inCtx.createGain(); mute.gain.value = 0;
-    this.capture.connect(mute).connect(this.inCtx.destination);
+    };
+    try {
+      try { this.stream = await navigator.mediaDevices.getUserMedia(constraints); }
+      catch (e) {
+        if (!constraints.audio.deviceId || !['NotFoundError', 'OverconstrainedError'].includes(e.name)) throw e;
+        delete constraints.audio.deviceId;
+        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      }
+      this.inCtx = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
+      await this.inCtx.audioWorklet.addModule('audio/capture-worklet.js');
+      const src = this.inCtx.createMediaStreamSource(this.stream);
+      this.capture = new AudioWorkletNode(this.inCtx, 'jarvis-capture');
+      this.capture.port.onmessage = (e) => this.onFrame(e.data.pcm, e.data.rms);
+      src.connect(this.capture);
+      // Keep the graph alive without audible output.
+      const mute = this.inCtx.createGain(); mute.gain.value = 0;
+      this.capture.connect(mute).connect(this.inCtx.destination);
+      if (this.inCtx.state === 'suspended') await this.inCtx.resume();
+    } catch (e) {
+      this.stream?.getTracks().forEach(t => t.stop());
+      await this.inCtx?.close().catch(() => {});
+      this.stream = null; this.inCtx = null; this.capture = null;
+      throw e;
+    }
   }
 
   async ensurePlayer() {
     if (this.player) return;
-    this.outCtx = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
-    const dev = getState().settings?.voice?.outputDeviceId;
-    if (dev && dev !== 'default' && this.outCtx.setSinkId) { try { await this.outCtx.setSinkId(dev); } catch { /* device gone */ } }
-    await this.outCtx.audioWorklet.addModule('audio/player-worklet.js');
-    this.player = new AudioWorkletNode(this.outCtx, 'jarvis-player', { outputChannelCount: [1] });
-    this.player.port.onmessage = (e) => {
-      if (e.data.type === 'level') { this.outRms = e.data.rms; this.playing = e.data.playing; setState({ outLevel: Math.min(1, e.data.rms * 6) }); }
-      if (e.data.type === 'drained') { this.playing = false; setState({ outLevel: 0 }); }
-    };
-    this.player.connect(this.outCtx.destination);
+    if (this.playerPending) return this.playerPending;
+    this.playerPending = this.openPlayer();
+    try { await this.playerPending; } finally { this.playerPending = null; }
+  }
+
+  async openPlayer() {
+    try {
+      this.outCtx = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
+      const dev = getState().settings?.voice?.outputDeviceId;
+      if (dev && dev !== 'default' && this.outCtx.setSinkId) { try { await this.outCtx.setSinkId(dev); } catch { /* device gone */ } }
+      await this.outCtx.audioWorklet.addModule('audio/player-worklet.js');
+      this.player = new AudioWorkletNode(this.outCtx, 'jarvis-player', { outputChannelCount: [1] });
+      this.player.port.onmessage = (e) => {
+        if (e.data.type === 'level') { this.outRms = e.data.rms; this.playing = e.data.playing; setState({ outLevel: Math.min(1, e.data.rms * 6) }); }
+        if (e.data.type === 'drained') { this.playing = false; setState({ outLevel: 0 }); }
+      };
+      this.player.connect(this.outCtx.destination);
+    } catch (e) {
+      await this.outCtx?.close().catch(() => {});
+      this.outCtx = null; this.player = null;
+      throw e;
+    }
   }
 
   releaseMicIfIdle() {
@@ -96,8 +129,10 @@ class AudioEngine {
   }
 
   async play(b64) {
+    const generation = this.playbackGeneration;
     await this.ensurePlayer();
     if (this.outCtx.state === 'suspended') await this.outCtx.resume();
+    if (generation !== this.playbackGeneration) return;
     const bin = atob(b64);
     const pcm = new Int16Array(bin.length >> 1);
     for (let i = 0; i < pcm.length; i++) pcm[i] = (bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8)) << 16 >> 16;
@@ -105,6 +140,7 @@ class AudioEngine {
     this.playing = true;
   }
   flush() {
+    this.playbackGeneration++;
     this.player?.port.postMessage({ type: 'clear' });
     this.playing = false;
     setState({ outLevel: 0 });
@@ -117,23 +153,27 @@ class AudioEngine {
   async toggleVoice() {
     if (this.localWorking) { toast('JARVIS erkennt deine Sprache noch lokal.'); return; }
     if (this.mode.local) return this.stopLocalVoice();
-    if (this.mode.stream || ['listening', 'speaking', 'thinking', 'connecting'].includes(getState().voice)) return this.stopVoice();
+    if (this.starting || this.mode.stream || ['listening', 'speaking', 'thinking', 'connecting'].includes(getState().voice)) return this.stopVoice();
     return this.startVoice();
   }
   async startVoice() {
+    if (this.starting || this.mode.stream || this.mode.local || this.localWorking) return;
+    this.starting = true;
+    const generation = ++this.startGeneration;
     const conversationId = getState().conversationId;
     try {
       const target = await rpc('voice.target', { conversationId });
-      if (getState().conversationId !== conversationId) return;
-      if (target.privacy === 'private') return await this.startLocalVoice(conversationId);
+      if (generation !== this.startGeneration || getState().conversationId !== conversationId) return;
+      if (target.privacy === 'private') return await this.startLocalVoice(conversationId, generation);
       if (!['study', 'gaming'].includes(target.privacy)) throw new Error('Unbekannter Sprachmodus.');
       const approved = await ask(
         'Gemini Live überträgt dein Mikrofon-Audio an Google, verarbeitet das Gespräch in der Cloud und kann die freigegebene Chat-Historie verwenden. Audio jetzt für diesen Uni-/Gaming-Chat übertragen?',
         '', { confirmOnly: true, okLabel: 'Cloud-Audio für diese Sitzung erlauben' },
       );
-      if (!approved || getState().conversationId !== conversationId) return;
+      if (!approved || generation !== this.startGeneration || getState().conversationId !== conversationId) return;
       await this.ensureMic();
       await this.ensurePlayer();
+      if (generation !== this.startGeneration || getState().conversationId !== conversationId) { this.releaseMicIfIdle(); return; }
       if (this.inCtx.state === 'suspended') await this.inCtx.resume();
       this.mode.stream = true;
       this.cloudConversationId = conversationId;
@@ -143,16 +183,17 @@ class AudioEngine {
       this.cloudConversationId = null;
       this.releaseMicIfIdle();
       toast(String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, ''), 'error', 7000);
-    }
+    } finally { this.starting = false; }
   }
-  async startLocalVoice(conversationId) {
+  async startLocalVoice(conversationId, generation = this.startGeneration) {
     const available = await rpc('voice.localStatus');
     if (!available.ready) {
       toast(available.error + ' → Einstellungen → Sprache', 'error', 10000);
       return;
     }
-    if (getState().conversationId !== conversationId) return;
+    if (generation !== this.startGeneration || getState().conversationId !== conversationId) return;
     await this.ensureMic();
+    if (generation !== this.startGeneration || getState().conversationId !== conversationId) { this.releaseMicIfIdle(); return; }
     if (this.inCtx.state === 'suspended') await this.inCtx.resume();
     this.localChunks = [];
     this.localSamples = 0;
@@ -191,6 +232,7 @@ class AudioEngine {
     }
   }
   async stopVoice() {
+    this.startGeneration++;
     this.mode.stream = false;
     this.cloudConversationId = null;
     this.setMuted(false);
@@ -218,18 +260,19 @@ class AudioEngine {
     }
     if (this.wakeWorker) { this.wakeWorker.postMessage({ type: 'threshold', value: sens }); return; }
     try {
-      this.wakeWorker = new Worker('audio/wakeword-worker.js', { type: 'module' });
+      const worker = this.wakeWorker = new Worker('audio/wakeword-worker.js', { type: 'module' });
       this.wakeWorker.onmessage = (e) => {
         const m = e.data;
         if (m.type === 'ready') this.wakeReady = true;
-        if (m.type === 'error') { toast('Wake-Word: ' + m.error, 'error'); }
+        if (m.type === 'error') { toast('Wake-Word: ' + m.error, 'error'); this.setWakeWord(false); }
         if (m.type === 'wake' && !this.mode.stream && !this.mode.local && !this.localWorking) { chime(); this.startVoice(); }
         if (m.type === 'score') setState({ wakeScore: m.score });
       };
       this.wakeWorker.postMessage({ type: 'init', threshold: sens });
       await this.ensureMic();
+      if (this.wakeWorker !== worker) { this.releaseMicIfIdle(); return; }
       this.mode.wake = true;
-    } catch (e) { toast('Mikrofon für Wake-Word nicht verfügbar: ' + e.message, 'error'); }
+    } catch (e) { await this.setWakeWord(false); toast('Mikrofon für Wake-Word nicht verfügbar: ' + e.message, 'error'); }
   }
 
   /** Local Windows TTS (offline, no API cost) for read-aloud & coach tips. */

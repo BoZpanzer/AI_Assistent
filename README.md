@@ -95,7 +95,7 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
 - **Renderer gehärtet:** Sandbox, contextIsolation, strikte CSP, Navigations- und Fenstersperre, nur Mikrofon-Berechtigung, IPC prüft den Absender.
 - **Werkzeuge:** Schema-Validierung, Bestätigung für kritische Aktionen, keine Systembefehle, keine Ausführung von Modell-Code.
 - **Dokumente** werden in einem isolierten Worker mit Zeitlimit geparst (pdf.js ohne eval/Fonts/XFA).
-- **Mikrofon:** Gemini Live ist gesperrt, damit private Sprache nicht vor einer Prüfung den PC verlässt. Das Wake-Word läuft lokal; lokale Spracherkennung ist noch nicht eingerichtet.
+- **Mikrofon:** Private Chats verwenden lokale Spracherkennung über ein installiertes whisper.cpp samt Modell. Uni-/Gaming-Chats können Gemini Live nach ausdrücklicher Zustimmung pro Sitzung nutzen. Das Wake-Word läuft lokal. Ein nicht mehr vorhandenes ausgewähltes Mikrofon wird automatisch durch das Standardgerät ersetzt.
 
 ## Entwickeln, Testen, Bauen
 
@@ -124,6 +124,8 @@ Einrichtung, Datenschutzgrenzen, geplante Ausgaben-Buckets und Tarkov-Ziele: [An
 
 Zwölf Wiki-Karten liegen im Programm und werden beim Öffnen des Kartenwidgets lokal bereitgestellt. Die Varianten „Wiki“ haben eigene Ziele, Marker und Routen; bestehende SVG-Karten werden nicht ersetzt. Terminal ist nicht enthalten. Quellen und Lizenz: [Kartennachweise](src/main/assets/tarkov-wiki/ATTRIBUTION.md).
 
-Die Wiki-Bilder sind **nicht vollständig vorkalibriert**. Unter „Kalibrieren“ drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen: einen Exit aus der Liste auswählen und seine Position anklicken, alternativ Spielkoordinaten eingeben. JARVIS berechnet daraus automatisch die affine Umrechnung einschließlich Spiegelung und unterschiedlicher Skalierung. Keine separaten Stockwerk-Inserts verwenden; das Ergebnis an weiteren Landmarken prüfen. Ohne passende Referenzen bleiben API-Positionen ausgeblendet. Die separat ladbaren SVG-Karten besitzen weiterhin ihre vorhandene automatische Kalibrierung.
+Die Tarkov-Karte startet mit der automatisch kalibrierten Customs-SVG. Fehlende SVG-Karten werden beim Öffnen der jeweiligen Karte automatisch geladen; dafür wird beim ersten Laden eine Internetverbindung benötigt. Eigene Kartenbilder werden nicht überschrieben. Bei einer Wiki-Karte versucht JARVIS selbstständig, die passende SVG-Referenz zu laden und die Bilder lokal zuzuordnen. Nur ausreichend sichere Zuordnungen werden gespeichert. Die Wiki-Bilder sind **nicht vollständig vorkalibriert**: Scheitert die Bildzuordnung, bleiben API-Positionen ausgeblendet. Die SVG-Variante funktioniert ohne manuelle Kalibrierung. Optional lassen sich unter „Kalibrieren“ drei weit auseinanderliegende Landmarken zuordnen; keine separaten Stockwerk-Inserts verwenden.
+
+Im ausdrücklich ausgewählten Gaming-Chat stehen LoL-Livewerte, Statistiken, Championinformationen, Coaching, Spielnotizen und Trainingsziele auch per Sprache zur Verfügung. Private Werkzeuge werden dem Cloud-Sprachmodell nicht angeboten. Nach Verbindungsabbrüchen werden Sprachsitzungen automatisch wiederaufgenommen; gestoppte oder ersetzte Verbindungen dürfen keine neue Sitzung beeinflussen. Die automatische LoL-Nachbesprechung berücksichtigt auch Wiederverbindungsphasen des Clients.
 
 Beim Austausch eines Kartenbilds wird die alte Kalibrierung entfernt. Die Testfälle prüfen Offline-Import, getrennte Routen/Ziele, degenerierte Referenzpunkte und den Datenschutz ohne Cloud-Ausweichpfad. Die früheren Tests für Cloud-Kalender-Schreibzugriffe, Live-Audio und vollständige Drive-Backups prüfen jetzt deren Sperre; lokale KI-Tests verwenden einen separaten Fake sowie einen echten Loopback-HTTP-Test.

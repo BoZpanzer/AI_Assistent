@@ -117,7 +117,7 @@ function createCore(opts) {
     if (stopped.includes('eft')) s.gaming.eftLogs.stop();
   });
   // Unbekanntes Spiel wird gespielt/besprochen → eigene Seite gestalten (einmal, im Hintergrund)
-  bus.on('game:context', (st) => { for (const x of [st?.active, st?.discussed]) if (x?.id) { clearTimeout(s._designTimer); s.gaming.eftLogs?.stop({ final: false }); s.gaming.eftRaid?.stop(); s._designTimer = setTimeout(() => { if (!s.stopped) s.gaming.designer.maybeAuto(x.id); }, 1500); } });
+  bus.on('game:context', (st) => { for (const x of [st?.active, st?.discussed]) if (x?.id) { clearTimeout(s._designTimer); s._designTimer = setTimeout(() => { if (!s.stopped) s.gaming.designer.maybeAuto(x.id); }, 1500); } });
   s.gaming.steam = new Steam(s);
   s.gaming.context.steam = s.gaming.steam;
   s.system = new System(s);
@@ -150,7 +150,7 @@ function createCore(opts) {
   };
   s.stop = () => {
     s.stopped = true;
-    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.eftLogs.stop({ final: false }); s.gaming.eftRaid.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

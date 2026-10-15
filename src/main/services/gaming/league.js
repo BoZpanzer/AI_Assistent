@@ -211,7 +211,7 @@ class League {
     for (const d of dirs) {
       try {
         const [, , port, password, protocol] = fs.readFileSync(path.join(d, 'lockfile'), 'utf8').trim().split(':');
-        if (port && password) { creds = { port: Number(port), password, protocol: protocol || 'https' }; this.leagueDirFound = d; break; }
+        if (Number.isInteger(Number(port)) && Number(port) > 0 && Number(port) <= 65535 && password && (!protocol || protocol === 'https')) { creds = { port: Number(port), password, protocol: protocol || 'https' }; this.leagueDirFound = d; break; }
       } catch { /* not here */ }
     }
     if (!creds && process.platform === 'win32') creds = await this.lcuFromProcess();
