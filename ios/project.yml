@@ -1,0 +1,19 @@
+name: JarvisCompanion
+options:
+  bundleIdPrefix: de.boz
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  JarvisCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: JarvisCompanion
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.boz.jarvis.companion
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        CODE_SIGNING_ALLOWED: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
