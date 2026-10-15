@@ -82,7 +82,7 @@ export function Calendar() {
                  const saved = await guard(() => rpc('settings.update', { google: { exportLocalToGoogle: enabled } }), enabled ? 'Google-Übertragung aktiviert' : 'Google-Übertragung deaktiviert');
                  if (saved && enabled) await guard(() => rpc('calendar.sync'), 'Kalender abgeglichen');
                }} />JARVIS-Termine & Vorlesungen regelmäßig nach Google spiegeln</label>
-               {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden separat verändert und nicht überschrieben.</div>
+               {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden separat verändert und nicht überschrieben.</div>}
               <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst Google-Synchronisation aktivieren' : ''} onClick={async () => {
                 const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
                 if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
