@@ -26,6 +26,11 @@ class LiveVoice {
     this.lastActivity = Date.now(); this.idleTimer = null; this.pendingTools = 0;
     this.lastUserUtterance = { text: '', at: 0 };
     this.model = null; this.extended = false;
+    // A conversation can be marked private while a cloud session is active.
+    // Tear down immediately instead of waiting for the next microphone frame.
+    this.s.bus.on('conversations:changed', () => {
+      if (this.conversationId && this.session && !this.cloudConversationAllowed()) this.stop();
+    });
   }
 
   setState(state, extra = {}) {
@@ -37,18 +42,40 @@ class LiveVoice {
 
   isOpen() { return !!this.session; }
 
-  async start({ conversationId } = {}) {
-    throw new Error('Datenschutz: Gemini Live überträgt Audio direkt. Bitte den lokalen Textchat verwenden; lokale Spracheingabe ist noch nicht eingerichtet.');
-    if (this.session || this.state === 'connecting') return { state: this.state };
+  cloudConversationAllowed() {
+    const c = this.conversationId && this.s.conversations.get(this.conversationId);
+    return !!c && ['study', 'gaming'].includes(c.privacy);
+  }
+
+  assertCloudConversation() {
+    if (!this.cloudConversationAllowed()) {
+      this.stop();
+      throw new Error('Datenschutz: Für private Chats ist Cloud-Audio gesperrt. Bitte lokale Spracheingabe verwenden.');
+    }
+  }
+
+  async start({ conversationId, cloudAudioApproved = false } = {}) {
     const { gemini, settings, conversations } = this.s;
+    const conversation = conversationId ? conversations.get(conversationId) : conversations.current();
+    if (!conversation || !['study', 'gaming'].includes(conversation.privacy)) {
+      throw new Error('Datenschutz: Gemini Live ist nur für freigegebene Uni-/Gaming-Gespräche erlaubt.');
+    }
+    if (cloudAudioApproved !== true) {
+      throw new Error('Datenschutz: Audioübertragung an Gemini benötigt vor jeder Sitzung deine ausdrückliche Zustimmung.');
+    }
+    if (this.session || this.state === 'connecting') {
+      if (this.conversationId !== conversation.id) throw new Error('Eine andere Sprachsitzung ist aktiv. Bitte diese zuerst beenden.');
+      return { state: this.state };
+    }
     if (!gemini.hasKey()) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
     const vs = settings.get('voice');
     this.extended = !!vs.extendedThinking && !!gemini.model('liveThinking');
     this.model = this.extended ? gemini.model('liveThinking') : gemini.requireModel('live');
-    this.conversationId = (conversationId && conversations.get(conversationId) ? conversationId : conversations.current().id);
+    this.conversationId = conversation.id;
     this.closing = false;
     this.setState('connecting');
     await this.connect();
+    this.assertCloudConversation();
     return { state: this.state, model: this.model };
   }
 
@@ -77,6 +104,7 @@ class LiveVoice {
   }
 
   async connect() {
+    this.assertCloudConversation();
     const client = this.s.gemini.client();
     const fresh = !this.handle;
     try {
@@ -95,6 +123,7 @@ class LiveVoice {
       this.setState('error', { error: friendlyError(e) });
       throw new Error(friendlyError(e));
     }
+    this.assertCloudConversation();
     this.reconnects = 0;
     if (fresh) {
       // Shared memory with the text chat: prime with recent turns of the same conversation.
@@ -103,6 +132,7 @@ class LiveVoice {
         try { this.session.sendClientContent({ turns: hist, turnComplete: false }); } catch (e) { log.debug('History-Prime', e); }
       }
     }
+    this.assertCloudConversation();
     this.setState('listening');
     this.touch();
   }
@@ -120,6 +150,7 @@ class LiveVoice {
   /** PCM16 mono 16 kHz from renderer. */
   sendAudio(buf) {
     if (!this.session) return;
+    if (!this.cloudConversationAllowed()) { this.stop(); return; }
     try { this.session.sendRealtimeInput({ audio: { data: Buffer.from(buf).toString('base64'), mimeType: 'audio/pcm;rate=16000' } }); } catch (e) { log.debug('sendAudio', e); }
   }
   activity() { this.touch(); }
@@ -127,12 +158,14 @@ class LiveVoice {
   /** Typed text into an open voice session (e.g. from the chat bar while talking). */
   sendText(text) {
     if (!this.session) return false;
+    if (!this.cloudConversationAllowed()) { this.stop(); return false; }
     this.session.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true });
     this.s.conversations.add(this.conversationId, { role: 'user', content: text, channel: 'voice' });
     return true;
   }
 
   async onMessage(m) {
+    if (!this.cloudConversationAllowed()) { this.stop(); return; }
     const sc = m.serverContent;
     if (m.usageMetadata) this.s.gemini.record?.('voice', this.model, m.usageMetadata);
     if (m.sessionResumptionUpdate?.resumable && m.sessionResumptionUpdate.newHandle) this.handle = m.sessionResumptionUpdate.newHandle;
@@ -181,6 +214,7 @@ class LiveVoice {
   }
 
   async onToolCall(calls) {
+    if (!this.cloudConversationAllowed()) { this.stop(); return; }
     this.setState('thinking');
     this.pendingTools++;
     const responses = [];
@@ -218,6 +252,7 @@ class LiveVoice {
   }
 
   async reconnect() {
+    if (!this.cloudConversationAllowed()) { this.stop(); return; }
     const old = this.session; this.session = null;
     try { old?.close(); } catch { /* ignore */ }
     if (this.closing) return;

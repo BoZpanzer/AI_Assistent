@@ -265,7 +265,9 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
   const ref = useRef();
   useEvent('ui:focus-input', () => ref.current?.focus());
   useEffect(() => { if (draft != null) { setText(draft); setState({ chatDraft: null }); setTimeout(() => ref.current?.focus(), 0); } }, [draft]);
-  const voiceOn = ['listening', 'speaking', 'thinking', 'connecting'].includes(voice);
+  const liveVoiceOn = ['listening', 'speaking', 'thinking', 'connecting'].includes(voice);
+  const localVoiceOn = voice === 'recording-local';
+  const voiceOn = liveVoiceOn || localVoiceOn;
   const send = async () => {
     const t = text.trim();
     if (!t && !files.length) return;
@@ -296,11 +298,11 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
       <div class="chatbar">
         <button class="btn icon attach" onClick={attach} title="Datei anhängen"><Paperclip size={22} /></button>
         <div class="input">
-          <textarea ref={ref} rows={1} placeholder={voiceOn ? 'Sprachmodus aktiv – sprich einfach oder tippe …' : placeholder} value={text}
+          <textarea ref={ref} rows={1} placeholder={localVoiceOn ? '🔒 Offline-Aufnahme läuft – zum Erkennen erneut auf das Mikrofon klicken …' : voice === 'transcribing-local' ? '🔒 Sprache wird offline erkannt …' : voiceOn ? 'Gemini Live aktiv – sprich einfach oder tippe …' : placeholder} value={text}
             onInput={(e) => { setText(e.currentTarget.value); e.currentTarget.style.height = '52px'; e.currentTarget.style.height = Math.min(140, e.currentTarget.scrollHeight) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-          {voiceOn && <button class="mic" style={muted ? { color: 'var(--red)' } : undefined} onClick={() => audio.setMuted(!muted)} title={muted ? 'Stummschaltung aufheben' : 'Mikrofon stummschalten'}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</button>}
-          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} onClick={() => audio.toggleVoice()} title={voiceOn ? 'Sprachmodus beenden' : 'Sprechen (Gemini Live)'}>
+          {liveVoiceOn && <button class="mic" style={muted ? { color: 'var(--red)' } : undefined} onClick={() => audio.setMuted(!muted)} title={muted ? 'Stummschaltung aufheben' : 'Mikrofon stummschalten'}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</button>}
+          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Offline-Aufnahme stoppen und privat senden' : liveVoiceOn ? 'Cloud-Sprachmodus beenden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : privateMode ? '🔒 Offline-Spracherkennung (whisper.cpp)' : '☁ Gemini Live (Zustimmung erforderlich)'}>
             {voiceOn ? <CircleStop size={22} /> : <Mic size={22} />}
           </button>
           <button class="send" onClick={send} title="Senden (Enter)"><SendHorizontal size={24} /></button>

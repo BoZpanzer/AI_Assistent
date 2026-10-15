@@ -82,7 +82,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.list': ({ q } = {}) => s.conversations.list({ q }),
     'conv.messages': ({ id, limit }) => s.conversations.messages(id, { limit: limit || 200 }),
     'conv.create': ({ title, privacy } = {}) => s.conversations.create(title, privacy),
-    'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
+    'conv.private': ({ id }) => { if (s.voice.conversationId === id) s.voice.stop(); s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
     'local.installOllama': () => s.localLLM.installOllama(),
@@ -99,7 +99,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'confirm.resolve': ({ token, approve }) => s.orchestrator.resolveConfirmation(token, !!approve),
     'confirm.list': () => s.confirmations.list(),
     'action.undo': ({ tool, args }) => s.orchestrator.runInternal(tool, args),
-    'dialog.pickFiles': ({ kind }) => pick({ properties: ['openFile', 'multiSelections'], filters: kind === 'image' ? [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] : kind === 'audio' ? [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }] : kind === 'backup' ? [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3'] }] : [{ name: 'Dokumente', extensions: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'] }] }),
+    'dialog.pickFiles': ({ kind }) => pick({ properties: ['openFile', 'multiSelections'], filters: kind === 'image' ? [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] : kind === 'audio' ? [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }] : kind === 'backup' ? [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3'] }] : kind === 'whisper-cli' ? [{ name: 'Whisper executable', extensions: ['exe'] }] : kind === 'whisper-model' ? [{ name: 'Whisper GGML model', extensions: ['bin'] }] : [{ name: 'Dokumente', extensions: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'] }] }),
     'dialog.pickFolder': async () => (await pick({ properties: ['openDirectory'] }))?.[0] || null,
 
     // --- tasks ---
@@ -505,7 +505,32 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'briefing.today': () => s.briefing(),
 
     // --- voice ---
-    'voice.start': ({ conversationId } = {}) => s.voice.start({ conversationId }),
+    'voice.target': ({ conversationId } = {}) => {
+      const c = conversationId ? s.conversations.get(conversationId) : null;
+      if (!c) throw new Error('Sprachchat nicht gefunden.');
+      return { privacy: c.privacy };
+    },
+    'voice.localStatus': () => {
+      const { checkInstallation } = require('./voice/local-whisper');
+      const voice = s.settings.get('voice');
+      try { checkInstallation(voice.whisperExecutable, voice.whisperModel); return { ready: true }; }
+      catch (e) { return { ready: false, error: e.message }; }
+    },
+    'voice.transcribeLocal': async ({ conversationId, audio } = {}) => {
+      const getPrivate = () => s.conversations.get(conversationId)?.privacy === 'private';
+      if (!getPrivate()) throw new Error('Datenschutz: Lokale Spracheingabe nur in privaten Gesprächen.');
+      const { transcribeLocal } = require('./voice/local-whisper');
+      const voice = s.settings.get('voice');
+      const text = await transcribeLocal({
+        audio, executable: voice.whisperExecutable, model: voice.whisperModel,
+      });
+      // Prevent a private audio transcript being routed to a cloud chat if the
+      // user switched the same conversation's privacy during transcription.
+      if (!getPrivate()) throw new Error('Gesprächsmodus während der Aufnahme geändert; nichts gesendet.');
+      s.orchestrator.chat({ conversationId, text, attachments: [] }).catch((e) => log.error('chat', e));
+      return { text, started: true };
+    },
+    'voice.start': ({ conversationId, cloudAudioApproved } = {}) => s.voice.start({ conversationId, cloudAudioApproved }),
     'voice.stop': () => s.voice.stop(),
     'voice.state': () => ({ state: s.voice.state, model: s.voice.model }),
     'voice.activity': () => s.voice.activity(),

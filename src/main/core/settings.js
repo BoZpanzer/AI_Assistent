@@ -57,6 +57,7 @@ const SCHEMA = {
       voiceName: { type: 'string', maxLength: 60 }, speakReplies: { type: 'boolean' },
       wakeWord: { type: 'boolean' }, wakeSensitivity: { type: 'number', minimum: 0.1, maximum: 0.95 },
       pushToTalkKey: { type: 'string', maxLength: 40 }, extendedThinking: { type: 'boolean' },
+      whisperExecutable: { type: 'string', maxLength: 1000 }, whisperModel: { type: 'string', maxLength: 1000 },
       bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 } } },
     // Google
     google: { type: 'object', properties: {
@@ -128,7 +129,8 @@ const DEFAULTS = {
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, warnPct: 80, brake: true, usdToEur: 0.86 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
-    wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
+    wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90,
+    whisperExecutable: '', whisperModel: '' },
   google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
   gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: true, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: true, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },
