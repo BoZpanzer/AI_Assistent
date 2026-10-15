@@ -30,7 +30,7 @@ const PASSWORDLESS_GOOGLE = () => {
 };
 const dbFor = (rows, { fresh = true, writable = true } = {}) => ({
   get: (sql, id) => sql.includes('FROM calendar_feeds')
-    ? fresh ? { last_fetch: new Date().toISOString(), last_error: null } : { last_fetch: null, last_error: 'offline' }
+    ? fresh ? { last_fetch: new Date(Date.now() - 60_000).toISOString(), last_error: null } : { last_fetch: null, last_error: 'offline' }
     : { id, writable: writable ? 1 : 0 },
   all: () => rows,
 });
