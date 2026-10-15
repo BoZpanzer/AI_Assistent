@@ -62,13 +62,28 @@ test('LoL ohne API-Schlüssel: Matches + Rang aus dem lokalen League-Client', { 
   assert.equal(st.current.kp, null, 'Kill-Beteiligung unbekannt statt erfunden');
   assert.deepEqual({ tier: st.rank.tier, rank: st.rank.rank, lp: st.rank.lp }, { tier: 'GOLD', rank: 'II', lp: 47 });
   assert.equal((await L.source()).me.name, 'BoZ#EUW');
+  const online = await L.source();
+  assert.equal(online.client, true);
+  assert.equal(online.key, false, 'lokale Matchhistorie funktioniert ohne API-Key');
+  assert.equal(online.cached, true);
+  assert.equal(online.clientReason, null);
+  assert.match(online.liveHint, /während eines laufenden Matches/);
   // falsches Passwort → sauberer Fehler, kein Absturz
   fs.writeFileSync(path.join(dir, 'lockfile'), `LeagueClient:1:${srv.address().port}:falsch:https`);
   L._lcu = null;
   assert.equal(await L.clientAvailable(), false);
+  const authFail = await L.source();
+  assert.equal(authFail.client, false);
+  assert.equal(authFail.key, false);
+  assert.equal(authFail.cached, true, 'gespeicherte Nachbesprechungen bleiben verfügbar');
+  assert.match(authFail.clientReason, /lokale Anmeldung fehlgeschlagen/);
   srv.close();
   L._lcu = null;
   await assert.rejects(L.syncMatches(), /League-Client/);
+  const offline = await L.source();
+  assert.equal(offline.client, false);
+  assert.equal(offline.cached, true);
+  assert.match(offline.clientReason, /nicht erkannt|antwortet nicht/);
   cleanup();
   fs.rmSync(dir, { recursive: true, force: true });
 });
