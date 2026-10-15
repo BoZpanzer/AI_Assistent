@@ -7,6 +7,8 @@ name: Release (Windows)
 on:
   push:
     tags: ['v*']
+    branches: ['main']
+    paths: ['.github/release-request-v3.34.0.txt']
   workflow_dispatch:
     inputs:
       tag:
@@ -22,10 +24,11 @@ concurrency:
 
 jobs:
   release:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main' || github.event.head_commit.message == 'release: trigger v3.34.0'
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TAG: ${{ github.event.inputs.tag || (github.ref == 'refs/heads/main' && 'v3.34.0') || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
 
