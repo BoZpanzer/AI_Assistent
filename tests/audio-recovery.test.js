@@ -22,7 +22,7 @@ function harness({ getUserMedia, addModule } = {}) {
     connect() { return { connect() {} }; }
   }
   const source = fs.readFileSync(path.join(__dirname, '../src/renderer/src/lib/audio.js'), 'utf8')
-    .replace(/^import .*;\n/gm, '').replace(/^export /gm, '') + '\nglobalThis.engine = audio;';
+    .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '') + '\nglobalThis.engine = audio;';
   const sandbox = { AudioContext: Context, AudioWorkletNode: Worklet, navigator: { mediaDevices: { getUserMedia: getUserMedia || (async () => stream) } },
     on() {}, rpc: async () => ({}), getState: () => state, setState: patch => Object.assign(state, patch), toast() {}, ask: async () => true,
     speechSynthesis: { cancel() {} }, atob: x => Buffer.from(x, 'base64').toString('binary'), setTimeout, clearTimeout };
