@@ -74,7 +74,8 @@ class System {
     this.setMeta(key, '1');
     const dir = path.join(this.backupDir(), 'auto');
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.zip')).sort();
-    for (const f of files.slice(0, Math.max(0, files.length - 7))) fs.rmSync(path.join(dir, f), { force: true });
+    const keep = Math.max(1, Math.min(100, this.s.settings.get('localBackup')?.keep || 7));
+    for (const f of files.slice(0, Math.max(0, files.length - keep))) fs.rmSync(path.join(dir, f), { force: true });
     return r;
   }
 
