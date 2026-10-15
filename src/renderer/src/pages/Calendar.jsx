@@ -75,13 +75,13 @@ export function Calendar() {
               {status?.error && <div class="small err">{status.error}</div>}
               <button class="btn sm mt" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}>{status?.syncing ? <Spinner /> : <RefreshCw size={14} />}Jetzt synchronisieren</button>
               <label class="row gap-s mt small"><input type="checkbox" checked={!!appSettings?.google?.exportLocalToGoogle} onChange={(e) => guard(() => rpc('settings.update', { google: { exportLocalToGoogle: e.currentTarget.checked } }), e.currentTarget.checked ? 'Google-Export aktiviert' : 'Google-Export deaktiviert')} />Eigene Termine & Vorlesungen regelmäßig nach Google übertragen</label>
-              <button class="btn sm mt" onClick={async () => {
+              <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst Google-Synchronisation aktivieren' : ''} onClick={async () => {
                 const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
                 if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
                 const ok = await ask('JARVIS-Termine und Vorlesungen der letzten 30 und nächsten 180 Tage in Google Kalender „' + target.name + '“ kopieren? Die Daten werden an Google übertragen.', '', { confirmOnly: true, okLabel: 'Zu Google kopieren' });
                 if (!ok) return;
                 const result = await guard(() => rpc('calendar.exportToGoogle', { calendarId: target.id }));
-                if (result) toast('Google: ' + result.created + ' neu, ' + result.updated + ' aktualisiert, ' + result.failed + ' Fehler');
+                if (result) toast('Google: ' + result.created + ' neu, ' + result.updated + ' aktualisiert, ' + result.unchanged + ' unverändert, ' + result.deleted + ' entfernt, ' + result.conflicts + ' Konflikte, ' + result.failed + ' Fehler', result.failed ? 'error' : 'info', 10000);
               }}><Cloud size={14} />JARVIS & Vorlesungen zu Google kopieren</button>
             </> : <><div class="small muted">Termine bleiben lokal, bis du Google verbindest.</div><button class="btn sm mt" onClick={() => setState({ page: 'settings' })}>Verbinden…</button></>}
           </Panel>
