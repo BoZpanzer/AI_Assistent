@@ -56,7 +56,13 @@ class Notifications {
     const pub = this.toPublic(item);
     this.bus.emit('notification', pub);
     const cats = this.settings.get('notifyCategories') || {};
-    if (n.toast !== false && this.settings.get('notifications') && cats[item.category] !== false && !this.inQuietHours() && this.toast) {
+    const cooldown = this.settings.get('notificationCooldownMinutes') ?? 10;
+    const toastKey = item.category + ':' + item.title;
+    const recent = this._recentToasts || (this._recentToasts = new Map());
+    const suppressed = cooldown > 0 && Date.now() - (recent.get(toastKey) || 0) < cooldown * 60000;
+    if (n.toast !== false && !suppressed && this.settings.get('notifications') && cats[item.category] !== false && !this.inQuietHours() && this.toast) {
+      recent.set(toastKey, Date.now());
+      if (recent.size > 500) recent.clear();
       try { this.toast(item.title, item.body); } catch { /* ignore */ }
     }
     return pub;
