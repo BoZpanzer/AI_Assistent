@@ -29,24 +29,25 @@ function MapWidget({ game, params }) {
   const options = useMemo(() => {
     const names = new Map();
     for (const m of eftMaps?.maps || []) names.set(m.id, m.name);
-    for (const m of userMaps || []) if (!names.has(m.name)) names.set(m.name, m.name);
+    for (const m of userMaps || []) if (!names.has(m.name)) names.set(m.name, m.source?.label || m.name);
     if (!names.size) names.set('Hauptkarte', 'Hauptkarte');
     return [...names.entries()].map(([value, label]) => ({ value, label }));
   }, [eftMaps, userMaps]);
-  const [map, setMap] = useState(params.map || (isEft ? 'customs' : 'Hauptkarte'));
+  const [map, setMap] = useState(params.map || (isEft ? 'customs-wiki' : 'Hauptkarte'));
   useEffect(() => { if (params.map) setMap(params.map); }, [params.map]);
   useEffect(() => { rpc('game.setLastMap', { game: game.id, map }).catch(() => {}); }, [game.id, map]);
   const [markers, reloadMarkers] = useRpc('game.markers', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
-  const [apiMap] = useRpc('tarkov.map', { map }, { enabled: isEft, deps: [map] });
+  const baseMap = (userMaps || []).find((m) => m.name === map)?.source?.baseMap || map;
+  const [apiMap] = useRpc('tarkov.map', { map: baseMap }, { enabled: isEft, deps: [baseMap] });
   const meta = (userMaps || []).find((m) => m.name === map);
   const [pos, setPos] = useState(null);
   const [follow, setFollow] = useState(true);
   const nowT = useNow(5000);
   useEffect(() => { if (isEft) rpc('tarkov.position').then(setPos).catch(() => {}); }, [isEft]);
-  useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== map) setMap(p.map); });
+  useEvent('game:position', (p) => { if (!isEft || p.game !== 'eft') return; setPos(p); if (follow && p.map && p.map !== baseMap) setMap(p.map); });
   const [loadingMaps, setLoadingMaps] = useState(false);
-  const autoTried = useRef(false);
+  useEffect(() => { if (isEft) rpc('tarkov.importWikiMaps').then(reloadMaps).catch(() => toast('Wiki-Karten konnten nicht bereitgestellt werden', 'error')); }, [isEft]);
   const loadEftMaps = async ({ force = false, quiet = false } = {}) => {
     setLoadingMaps(true);
     const r = quiet ? await rpc('tarkov.importMaps', { force }).catch(() => null) : await guard(() => rpc('tarkov.importMaps', { force }));
@@ -54,14 +55,6 @@ function MapWidget({ game, params }) {
     if (r && !quiet) toast(r.done.length ? `${r.done.length} Karten von tarkov.dev geladen` : r.failed.length ? 'Karten konnten nicht geladen werden: ' + r.failed[0].error : 'Alle Karten sind schon da', r.failed.length && !r.done.length ? 'error' : undefined, 6000);
     return r;
   };
-  // Tarkov: fehlende Karten beim ersten Öffnen automatisch von tarkov.dev holen (ältere ohne Stockwerke werden erneuert)
-  useEffect(() => {
-    if (!isEft || autoTried.current || !Array.isArray(userMaps) || !eftMaps) return;
-    const cur = userMaps.find((m) => m.name === map) || {};
-    if (cur.hasImage && !(cur.source && !Array.isArray(cur.source.floors))) return;
-    autoTried.current = true;
-    loadEftMaps({ quiet: true });
-  }, [isEft, userMaps, eftMaps, map]);
   const [tool, setTool] = useState('custom');
   const [visible, setVisible] = useState(Object.fromEntries(CATS.map((c) => [c.id, true])));
   const [showApi, setShowApi] = useState(true);
@@ -69,6 +62,11 @@ function MapWidget({ game, params }) {
   const [full, setFull] = useState(false);
   const [history, setHistory] = useState([]);
   const [routeDraft, setRouteDraft] = useState(null);
+  const [goal] = useRpc('tarkov.routeGoal', { map }, { enabled: isEft, deps: [map], events: ['game:markers'] });
+  const [placingGoal, setPlacingGoal] = useState(false);
+  useEffect(() => { setRouteDraft(null); setPlacingGoal(false); setCalib(null); setLandmark('manual'); }, [map]);
+  const [landmark, setLandmark] = useState('manual');
+  const references = (apiMap?.map?.extracts || []).filter(e => Number.isFinite(e.position?.x) && Number.isFinite(e.position?.z));
   const [calib, setCalib] = useState(null); // {step, points:[]}
   const [imgSize, setImgSize] = useState({ w: 1600, h: 1000 });
   const box = useRef(); const drag = useRef(null);
@@ -94,7 +92,7 @@ function MapWidget({ game, params }) {
     const s = il / gl; const rot = Math.atan2(iy * imgSize.h, ix * imgSize.w) - Math.atan2(gz, gx);
     return (x, z) => { const dx = x - a.gx, dz = z - a.gz; const px = (dx * Math.cos(rot) - dz * Math.sin(rot)) * s, py = (dx * Math.sin(rot) + dz * Math.cos(rot)) * s; return { x: a.ix + px / imgSize.w, y: a.iy + py / imgSize.h }; };
   }, [meta?.calibration, imgSize]);
-  const [questMarks] = useRpc('tarkov.questMarkers', { map }, { enabled: isEft && showQuests && !!transform, deps: [map, showQuests, !!transform], events: ['game:progress'] });
+  const [questMarks] = useRpc('tarkov.questMarkers', { map: baseMap }, { enabled: isEft && showQuests && !!transform, deps: [baseMap, showQuests, !!transform], events: ['game:progress'] });
   const questPins = isEft && showQuests && transform ? (questMarks?.markers || []).map((q) => ({ ...transform(q.x, q.z), category: 'quest', label: q.task.length > 22 ? q.task.slice(0, 21) + '…' : q.task, objective: q.objective, task: q.task, api: true })) : [];
   const faction = useStore((x) => x.settings?.gaming?.eftFaction) || 'pmc';
   const apiPins = isEft && showApi && transform && apiMap?.map ? [
@@ -107,12 +105,22 @@ function MapWidget({ game, params }) {
     const p = toNorm(e);
     if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return;
     if (calib) {
-      const ref = await ask(`Referenzpunkt ${calib.points.length + 1}: Spielkoordinaten „x, z“ dieses Punktes (z. B. aus tarkov.dev)`, '');
+      const known = landmark === 'manual' ? null : references[Number(landmark)];
+      const ref = known ? `${known.position.x}, ${known.position.z}` : await ask(`Referenzpunkt ${calib.points.length + 1}/3: Spielkoordinaten „x, z“ (drei weit auseinanderliegende Punkte auf der Hauptkarte, keine Stockwerk-Inserts)`, '');
       if (!ref) return;
-      const [gx, gz] = ref.split(/[,;\s]+/).map(Number);
-      if (!Number.isFinite(gx) || !Number.isFinite(gz)) return toast('Bitte zwei Zahlen eingeben', 'error');
+      const values = ref.trim().split(/[,;\s]+/).map(Number);
+      if (values.length !== 2 || !values.every(Number.isFinite)) return toast('Bitte zwei Zahlen eingeben', 'error');
+      const [gx, gz] = values;
       const pts = [...calib.points, { ix: p.x, iy: p.y, gx, gz }];
-      if (pts.length === 2) { await guard(() => rpc('game.calibrate', { game: game.id, map, points: pts }), 'Karte kalibriert – API-Punkte werden eingeblendet'); setCalib(null); reloadMaps(); } else setCalib({ points: pts });
+      if (pts.length === 3) {
+        const saved = await guard(() => rpc('game.calibrate', { game: game.id, map, points: pts }), 'Kalibrierung berechnet – Positionen bitte an weiteren Landmarken prüfen');
+        if (saved) { setCalib(null); reloadMaps(); }
+      } else setCalib({ points: pts });
+      return;
+    }
+    if (placingGoal) {
+      const label = goal?.label || await ask('Dein Routenziel', '');
+      if (label && await guard(() => rpc('tarkov.setRouteGoal', { map, goal: { ...p, label, floor } }))) setPlacingGoal(false);
       return;
     }
     if (routeDraft) { setRouteDraft([...routeDraft, p]); return; }
@@ -127,6 +135,7 @@ function MapWidget({ game, params }) {
   const onMove = (e) => { const d = drag.current; if (!d || !(e.buttons & 1)) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
   const editMarker = async (m) => {
+    if (placingGoal) { await guard(() => rpc('tarkov.setRouteGoal', { map, goal: { x: m.x, y: m.y, label: m.task || m.label || 'Ziel', floor } })); setPlacingGoal(false); return; }
     if (m.api) return toast(m.objective ? `${m.task}: ${m.objective} (Quelle: tarkov.dev)` : `${m.label} (Quelle: tarkov.dev)`, undefined, m.objective ? 8000 : undefined);
     const label = await ask('Marker bearbeiten – Beschriftung (leer = löschen)', m.label || '');
     if (label === null) return;
@@ -134,7 +143,7 @@ function MapWidget({ game, params }) {
     await rpc('game.updateMarker', { id: m.id, patch: { label } });
   };
   // eigene Position (aus dem letzten Tarkov-Screenshot) als Pfeil in Blickrichtung
-  const me = isEft && pos && pos.map === map && transform ? (() => { const a = transform(pos.x, pos.z); const b = transform(pos.x + pos.fx * 10, pos.z + pos.fz * 10); return { ...a, angle: Math.atan2((b.y - a.y) * imgSize.h, (b.x - a.x) * imgSize.w) * 180 / Math.PI, at: pos.at }; })() : null;
+  const me = isEft && pos && pos.map === baseMap && transform ? (() => { const a = transform(pos.x, pos.z); const b = transform(pos.x + pos.fx * 10, pos.z + pos.fz * 10); return { ...a, angle: Math.atan2((b.y - a.y) * imgSize.h, (b.x - a.x) * imgSize.w) * 180 / Math.PI, at: pos.at }; })() : null;
   const all = [...markers.filter((m) => visible[m.category]), ...apiPins.filter((m) => visible[m.category]), ...questPins.filter((m) => visible.quest && m.x >= 0 && m.x <= 1 && m.y >= 0 && m.y <= 1)];
   const content = (
     <div class={full ? 'overlay' : ''} style={full ? { placeItems: 'stretch', padding: 30 } : undefined}>
@@ -146,13 +155,18 @@ function MapWidget({ game, params }) {
         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, height: full ? 'calc(100% - 10px)' : 380 }}>
           <div class="map-tools">
             <div class="hud-label" style={{ fontSize: 11 }}>Marker setzen</div>
-            {CATS.map((c) => <div class={`tool ${tool === c.id && !routeDraft && !calib ? 'active' : ''}`} onClick={() => { setTool(c.id); setRouteDraft(null); setCalib(null); }} onContextMenu={(e) => { e.preventDefault(); setVisible({ ...visible, [c.id]: !visible[c.id] }); }} title="Rechtsklick: ein-/ausblenden" style={!visible[c.id] ? { opacity: 0.4 } : undefined}><span class={`pin ${c.cls}`} style={{ width: 18, height: 18, borderRadius: 4, display: 'grid', placeItems: 'center' }}><c.icon size={12} color="white" /></span>{c.label}</div>)}
+            {isEft && <><button class={`btn xs ${placingGoal ? 'active' : ''}`} onClick={() => { setPlacingGoal(!placingGoal); setRouteDraft(null); setCalib(null); }}><Target size={14} />{placingGoal ? 'Ziel anklicken…' : 'Mein Ziel setzen'}</button>
+            {goal && <><span class="tiny">Ziel: {goal.label}{goal.x == null ? ' · noch platzieren' : ''}</span><button class="btn xs" onClick={() => guard(() => rpc('tarkov.setRouteGoal', { map, goal: null }))}>Ziel entfernen</button>
+            {goal.x != null && routeDraft && <button class="btn xs" onClick={() => { setRouteDraft([...routeDraft, { x: goal.x, y: goal.y, label: goal.label }]); }}>Ziel an Route anhängen</button>}</>}</>}
+
+            {CATS.map((c) => <div class={`tool ${tool === c.id && !routeDraft && !calib ? 'active' : ''}`} onClick={() => { setTool(c.id); setPlacingGoal(false); setRouteDraft(null); setCalib(null); }} onContextMenu={(e) => { e.preventDefault(); setVisible({ ...visible, [c.id]: !visible[c.id] }); }} title="Rechtsklick: ein-/ausblenden" style={!visible[c.id] ? { opacity: 0.4 } : undefined}><span class={`pin ${c.cls}`} style={{ width: 18, height: 18, borderRadius: 4, display: 'grid', placeItems: 'center' }}><c.icon size={12} color="white" /></span>{c.label}</div>)}
             <div class="tool" onClick={async () => { const last = history.at(-1); if (!last) return toast('Nichts zum Rückgängigmachen'); await rpc('game.removeMarker', { id: last }); setHistory(history.slice(0, -1)); }}><Undo2 size={15} />Rückgängig</div>
             <div class="tool" onClick={async () => { if (await ask(`Alle eigenen Marker auf ${map} löschen?`, '', { confirmOnly: true, danger: true, okLabel: 'Löschen' })) rpc('game.clearMarkers', { game: game.id, map }); }}><Trash2 size={15} />Marker löschen</div>
-            <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
-            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}Karten laden</div>}
+            <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setPlacingGoal(false); setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
+            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}SVG-Karten laden</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
-            {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
+            {isEft && (!meta?.calibration?.affine || meta?.source?.source === 'wiki-bundle') && <div class={`tool ${calib ? 'active' : ''}`} title="Drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
+            {calib && <><Select value={landmark} onChange={setLandmark} options={[{ value: 'manual', label: 'Koordinaten eingeben' }, ...references.map((e, i) => ({ value: String(i), label: e.name }))]} /><span class="tiny">Exit auswählen, auf Hauptkarte anklicken. Drei verschiedene Punkte; keine Insets.</span></>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
             {isEft && transform && showApi && <div class="row" style={{ gap: 3, flexWrap: 'wrap' }} title="Welche Exits angezeigt werden">{[['pmc', 'PMC'], ['scav', 'Scav'], ['all', 'Alle']].map(([v, l]) => <span class={`chip ${faction === v ? 'active' : ''}`} style={{ fontSize: 10, padding: '1px 6px' }} onClick={() => guard(() => rpc('settings.update', { gaming: { eftFaction: v } }))}>{l}</span>)}</div>}
             {isEft && transform && showApi && <div class="tiny muted" style={{ lineHeight: 1.5 }}>{Object.entries({ normal: 'Exit', flare: 'Flare', coop: 'Co-op', car: 'Auto', transit: 'Transit' }).map(([k, l]) => <span style={{ whiteSpace: 'nowrap', marginRight: 6 }}><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: EXIT_COLOR[k], marginRight: 3 }} />{l}</span>)}</div>}
@@ -164,7 +178,9 @@ function MapWidget({ game, params }) {
               {imgUrl ? <img src={imgUrl} onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} /> : <div style={{ width: imgSize.w, height: imgSize.h }} />}
               <svg width={imgSize.w} height={imgSize.h} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {[...routes, ...(routeDraft ? [{ id: 'draft', points: routeDraft }] : [])].map((r) => <polyline points={r.points.map((p) => `${p.x * imgSize.w},${p.y * imgSize.h}`).join(' ')} fill="none" stroke={r.id === 'draft' ? '#facc15' : '#22d3ee'} stroke-width={4 / view.z} stroke-dasharray={`${12 / view.z} ${8 / view.z}`} />)}
+                {routes.map((r) => { const end = r.points.at(-1); return end && <g><circle cx={end.x * imgSize.w} cy={end.y * imgSize.h} r={7 / view.z} fill="#22d3ee" /><text x={end.x * imgSize.w} y={end.y * imgSize.h - 12 / view.z} fill="#22d3ee" font-size={13 / view.z}>{end.label || r.name}</text></g>; })}
               </svg>
+              {isEft && goal?.x != null && (goal.floor || null) === floor && <div class="marker" style={{ left: goal.x * imgSize.w, top: goal.y * imgSize.h, transform: `translate(-50%, -100%) scale(${1 / view.z})`, transformOrigin: '50% 100%', zIndex: 6 }} onClick={(e) => e.stopPropagation()}><div class="pin mk-quest" style={{ background: '#e879f9' }}><Target size={18} /></div><div class="lbl">ZIEL · {goal.label}</div></div>}
               {me && (nowT - Date.parse(me.at)) < 900000 && <div class="marker" title={`Du – Stand ${new Date(me.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} (letzter Screenshot)`} style={{ left: me.x * imgSize.w, top: me.y * imgSize.h, transform: `translate(-50%, -50%) scale(${1 / view.z})`, zIndex: 5 }} onClick={(e) => e.stopPropagation()}>
                 <svg width="30" height="30" viewBox="-15 -15 30 30" style={{ opacity: nowT - Date.parse(me.at) < 120000 ? 1 : nowT - Date.parse(me.at) < 300000 ? 0.6 : 0.35, transform: `rotate(${me.angle + 90}deg)`, filter: 'drop-shadow(0 0 6px rgba(250,204,21,.9))' }}><circle r="13" fill="rgba(250,204,21,.18)" /><path d="M0 -11 L8 8 L0 4 L-8 8 Z" fill="#facc15" stroke="#000" stroke-width="1.5" /></svg>
                 <div class="lbl" style={{ color: '#facc15' }}>{(() => { const s = (nowT - Date.parse(me.at)) / 1000; return s < 60 ? 'Du · gerade' : `Du · vor ${Math.round(s / 60)} min`; })()}</div>
@@ -180,9 +196,10 @@ function MapWidget({ game, params }) {
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); zoom(0.8); }}><Minus size={14} /></button>
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); fit(); }}><Crosshair size={14} /></button>
             </div>
-            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Die meisten Tarkov-Karten lädt JARVIS automatisch von tarkov.dev (Knopf „Karten laden“). Für Labs, Labyrinth und Icebreaker gibt es dort keine Vektorkarte – eigenes Bild importieren und kalibrieren, dann blendet JARVIS Exits und verschlossene Türen ein.' : ''}</div>}
-            {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/2 anklicken</div>}
-            {imgUrl && meta?.calibration?.attribution && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration.attribution}</div>}
+            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Kalibrierte Vektorkarten kannst du über „SVG-Karten laden“ ergänzen. Die zwölf mitgelieferten Wiki-Karten findest du in der Kartenauswahl unter „Wiki“; sie sind offline verfügbar.' : ''}</div>}
+            {imgUrl && meta?.source?.source === 'wiki-bundle' && !transform && !calib && <div class="notice" style={{ position: 'absolute', left: 8, top: 8, maxWidth: '75%', pointerEvents: 'none' }}>Wiki-Karte: Ziele und Routen per Klick nutzbar. Spielkoordinaten noch nicht kalibriert; API-Punkte bleiben ausgeblendet.</div>}
+            {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/3 anklicken</div>}
+            {imgUrl && (meta?.calibration?.attribution || meta?.source?.attribution) && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration?.attribution || meta.source?.attribution}</div>}
             {imgUrl && floors.length > 0 && <div class="row gap-s" style={{ position: 'absolute', right: 10, bottom: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: '70%' }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
               {[{ id: null, label: 'Erdgeschoss' }, ...floors].map((f) => <button class={`chip ${floor === f.id ? 'active' : ''}`} onClick={() => setFloor(f.id)}>{f.label}</button>)}
             </div>}
@@ -320,7 +337,14 @@ function TarkovRaidPlan({ params }) {
   const [plan, reload, st] = useRpc('tarkov.raidPlan', { map: map || undefined }, { deps: [map], events: ['game:progress'] });
   const [all] = useRpc('tarkov.raidPlan', {}, { events: ['game:progress'] });
   const ranking = all?.maps || plan?.maps || [];
-  const showOnMap = (id) => rpc('game.setLastMap', { game: 'eft', map: id }).then(() => rpc('game.pushWidget', { game: 'eft', type: 'map', params: { map: id } })).catch(() => {});
+  const [images] = useRpc('game.maps', { game: 'eft' }, { initial: [], events: ['game:markers'] });
+  useEffect(() => { guard(() => rpc('tarkov.importWikiMaps')); }, []);
+  const imageFor = id => images.some(m => m.name === id && m.hasImage) ? id : images.find(m => m.hasImage && m.source?.baseMap === id)?.name || id;
+  const targetMap = imageFor(map);
+  const [goal] = useRpc('tarkov.routeGoal', { map: targetMap }, { enabled: !!map, deps: [targetMap], events: ['game:markers'] });
+  const [goalText, setGoalText] = useState('');
+  useEffect(() => { setGoalText(goal?.label || ''); }, [goal?.label, targetMap]);
+  const showOnMap = (id) => guard(async () => { const selected = imageFor(id); await rpc('game.setLastMap', { game: 'eft', map: selected }); return rpc('game.pushWidget', { game: 'eft', type: 'map', params: { map: selected } }); });
   return (
     <Panel icon={Route} title="Raid-Planer" sub={`Aus deinen offenen Quests${all?.level ? ` · Level ${all.level}` : ''} · tarkov.dev`} right={<Select style={{ width: 170 }} value={map} onChange={setMap} options={[{ value: '', label: 'Beste Karte finden' }, ...ranking.map((m) => ({ value: m.id, label: `${m.name} (${m.tasks})` }))]} />}>
       {st.error && <div class="notice warn small">{st.error}</div>}
@@ -332,6 +356,7 @@ function TarkovRaidPlan({ params }) {
         ))}</div>
         {plan.anywhere?.length > 0 && <details class="mt"><summary class="small">Geht auf jeder Karte ({plan.anywhere.length})</summary>{plan.anywhere.map((t) => <div class="small"><b>{t.task}</b> <span class="muted">– {t.objectives.join('; ')}</span></div>)}</details>}
       </>}
+      {map && <div class="row wrap gap-s mb"><input class="inp grow" placeholder="Mein Ziel: z. B. Med-Loot, Quest, Exit" value={goalText} onInput={(e) => setGoalText(e.currentTarget.value)} /><button class="btn xs" disabled={!images.some(m => m.name === targetMap && m.hasImage)} onClick={async () => { if (await guard(() => rpc('tarkov.setRouteGoal', { map: targetMap, goal: { ...(goal || {}), label: goalText } }))) await showOnMap(map); }}>Ziel speichern & Karte</button><span class="tiny muted">Auf der Karte „Mein Ziel setzen“ wählen und Position oder Marker anklicken. Route manuell zeichnen.</span></div>}
       {plan && map && <>
         <div class="row small"><span class="grow muted">{plan.tasks?.length || 0} Quests mit Zielen auf dieser Karte</span><button class="btn xs" onClick={() => showOnMap(map)}><MapIcon size={12} />Auf Karte zeigen</button></div>
         {(plan.bring?.items?.length > 0 || plan.bring?.keys?.length > 0) && <div class="notice small mt"><b>Mitnehmen:</b> {[...plan.bring.items.map((x) => `${x.count > 1 ? x.count + '× ' : ''}${x.short}`), ...plan.bring.keys.map((k) => '🔑 ' + k.short)].join(' · ')}</div>}
@@ -1519,3 +1544,4 @@ export const WIDGETS = {
   playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc, 'tarkov-economy': TarkovEconomy, 'lol-progress': LolProgress, 'tarkov-ammo': TarkovAmmo,
 };
 export { nextScheduled };
+

@@ -162,7 +162,8 @@ class AudioEngine {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'de-DE'; u.rate = 1.05;
-      const v = speechSynthesis.getVoices().find((x) => x.lang?.startsWith('de'));
+      const v = speechSynthesis.getVoices().find((x) => x.localService && x.lang?.startsWith('de'));
+      if (!v) return; // Never fall back to a remote system voice.
       if (v) u.voice = v;
       speechSynthesis.speak(u);
     } catch { /* ignore */ }
@@ -224,3 +225,4 @@ export async function playStartSound(cfg) {
 }
 
 export const audio = new AudioEngine();
+

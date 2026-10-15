@@ -81,7 +81,9 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.current': () => s.conversations.current(),
     'conv.list': ({ q } = {}) => s.conversations.list({ q }),
     'conv.messages': ({ id, limit }) => s.conversations.messages(id, { limit: limit || 200 }),
-    'conv.create': ({ title } = {}) => s.conversations.create(title),
+    'conv.create': ({ title, privacy } = {}) => s.conversations.create(title, privacy),
+    'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
+    'local.models': () => s.localLLM.models(),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),
     'conv.remove': ({ id }) => s.conversations.remove(id),
     'conv.export': async ({ id }) => {
@@ -304,6 +306,10 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return s.deadlines.scanMail();
     },
     'deadlines.scanMail': () => s.deadlines.scanMail(),
+    'life.buckets': ({ month } = {}) => s.life.buckets(month),
+    'life.saveBucket': (p) => s.life.saveBucket(p),
+    'life.removeBucket': ({ id }) => s.life.removeBucket(id),
+    'life.bookBucket': ({ id, at }) => s.life.bookBucket(id, at),
     'life.month': ({ month } = {}) => s.life.month(month || null),
     'life.addExpense': (a) => s.life.addExpense(a),
     'life.removeExpense': ({ id }) => s.life.removeExpense(id),
@@ -411,6 +417,8 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.removeMarker': ({ id }) => s.gaming.removeMarker(id),
     'game.clearMarkers': ({ game, map }) => s.gaming.clearMarkers(game, map),
     'game.routes': ({ game, map }) => s.gaming.routes(game, map),
+    'tarkov.routeGoal': ({ map }) => s.gaming.routeGoal(map),
+    'tarkov.setRouteGoal': ({ map, goal }) => s.gaming.setRouteGoal(map, goal),
     'game.saveRoute': ({ game, map, name, points }) => s.gaming.saveRoute(game, map, name, points),
     'game.removeRoute': ({ id }) => s.gaming.removeRoute(id),
     'game.checklist': ({ game, name }) => s.gaming.checklist(game, name),
@@ -435,6 +443,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'game.wikiSearch': async ({ game, q }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) return { results: [], available: false }; return s.gaming.wiki.search(p.wiki, q); },
     'game.wikiPage': async ({ game, title, api }) => { const p = s.gaming.context.profile(game); if (!p?.wiki) throw new Error('Kein Wiki'); return s.gaming.wiki.page(p.wiki, title, 12000, api); },
     'game.others': ({ active }) => s.gaming.otherGameNotifications(active),
+    'tarkov.importWikiMaps': () => s.gaming.tarkovMaps.importWiki(),
     'tarkov.importMaps': ({ map, force } = {}) => s.gaming.tarkovMaps.importAll({ only: map ? String(map) : undefined, force: !!force }),
     'tarkov.maps': async () => { const r = await s.gaming.tarkov.maps(); return { maps: r.value.map((m) => ({ name: m.name, id: m.normalizedName, players: m.players, raidDuration: m.raidDuration })), source: r.source, fetchedAt: r.fetchedAt, offline: r.offline }; },
     'tarkov.map': async ({ map }) => { const r = await s.gaming.tarkov.map(map); return r ? { map: r.value, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline } : null; },
@@ -607,3 +616,4 @@ async function selfTest(s) {
 }
 
 module.exports = { registerIpc, selfTest };
+

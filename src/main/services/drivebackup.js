@@ -25,7 +25,7 @@ class DriveBackup {
   granted() { return this.s.google.isConnected() && (this.s.settings.get('google')?.scopes || []).includes(WRITE_SCOPE); }
   status() {
     const st = safeJson(this.s.system.meta('drivebackup:status'), {}) || {};
-    return { ...st, enabled: !!this.cfg().enabled, folder: this.cfg().folder || 'coding', keep: this.cfg().keep || 14, granted: this.granted(), connected: this.s.google.isConnected(), running: this.running };
+    return { ...st, blocked: 'private-data', enabled: false, folder: this.cfg().folder || 'coding', keep: this.cfg().keep || 14, granted: this.granted(), connected: this.s.google.isConnected(), running: this.running };
   }
   setStatus(patch) {
     const st = { ...(safeJson(this.s.system.meta('drivebackup:status'), {}) || {}), ...patch };
@@ -47,22 +47,7 @@ class DriveBackup {
     return parent;
   }
 
-  async upload(file, name, parentId) {
-    const token = await this.s.google.token();
-    const size = fs.statSync(file).size;
-    const init = await this.s.fetch(`${UPLOAD}?uploadType=resumable&fields=id,name,size`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/zip', 'X-Upload-Content-Length': String(size) },
-      body: JSON.stringify({ name, parents: [parentId], mimeType: 'application/zip', appProperties: { jarvis: 'backup' }, description: `JARVIS-Sicherung (${this.s.version}) von ${os.hostname()}` }),
-    });
-    if (!init.ok) throw new Error(`Drive-Upload konnte nicht starten (HTTP ${init.status})`);
-    const loc = init.headers.get('location');
-    if (!loc || !/^https:\/\/www\.googleapis\.com\//.test(loc)) throw new Error('Drive-Upload: unerwartete Antwort');
-    // Content-Length setzt Chromium selbst – manuell gesetzt bricht net.fetch mit ERR_INVALID_ARGUMENT ab
-    const r = await this.s.fetch(loc, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: fs.readFileSync(file) });
-    if (!r.ok) throw new Error(`Drive-Upload fehlgeschlagen (HTTP ${r.status})`);
-    return r.json();
-  }
+  async upload() { throw new Error('Private: vollständige Backups dürfen den PC nicht verlassen. Bitte lokal sichern.'); }
 
   /** Keep the newest `keep` JARVIS backups in the folder, delete older ones (only our own files). */
   async prune(parentId, keep) {
@@ -73,36 +58,7 @@ class DriveBackup {
   }
 
   /** Run a backup now (or when due). */
-  async run({ force = false } = {}) {
-    const c = this.cfg();
-    if (!force && !c.enabled) return { skipped: 'disabled' };
-    if (!this.granted()) throw new Error('JARVIS hat noch keinen Schreibzugriff auf Google Drive – in den Einstellungen „Drive-Backup aktivieren“ klicken.');
-    if (this.running) return { skipped: 'running' };
-    if (!force) {
-      const last = this.status().lastSuccess;
-      if (last && Date.now() - Date.parse(last) < (c.intervalHours || 24) * 3600_000 - 10 * 60_000) return { skipped: 'not-due' };
-    }
-    this.running = true;
-    this.s.bus.emit('backup:drive', this.status());
-    const tmp = path.join(os.tmpdir(), `JARVIS-Backup-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`);
-    try {
-      const { size } = this.s.system.createBackup(tmp, { secrets: false });
-      const parent = await this.folderId(c.folder || 'coding');
-      const name = path.basename(tmp);
-      const up = await this.upload(tmp, name, parent);
-      const removed = await this.prune(parent, c.keep || 14);
-      this.setStatus({ lastSuccess: nowIso(), lastFile: name, lastSize: size, lastError: null, removed });
-      log.info(`Drive-Backup hochgeladen: ${name} (${Math.round(size / 1024)} KB), ${removed} alte entfernt`);
-      return { ok: true, file: name, size, id: up.id, removed };
-    } catch (e) {
-      this.setStatus({ lastError: e.message, lastAttempt: nowIso() });
-      throw e;
-    } finally {
-      this.running = false;
-      fs.rmSync(tmp, { force: true });
-      this.s.bus.emit('backup:drive', this.status());
-    }
-  }
+  async run() { return { skipped: 'private-data', message: 'Cloud-Backup gesperrt; lokale Sicherung verwenden.' }; }
 }
 
 module.exports = { DriveBackup, WRITE_SCOPE };

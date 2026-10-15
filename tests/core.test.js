@@ -10,7 +10,7 @@ const { redact } = require('../src/main/core/logger');
 
 test('Datenbank: Migration, Schema-Version, Backup vor Migration', () => {
   const { core, cleanup } = tempCore();
-  assert.equal(core.db.version, 8);
+  assert.equal(core.db.version, 9);
   const snap = core.db.snapshot('test');
   assert.ok(fs.existsSync(snap));
   cleanup();
@@ -79,40 +79,23 @@ test('Kalender: lokale Termine, Serien, freie Slots, ohne Google', async () => {
   cleanup();
 });
 
-test('Kalender: Google-Sync mit Fake-API (Push-Queue, Pull, Konflikt)', async () => {
-  const remote = new Map();
-  let n = 0;
-  const google = {
-    isConnected: () => true,
-    listCalendars: async () => ({ items: [{ id: 'primary@x', summary: 'Privat', primary: true, accessRole: 'owner' }] }),
-    listEvents: async () => [...remote.values()],
-    insertEvent: async (cal, ev) => { const g = { id: 'g' + (++n), etag: 'e1', updated: new Date().toISOString(), status: 'confirmed', ...ev }; remote.set(g.id, g); return g; },
-    patchEvent: async (cal, id, ev) => { const g = { ...remote.get(id), ...ev, updated: new Date().toISOString() }; remote.set(id, g); return g; },
-    getEvent: async (cal, id) => remote.get(id),
-    deleteEvent: async (cal, id) => { remote.delete(id); },
-  };
+test('Kalender: Google-Pull bleibt möglich; neue private Termine werden niemals gepusht', async () => {
   const { core, cleanup } = tempCore();
-  core.calendar.google = google;
-  await core.calendar.sync();
-  assert.equal(core.calendar.defaultCalendarId(), 'primary@x');
-  const start = new Date(Date.now() + 86400e3).toISOString();
-  const e = await core.calendar.create({ title: 'Mathe lernen', start });
-  assert.equal(e.source, 'google'); assert.equal(e.syncState, 'synced');
-  assert.equal(remote.size, 1);
-  // Remote-only event appears after sync
-  remote.set('gx', { id: 'gx', summary: 'Vom Handy', start: { dateTime: start }, end: { dateTime: new Date(Date.parse(start) + 3600e3).toISOString() }, updated: new Date().toISOString(), status: 'confirmed' });
-  await core.calendar.sync();
-  assert.ok(core.calendar.list(new Date(), new Date(Date.now() + 2 * 86400e3)).some((x) => x.title === 'Vom Handy'));
-  // Conflict: local pending edit + newer remote change
-  const ev = core.db.get("SELECT * FROM events WHERE title='Mathe lernen'");
-  core.db.run("UPDATE events SET sync_state='pending_update', title='Mathe (lokal)', remote_updated='2000-01-01T00:00:00Z' WHERE id=?", ev.id);
-  remote.get(ev.google_id).updated = new Date(Date.now() + 1000).toISOString();
-  await core.calendar.sync();
-  assert.equal(core.calendar.get(ev.id).syncState, 'conflict');
-  cleanup();
+  let writes = 0;
+  core.calendar.google = { isConnected: () => true,
+    listCalendars: async () => ({ items: [{ id: 'primary@x', summary: 'Google', primary: true, accessRole: 'owner' }] }),
+    listEvents: async () => [], insertEvent: async () => { writes++; }, patchEvent: async () => { writes++; }, deleteEvent: async () => { writes++; } };
+  try {
+    await core.calendar.sync();
+    const e = await core.calendar.create({ title: 'Familientermin', start: new Date(Date.now() + 86400e3).toISOString() });
+    assert.equal(e.source, 'local');
+    await core.calendar.update(e.id, { title: 'Privater Termin' });
+    await core.calendar.sync(); await core.calendar.remove(e.id); await core.calendar.sync();
+    assert.equal(writes, 0);
+  } finally { cleanup(); }
 });
 
-test('Brain: Duplikate, Ersetzen persönlicher Fakten, Konflikt bei Quellen, sensible Auto-Speicherung, Hybrid-Suche', async () => {
+test('Brain: Duplikate, Ersetzen persönlicher Fakten, Konflikt bei Quellen, sensible Auto-Speicherung, lokale Volltextsuche', async () => {
   const { core, cleanup } = tempCore();
   core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
   core.settings.update({ models: { embedding: 'gemini-embedding-2' } });
@@ -128,11 +111,11 @@ test('Brain: Duplikate, Ersetzen persönlicher Fakten, Konflikt bei Quellen, sen
   core.brain.add({ content: 'Projekt Hausautomation mit Home Assistant und lokalem LLM', domain: 'projects' });
   const r = await core.brain.search('Hausautomation LLM');
   assert.equal(r.results[0].domain, 'projects');
-  // semantic part
+  // Cloud-Embeddings bleiben gesperrt; lokale Suche liefert weiterhin Treffer.
   await core.vectors.backfill();
-  assert.ok(core.vectors.count('k') >= 3);
+  assert.equal(core.vectors.count('k'), 0, 'private Inhalte nicht an Cloud-Embeddings senden');
   const r2 = await core.brain.search('home assistant');
-  assert.ok(r2.semantic);
+  assert.equal(r2.semantic, false); assert.ok(r2.results.length, 'lokale Volltextsuche bleibt nutzbar');
   const g = core.brain.graph();
   assert.ok(g.nodes.some((n) => n.type === 'core') && g.nodes.some((n) => n.domain === 'projects' && n.type === 'entry'));
   cleanup();
@@ -199,7 +182,7 @@ test('Orchestrator: Werkzeugschleife, Bestätigungspflicht, Einmal-Token, Quelle
     { calls: [{ name: 'create_task', args: { title: 'Mathe lernen', category: 'Studium' } }, { name: 'create_event', args: { title: 'Mathe lernen', start: new Date(Date.now() + 86400e3).toISOString() } }] },
     { text: 'Aufgabe angelegt, Termin wartet auf deine Bestätigung, Chef.' },
   ];
-  const { core, fake, cleanup } = tempCore({ script });
+  const { core, fake, cleanup } = tempCore({ script, local: true });
   core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
   await core.gemini.discover();
   const cards = [];
@@ -227,7 +210,10 @@ test('Orchestrator: Werkzeugschleife, Bestätigungspflicht, Einmal-Token, Quelle
 test('Orchestrator ohne Schlüssel: klare Meldung statt Absturz', async () => {
   const { core, cleanup } = tempCore();
   const m = await core.orchestrator.chat({ text: 'Hallo' });
-  assert.match(m.content, /Gemini-API-Schlüssel/);
+  assert.match(m.content, /Ollama/);
+  const cloud = core.conversations.create('Uni', 'study');
+  const c = await core.orchestrator.chat({ conversationId: cloud.id, text: 'Hallo' });
+  assert.match(c.content, /Gemini-API-Schlüssel/);
   cleanup();
 });
 
@@ -312,7 +298,7 @@ test('Kosten: fester Systemteil bleibt gleich (Cache), Kontext an der neuesten N
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
     await core.gemini.discover();
-    const conv = core.conversations.current();
+    const conv = core.conversations.create('Uni', 'study');
     await core.orchestrator.chat({ conversationId: conv.id, text: 'Hallo Jarvis' });
     await new Promise((r) => setTimeout(r, 1100)); // andere Uhrzeit darf den festen Teil nicht ändern
     await core.orchestrator.chat({ conversationId: conv.id, text: 'Wie spät ist es?' });
@@ -320,7 +306,7 @@ test('Kosten: fester Systemteil bleibt gleich (Cache), Kontext an der neuesten N
     assert.equal(a.config.systemInstruction, b.config.systemInstruction, 'fester Teil identisch');
     assert.doesNotMatch(a.config.systemInstruction, /Jetzt: /);
     const last = [...b.contents].reverse().find((c) => c.role === 'user'); // (Anfrage-Objekt wird danach um die Antwort ergänzt)
-    assert.match(last.parts[0].text, /Aktueller Kontext[\s\S]*Jetzt: /);
+    assert.doesNotMatch(JSON.stringify(b), /Aktueller Kontext|Jetzt: /, 'Cloud erhält keinen privaten Kontext');
     assert.match(last.parts.at(-1).text, /Wie spät ist es\?/);
     // der Kontext der ersten Nachricht wird nicht gespeichert → Verlauf vorne bleibt gleich
     const firstUserInB = b.contents.find((c) => c.role === 'user');
@@ -418,3 +404,4 @@ test('Schlüssel-Sicherung: mit Passwort verschlüsselt im Backup, auf anderem P
     assert.equal(other.core.settings.get('nickname'), 'Cheffe'); assert.equal(other.core.settings.get('gaming').eftFaction, 'scav');
   } finally { cleanup(); other.cleanup(); }
 });
+

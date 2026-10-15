@@ -1,8 +1,8 @@
 # JARVIS 3 – Personal Intelligence System
 
-Persönlicher KI-Assistent für Windows: Chat & Echtzeit-Sprache (Gemini Live), Aufgaben & Routinen, Google Kalender, Studienunterlagen aus OneDrive/Goodnotes, ein langfristiges Brain, Webrecherche und eine Gaming-Oberfläche, die sich dem aktuellen Spiel anpasst.
+Persönlicher KI-Assistent für Windows: privater Chat über lokales Ollama, freigegebener Uni-/Gaming-Chat über Gemini, Aufgaben & Routinen, lokaler Kalender mit Google-Import, Studienunterlagen aus OneDrive/Goodnotes, ein langfristiges Brain, Webrecherche und eine Gaming-Oberfläche, die sich dem aktuellen Spiel anpasst.
 
-**Installation für Endnutzer:** `JARVIS_Setup.exe` ausführen – keine Administratorrechte, kein Python, kein Node.js nötig. Beim ersten Start führt ein Assistent durch die Einrichtung (Gemini-Schlüssel ist Pflicht, alles andere optional).
+**Installation für Endnutzer:** `JARVIS_Setup.exe` ausführen – keine Administratorrechte, kein Python, kein Node.js nötig. Beim ersten Start führt ein Assistent durch die Einrichtung (für private KI ist ein lokal installiertes Ollama-Modell nötig; Gemini ist für freigegebene Cloud-Chats optional).
 
 ---
 
@@ -95,7 +95,7 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
 - **Renderer gehärtet:** Sandbox, contextIsolation, strikte CSP, Navigations- und Fenstersperre, nur Mikrofon-Berechtigung, IPC prüft den Absender.
 - **Werkzeuge:** Schema-Validierung, Bestätigung für kritische Aktionen, keine Systembefehle, keine Ausführung von Modell-Code.
 - **Dokumente** werden in einem isolierten Worker mit Zeitlimit geparst (pdf.js ohne eval/Fonts/XFA).
-- **Mikrofon:** Audio geht nur bei aktivem Sprachmodus an Google. Das Wake-Word läuft lokal.
+- **Mikrofon:** Gemini Live ist gesperrt, damit private Sprache nicht vor einer Prüfung den PC verlässt. Das Wake-Word läuft lokal; lokale Spracherkennung ist noch nicht eingerichtet.
 
 ## Entwickeln, Testen, Bauen
 
@@ -113,3 +113,17 @@ JARVIS.exe --smoke        # Selbsttest der gebauten/installierten App (Exit-Code
 ## Bekannte Grenzen
 
 Ehrliche, vollständige Liste mit Teststatus: **[TESTBERICHT.md](TESTBERICHT.md)**. Kurz: Gemini Live, Google OAuth, Riot/tarkov.dev-Abrufe und die echte Windows-Installation sind implementiert und gegen Fakes/Mocks getestet, aber noch nicht mit deinen echten Konten auf deinem PC abgenommen. Die Installer-Datei ist nicht code-signiert (Windows SmartScreen zeigt beim ersten Start eine Warnung).
+
+
+## Private, lokale KI und neue Planung
+
+Einrichtung, Datenschutzgrenzen, geplante Ausgaben-Buckets und Tarkov-Ziele: [Anleitung](docs/PRIVATE_LOCAL.md).
+
+
+### Offline-Tarkov-Karten
+
+Zwölf Wiki-Karten liegen im Programm und werden beim Öffnen des Kartenwidgets lokal bereitgestellt. Die Varianten „Wiki“ haben eigene Ziele, Marker und Routen; bestehende SVG-Karten werden nicht ersetzt. Terminal ist nicht enthalten. Quellen und Lizenz: [Kartennachweise](src/main/assets/tarkov-wiki/ATTRIBUTION.md).
+
+Die Wiki-Bilder sind **nicht vollständig vorkalibriert**. Unter „Kalibrieren“ drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen: einen Exit aus der Liste auswählen und seine Position anklicken, alternativ Spielkoordinaten eingeben. JARVIS berechnet daraus automatisch die affine Umrechnung einschließlich Spiegelung und unterschiedlicher Skalierung. Keine separaten Stockwerk-Inserts verwenden; das Ergebnis an weiteren Landmarken prüfen. Ohne passende Referenzen bleiben API-Positionen ausgeblendet. Die separat ladbaren SVG-Karten besitzen weiterhin ihre vorhandene automatische Kalibrierung.
+
+Beim Austausch eines Kartenbilds wird die alte Kalibrierung entfernt. Die Testfälle prüfen Offline-Import, getrennte Routen/Ziele, degenerierte Referenzpunkte und den Datenschutz ohne Cloud-Ausweichpfad. Die früheren Tests für Cloud-Kalender-Schreibzugriffe, Live-Audio und vollständige Drive-Backups prüfen jetzt deren Sperre; lokale KI-Tests verwenden einen separaten Fake sowie einen echten Loopback-HTTP-Test.

@@ -1,0 +1,142 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const { tempCore } = require('./helpers');
+const { local } = require('../src/main/core/privacy');
+const { LocalLLM } = require('../src/main/providers/local');
+
+const response = (text = 'Lokal erledigt') => ({ text, parts: [{ text }], functionCalls: [] });
+const ym = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+
+test('Private default, local without API key, no cloud fallback on local failure', async () => {
+  const { core: s, fake, cleanup } = tempCore();
+  try {
+    const c = s.conversations.create(); assert.equal(c.privacy, 'private');
+    s.localLLM.stepStream = async (o) => { o.onText('nur lokal'); return response('nur lokal'); };
+    const m = await s.orchestrator.chat({ conversationId: c.id, text: 'Mein Gehalt' });
+    assert.equal(m.content, 'nur lokal'); assert.equal(fake.requests.length, 0);
+    s.secrets.set('gemini.api_key', 'test');
+    s.localLLM.stepStream = async () => { throw new Error('offline'); };
+    const failure = await s.orchestrator.chat({ conversationId: c.id, text: 'Ausgaben' });
+    assert.equal(failure.meta.error, true); assert.equal(fake.requests.length, 0);
+    await s.orchestrator.retry({ conversationId: c.id, messageId: failure.id });
+    assert.equal(fake.requests.length, 0);
+  } finally { cleanup(); }
+});
+
+test('Cloud opt-in never includes personal primer; private message permanently taints whole conversation', async () => {
+  const { core: s, fake, cleanup } = tempCore();
+  try {
+    s.secrets.set('gemini.api_key', 'test'); s.settings.update({ models: { fast: 'gemini-3.8-flash' } });
+    s.brain.add({ content: 'SECRET_FAMILY', domain: 'personal', pinned: true, tags: ['Private'] });
+    const c = s.conversations.create('Gaming', 'gaming');
+    await s.orchestrator.chat({ conversationId: c.id, text: 'Erkläre Tarkov' });
+    assert.equal(fake.requests.length, 1); assert.ok(!JSON.stringify(fake.requests).includes('SECRET_FAMILY'));
+    s.localLLM.stepStream = async (o) => { o.onText('local'); return response('local'); };
+    await s.orchestrator.chat({ conversationId: c.id, text: '#Private mein besonderer Inhalt' });
+    await s.orchestrator.chat({ conversationId: c.id, text: 'Weiter mit Tarkov' });
+    assert.equal(s.conversations.get(c.id).privacy, 'private'); assert.equal(fake.requests.length, 1);
+    const denied = await s.orchestrator.execute('finance_overview', {}, { conversationId: s.conversations.create('Uni', 'study').id });
+    assert.match(denied.response.error, /privates/);
+  } finally { cleanup(); }
+});
+
+test('Private tools reject external tools and fetch; async scope does not block concurrent public fetch', async () => {
+  let external = 0;
+  const { core: s, cleanup } = tempCore({ fetch: async () => { external++; return new Response('{}'); } });
+  try {
+    const c = s.conversations.create();
+    const denied = await local(() => s.orchestrator.execute('web_research', { query: 'SECRET' }, { conversationId: c.id }));
+    assert.match(denied.response.error, /Private/);
+    assert.throws(() => local(() => s.fetch('https://example.com/SECRET')), /Private/);
+    await s.fetch('https://example.com/public'); assert.equal(external, 1);
+    await assert.rejects(local(() => s.gemini.research('SECRET')), /Private/);
+  } finally { cleanup(); }
+});
+
+test('Private tool loop can book financial data locally without SDK requests', async () => {
+  const { core: s, fake, cleanup } = tempCore();
+  try {
+    let step = 0;
+    s.localLLM.stepStream = async (o) => {
+      if (!step++) { const fc = { name: 'add_income', args: { amount: 100, note: 'privat' }, id: 'a' }; return { text: '', parts: [{ functionCall: fc }], functionCalls: [fc] }; }
+      assert.ok(JSON.stringify(o.contents).includes('100')); o.onText('gebucht'); return response('gebucht');
+    };
+    await s.orchestrator.chat({ text: '100 Euro Einnahme' });
+    assert.equal(s.life.month().income, 100); assert.equal(fake.requests.length, 0);
+  } finally { cleanup(); }
+});
+
+test('Calendar, backup, embeddings and voice fail closed; private recipes use local generation', async () => {
+  const { core: s, fake, cleanup } = tempCore();
+  try {
+    const event = await s.calendar.create({ title: 'Familie', start: '2026-10-16T10:00:00Z', end: '2026-10-16T11:00:00Z' });
+    const rows = s.db.all('SELECT calendar_id FROM events'); assert.ok(rows.length); assert.equal(rows[0].calendar_id, 'local');
+    await assert.rejects(s.google.api('POST', '/calendars/primary/events', { body: { summary: 'SECRET' } }), /lokal/);
+    await assert.rejects(s.gemini.embed(['SECRET']), /gesperrt/);
+    assert.equal(await s.vectors.backfill(), 0);
+    assert.equal((await s.driveBackup.run({ force: true })).skipped, 'private-data');
+    await assert.rejects(s.driveBackup.upload('/none'), /Private/);
+    await assert.rejects(s.voice.start(), /Datenschutz/);
+    assert.equal((await s.transit.check()).skipped, 'private-calendar');
+    s.localLLM.generate = async () => ({ recipes: [{ name: 'local' }] });
+    s.life.addPantry(['Reis', 'Tomaten', 'Bohnen']);
+    assert.equal((await s.life.recipes()).recipes[0].name, 'local');
+    assert.equal(fake.requests.length, 0);
+  } finally { cleanup(); }
+});
+
+test('Buckets reserve once, month scoping, editable, book atomically and reject double booking', () => {
+  const { core: s, cleanup } = tempCore();
+  try {
+    s.settings.update({ life: { budgetMonthly: 1000 } }); s.life.addIncome({ amount: 1000 });
+    const b = s.life.saveBucket({ name: 'Grafikkarte', amount: '200,50', month: ym() });
+    s.life.saveBucket({ name: 'Später', amount: 90, month: '2099-01' });
+    let m = s.life.month(); assert.equal(m.total, 0); assert.equal(m.reserved, 200.5); assert.equal(m.balance, 799.5); assert.equal(m.left, 799.5);
+    s.life.saveBucket({ ...b, amount: 150 }); assert.equal(s.life.month().reserved, 150);
+    assert.throws(() => s.life.bookBucket(b.id, 'not a date'), /Datum/); assert.equal(s.life.month().reserved, 150);
+    s.life.bookBucket(b.id); m = s.life.month(); assert.equal(m.reserved, 0); assert.equal(m.total, 150); assert.equal(m.balance, 850);
+    assert.throws(() => s.life.bookBucket(b.id), /bereits gebucht/); assert.equal(s.life.month().total, 150);
+    for (const amount of [0, -1, Infinity, NaN, '']) assert.throws(() => s.life.saveBucket({ name: 'x', amount, month: ym() }));
+    assert.throws(() => s.life.saveBucket({ name: 'x', amount: 1, month: '2026-13' }));
+    assert.throws(() => s.life.saveBucket({ id: 'missing', name: 'x', amount: 1, month: ym() }));
+    assert.equal(s.life.buckets('2099-01').length, 1);
+    s.life.removeBucket(s.life.buckets('2099-01')[0].id); assert.equal(s.life.buckets().length, 0);
+  } finally { cleanup(); }
+});
+
+test('Tarkov goal is scoped per map, validates coordinates, persists and clears independently', () => {
+  const { core: s, cleanup } = tempCore();
+  try {
+    s.gaming.setRouteGoal('customs', { label: 'Dorms', x: 0.4, y: 0.2, floor: 'Second_Floor' });
+    s.gaming.setRouteGoal('woods', { label: 'Med-Loot' });
+    assert.equal(s.gaming.routeGoal('customs').floor, 'Second_Floor'); assert.equal(s.gaming.routeGoal('woods').x, null);
+    assert.ok(s.db.get('SELECT value FROM game_state WHERE key=?', 'eft:route-goal:customs'));
+    for (const x of [-1, 2, NaN, Infinity, '0.5']) assert.throws(() => s.gaming.setRouteGoal('woods', { label: 'x', x, y: 0.2 }));
+    assert.throws(() => s.gaming.saveRoute('eft', 'woods', 'Bad', [{ x: 0.1, y: 0.2 }, { x: 2, y: 0.4 }]));
+    s.gaming.setRouteGoal('customs', null); assert.equal(s.gaming.routeGoal('customs'), null); assert.equal(s.gaming.routeGoal('woods').label, 'Med-Loot');
+  } finally { cleanup(); }
+});
+
+test('Loopback Ollama integration: local verification, lowercase tools, tool results, no redirects', async () => {
+  const seen = []; let remote = false; let redirect = false;
+  const server = http.createServer(async (req, res) => {
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : null; seen.push({ path: req.url, body });
+    if (redirect) { res.writeHead(302, { Location: 'https://example.com' }); res.end(); return; }
+    const out = req.url === '/api/tags' ? { models: [{ name: 'local:test' }, { name: 'remote-cloud' }] } : req.url === '/api/show' ? (remote ? { remote_host: 'https://ollama.com' } : { model_info: { architecture: 'test' } }) : { message: { content: 'local reply', tool_calls: [{ function: { name: 'add_income', arguments: { amount: 1 } } }] } };
+    res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(out));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const llm = new LocalLLM({ get: () => ({ port: server.address().port, model: 'local:test' }) });
+    const out = await llm.stepStream({ contents: [{ role: 'user', parts: [{ text: 'private text' }] }], tools: [{ functionDeclarations: [{ name: 'add_income', parameters: { type: 'OBJECT', properties: { amount: { type: 'NUMBER' } } } }] }] });
+    assert.equal(out.text, 'local reply'); assert.equal(out.functionCalls[0].args.amount, 1);
+    assert.equal(seen.at(-1).body.tools[0].function.parameters.properties.amount.type, 'number');
+    remote = true; const before = seen.filter((r) => r.path === '/api/chat').length;
+    await assert.rejects(llm.stepStream({ contents: [] }), /lokales Modell/);
+    assert.equal(seen.filter((r) => r.path === '/api/chat').length, before);
+    redirect = true; await assert.rejects(llm.models(), /HTTP 302/);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});

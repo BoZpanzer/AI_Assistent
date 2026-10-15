@@ -3,7 +3,7 @@ import { Wallet, ShoppingCart, Dumbbell, Gift, Refrigerator, Repeat, CookingPot,
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { guard, setState } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
-import { Panel, Spinner, Empty, Select, useNow } from '../components/ui.jsx';
+import { Panel, Spinner, Empty, Select, useNow, ask } from '../components/ui.jsx';
 import { fmtDateTime, ago, countdown } from '../lib/format.js';
 
 const eur = (v) => (v == null ? '–' : `${Number(v).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
@@ -19,6 +19,7 @@ export function Life() {
           <div class="w-6"><DeadlinesPanel /></div>
           <div class="w-6"><Finance /></div>
           <div class="w-6"><MoneyPlan /></div>
+          <div class="w-6"><Buckets /></div>
           <div class="w-6"><Subscriptions /></div>
           <div class="w-6"><Shopping /></div>
           <div class="w-6"><Pantry /></div>
@@ -41,12 +42,12 @@ function Finance() {
   const add = async () => { if (!f.amount) return; if (await guard(() => rpc('life.addExpense', { amount: f.amount, note: f.note }))) { setF({ amount: '', note: '' }); reload(); } };
   if (!m) return <Panel icon={Wallet} title="Ausgaben"><Spinner /></Panel>;
   const max = Math.max(1, ...m.categories.map((c) => c.sum));
-  const pct = m.budget ? Math.min(100, Math.round(m.totalWithSubs / m.budget * 100)) : null;
+  const pct = m.budget ? Math.min(100, Math.round((m.totalWithSubs + (m.reserved || 0)) / m.budget * 100)) : null;
   return (
     <Panel icon={Wallet} title="Ausgaben" sub={`${m.month.split('-').reverse().join('/')} · nur was du einträgst, bleibt auf deinem PC`}>
       {m.income ? <div class="row wrap gap-s mb" style={{ alignItems: 'baseline' }}><span style={{ fontSize: 22, fontWeight: 700, color: m.balance < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>{eur(m.balance)}</span><span class="small muted">frei bis Monatsende{m.perDay != null ? ` · ${eur(m.perDay)} pro Tag` : ''}</span></div> : null}
-      {m.income ? <div class="tiny muted mb">Einnahmen {eur(m.income)} − Fixkosten {eur(m.fixedOut)} − Abos {eur(m.subsThisMonth)} − Ausgaben {eur(m.total)}</div> : <div class="tiny muted mb">Trag deine festen Einnahmen ein (rechts), dann zeigt JARVIS, was bis Monatsende frei ist.</div>}
-      <div class="row wrap gap-s"><span class="chip static">Ausgegeben {eur(m.total)}</span><span class="chip static">Abos {eur(m.subscriptions)}/Monat</span>{m.budget ? <span class="chip static" style={{ color: m.left < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>Budget übrig {eur(m.left)}</span> : null}{m.forecast != null && <span class="chip static" title="Hochrechnung bis Monatsende (ohne Abos)">Prognose {eur(m.forecast)}</span>}</div>
+      {m.income ? <div class="tiny muted mb">Einnahmen {eur(m.income)} − Fixkosten {eur(m.fixedOut)} − Abos {eur(m.subsThisMonth)} − Ausgaben {eur(m.total)} − reserviert {eur(m.reserved)}</div> : <div class="tiny muted mb">Trag deine festen Einnahmen ein (rechts), dann zeigt JARVIS, was bis Monatsende frei ist.</div>}
+      <div class="row wrap gap-s"><span class="chip static">Ausgegeben {eur(m.total)}</span><span class="chip static">Reserviert {eur(m.reserved)}</span><span class="chip static">Abos {eur(m.subscriptions)}/Monat</span>{m.budget ? <span class="chip static" style={{ color: m.left < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>Budget übrig {eur(m.left)}</span> : null}{m.forecast != null && <span class="chip static" title="Hochrechnung bis Monatsende (ohne Abos)">Prognose {eur(m.forecast)}</span>}</div>
       {pct != null && <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, marginTop: 8 }}><div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: pct >= 100 ? 'var(--red, #e5484d)' : pct >= 80 ? 'var(--orange)' : 'var(--cyan)' }} /></div>}
       {!m.budget && <div class="tiny muted mt">Monatsbudget in den Einstellungen setzen, dann zeigt JARVIS, was übrig ist.</div>}
       <div class="col mt" style={{ gap: 3 }}>{m.categories.map((c) => <div class="row small" style={{ gap: 8 }}><span style={{ width: 130 }}>{c.category}</span><div class="grow" style={{ height: 8, background: 'var(--line)', borderRadius: 4 }}><div style={{ width: (c.sum / max) * 100 + '%', height: '100%', background: 'var(--cyan)', borderRadius: 4 }} /></div><span style={{ width: 80, textAlign: 'right' }}>{eur(c.sum)}</span></div>)}</div>
@@ -233,4 +234,17 @@ export function DeadlinesPanel() {
       {mail?.ready && <div class="tiny muted mt">Gmail verbunden – JARVIS schaut alle 6 Stunden nach. <a href="#" onClick={(e) => { e.preventDefault(); guard(() => rpc('deadlines.scanMail')).then(reloadC); }}>Jetzt prüfen</a></div>}
     </Panel>
   );
+}
+
+
+function Buckets() {
+  const now = new Date(); const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const blank = { name: '', amount: '', month };
+  const [f, setF] = useState(blank);
+  const [rows] = useRpc('life.buckets', {}, { events: ['life:data'], initial: [] });
+  return <Panel icon={Wallet} title="Geplante Ausgaben · Buckets" sub="Reserviert, aber noch nicht ausgegeben. Wird im Zielmonat vom freien Geld abgezogen.">
+    <div class="row wrap gap-s"><input class="inp grow" placeholder="Wofür?" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} /><input class="inp" style={{ width: 95 }} placeholder="Betrag €" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp" type="month" value={f.month} onInput={(e) => setF({ ...f, month: e.currentTarget.value })} /><button class="btn sm" onClick={async () => { if (await guard(() => rpc('life.saveBucket', f))) setF(blank); }}>{f.id ? 'Ändern' : 'Reservieren'}</button>{f.id && <button class="btn xs" onClick={() => setF(blank)}>Abbrechen</button>}</div>
+    {!rows.length && <Empty>Noch kein Geld verplant.</Empty>}
+    {rows.map((b) => <div class="row wrap small mt"><span class="grow"><b>{b.name}</b> · {b.month} · {eur(b.amount)}</span><button class="btn xs" onClick={() => setF(b)}>Bearbeiten</button><button class="btn xs" onClick={async () => { if (await ask(`${b.name}: ${eur(b.amount)} heute als tatsächliche Ausgabe buchen?`, '', { confirmOnly: true, okLabel: 'Buchen' })) await guard(() => rpc('life.bookBucket', { id: b.id })); }}>Bezahlt → buchen</button><button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeBucket', { id: b.id }))}>Freigeben</button></div>)}
+  </Panel>;
 }

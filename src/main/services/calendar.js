@@ -191,7 +191,7 @@ class Calendar {
   /** Creates an event (Google if connected, else local). */
   async create(input) {
     const d = this.normalizeInput(input);
-    const calId = d.calendarId || this.defaultCalendarId();
+    const calId = LOCAL_CAL;
     const cal = this.db.get('SELECT * FROM calendars WHERE id=?', calId);
     if (!cal) throw new Error('Kalender nicht gefunden');
     if (!cal.writable) throw new Error('Dieser Kalender ist schreibgeschützt');
@@ -219,6 +219,7 @@ class Calendar {
     const r = this.db.get('SELECT * FROM events WHERE id=?', eventId);
     if (!r) throw new Error('Termin nicht gefunden');
     if (String(r.calendar_id).startsWith('feed:')) throw new Error('Termine aus einem abonnierten Stundenplan sind schreibgeschützt');
+    if (r.calendar_id !== LOCAL_CAL) throw new Error('Importierte Termine sind schreibgeschützt. Bitte einen lokalen Termin anlegen.');
     const d = this.normalizeInput(patch, true);
     if (d.start && !patch.end) d.end = new Date(Date.parse(d.start) + (Date.parse(r.end_at) - Date.parse(r.start_at))).toISOString();
     const cols = { title: d.title, description: d.description, location: d.location, start_at: d.start && new Date(d.start).toISOString(), end_at: d.end && new Date(d.end).toISOString(), all_day: d.allDay === undefined ? undefined : (d.allDay ? 1 : 0) };
@@ -390,3 +391,4 @@ function localDate(iso) {
 }
 
 module.exports = { Calendar, EVENT_SCHEMA, LOCAL_CAL, COLORS, CATEGORIES, categorize };
+

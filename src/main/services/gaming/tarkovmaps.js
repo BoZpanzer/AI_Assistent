@@ -104,6 +104,26 @@ function prepareSvg(text, def, aspect, floor = null) {
 class TarkovMaps {
   constructor(gaming, ctx) { this.g = gaming; this.fetch = ctx.fetch; this.busy = null; }
 
+  /** Bundled Wiki images use separate IDs: pixel routes/calibration must never leak across images. */
+  importWiki() {
+    const dir = path.join(__dirname, '../../assets/tarkov-wiki');
+    const manifest = require('../../assets/tarkov-wiki/manifest.json');
+    const done = [], skipped = [], failed = [];
+    for (const def of manifest) {
+      const id = def.baseMap + '-wiki';
+      if (this.g.mapImagePath('eft', id)) { skipped.push(id); continue; }
+      try {
+        const bytes = fs.readFileSync(path.join(dir, def.file));
+        if (require('node:crypto').createHash('sha256').update(bytes).digest('hex') !== def.sha256) throw new Error('Kartenbild-Prüfsumme stimmt nicht');
+        this.g.saveMapFile('eft', id, bytes, '.webp', def);
+        this.g.context.setState(`mapsrc:eft:${id}`, { source: 'wiki-bundle', baseMap: def.baseMap, label: def.label + ' · Wiki', attribution: 'Escape from Tarkov Wiki · RE3MR / Jindouz / xTycho und Autoren im Kartenbild · CC BY-NC-SA 4.0', floors: [], calibrationStatus: 'unverified' });
+        done.push(id);
+      } catch (e) { failed.push({ id, error: e.message }); }
+    }
+    if (done.length) this.g.bus.emit('game:markers', { game: 'eft' });
+    return { done, skipped, failed };
+  }
+
   async defs() {
     try {
       const r = await this.fetch(MAPS_JSON, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
@@ -168,3 +188,4 @@ class TarkovMaps {
 }
 
 module.exports = { TarkovMaps, affineFor, project, prepareSvg, floorsOf, topGroups, SNAPSHOT, ATTRIBUTION };
+

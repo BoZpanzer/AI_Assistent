@@ -18,6 +18,9 @@ function buildTools(s) {
   const T = [];
   const def = (t) => T.push(t);
 
+  def({ name: 'expense_buckets', mode: 'write', description: 'Geplantes Geld reservieren, ändern, freigeben oder nach tatsächlicher Zahlung als Ausgabe buchen. Keine echte Ausgabe bis action=book.',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'book'] }, id: { type: 'string' }, name: { type: 'string' }, amount: { type: 'number' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
+    run: (p) => p.action === 'list' ? s.life.buckets(p.month) : p.action === 'save' ? s.life.saveBucket(p) : p.action === 'book' ? s.life.bookBucket(p.id, p.at) : s.life.removeBucket(p.id) });
   // ---------- Overview ----------
   def({ name: 'get_today_overview', mode: 'read', description: 'Tagesüberblick: heutige Termine, fällige/überfällige Aufgaben, laufende Spiel-Timer, ungelesene Benachrichtigungen. Für „was steht heute an?“.',
     schema: { type: 'object', properties: { day: { type: 'string', description: 'ISO-Datum, Standard heute' } } },
@@ -559,3 +562,4 @@ function internalTools(s) {
 }
 
 module.exports = { buildTools, internalTools, fmt };
+

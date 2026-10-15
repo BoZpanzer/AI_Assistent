@@ -294,7 +294,7 @@ test('Gemini-Kontingent: Ausweichmodell bei 429, Recherche notfalls ohne Live-Su
   const { core, cleanup } = tempCore({ genaiSdk: { GoogleGenAI: G } });
   core.secrets.set('gemini.api_key', 'x');
   core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.8-flash-lite', 'gemini-3.8-flash-image'] });
-  const t = await core.gemini.generate({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
+  const t = await core.gemini.generate({ feature: 'games', contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
   assert.equal(t, 'Antwort aus Modellwissen');
   assert.deepEqual(calls.map((c) => c.model).slice(0, 2), ['gemini-3.8-flash', 'gemini-3.5-flash'], 'nächstes Flash-Modell, kein Bild-Modell');
   calls.length = 0;
@@ -481,36 +481,18 @@ test('Dashboard-Todos: heute fällige + wichtige nach Priorität sortiert', () =
   cleanup();
 });
 
-test('Drive-Backup: Ordner „coding“ finden/anlegen, hochladen, nur eigene alte Sicherungen löschen', async () => {
-  const calls = []; let uploaded = null;
-  const { core, cleanup } = tempCore({ fetch: async (url, init) => {
-    if (String(url).startsWith('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable')) {
-      assert.equal(JSON.parse(init.body).appProperties.jarvis, 'backup');
-      return new Response('', { status: 200, headers: { Location: 'https://www.googleapis.com/upload/drive/v3/files?upload_id=abc' } });
-    }
-    if (String(url).includes('upload_id=abc')) { uploaded = init.body.length; return json({ id: 'new', name: 'x.zip' }); }
-    throw new Error('unexpected ' + url);
-  } });
-  core.google.isConnected = () => true;
-  core.google.token = async () => 't';
-  core.settings.update({ google: { scopes: ['https://www.googleapis.com/auth/drive'] }, backupDrive: { enabled: true, folder: 'coding', keep: 2 } });
-  core.google.api = async (method, p, opts = {}) => {
-    calls.push([method, p, opts.query?.q || opts.body?.name || '']);
-    if (method === 'GET' && opts.query.q.startsWith("name = 'coding'")) return { files: [] };
-    if (method === 'POST') return { id: 'fold' };
-    if (method === 'GET') { assert.match(opts.query.q, /'fold' in parents and appProperties has/); return { files: [{ id: 'new' }, { id: 'b1' }, { id: 'b2' }, { id: 'b3' }] }; }
-    if (method === 'DELETE') return {};
-    throw new Error('unexpected');
-  };
-  const r = await core.driveBackup.run({ force: false });
-  assert.equal(r.ok, true); assert.ok(uploaded > 100, 'Zip hochgeladen');
-  assert.deepEqual(calls.filter((c) => c[0] === 'POST').map((c) => c[2]), ['coding'], 'Ordner angelegt');
-  assert.deepEqual(calls.filter((c) => c[0] === 'DELETE').map((c) => c[1]), ['/files/b2', '/files/b3']);
-  assert.equal(core.driveBackup.status().lastFile, r.file);
-  assert.equal((await core.driveBackup.run()).skipped, 'not-due', 'höchstens einmal pro Intervall');
-  core.settings.update({ google: { scopes: ['https://www.googleapis.com/auth/drive.readonly'] } });
-  await assert.rejects(core.driveBackup.run({ force: true }), /Schreibzugriff/);
-  cleanup();
+test('Drive-Backup: private Daten verlassen auch bei force=true niemals den PC', async () => {
+  const calls = [];
+  const { core, cleanup } = tempCore({ fetch: async (...args) => { calls.push(args); throw Error('unexpected upload'); } });
+  try {
+    core.google.isConnected = () => true;
+    core.settings.update({ google: { scopes: ['https://www.googleapis.com/auth/drive'] }, backupDrive: { enabled: true } });
+    core.google.api = async (...args) => { calls.push(args); };
+    for (const force of [false, true]) assert.equal((await core.driveBackup.run({ force })).skipped, 'private-data');
+    await assert.rejects(core.driveBackup.upload('/unused'), /Private/);
+    assert.equal(core.driveBackup.status().enabled, false);
+    assert.deepEqual(calls, []);
+  } finally { cleanup(); }
 });
 
 test('Geburtstage aus dem Brain → jährlicher ganztägiger Termin (anlegen, ändern, entfernen, keine Dubletten)', async () => {
@@ -615,7 +597,7 @@ test('Gemini überlastet (503): erneut versuchen, dann anderes Gemini-Modell; le
   core.secrets.set('gemini.api_key', 'AIzaTEST'); core.settings.update({ models: { fast: 'gemini-3.8-flash' } });
   const orig = g.stepStream.bind(g);
   g.stepStream = async () => { throw raw; };
-  const conv = core.conversations.create();
+  const conv = core.conversations.create('Gaming', 'gaming');
   const bad = await core.orchestrator.chat({ conversationId: conv.id, text: 'Analysiere meine LoL-Statistik' });
   assert.equal(bad.meta.error, true); assert.match(bad.content, /überlastet/);
   g.stepStream = orig;
@@ -1256,10 +1238,10 @@ test('Tarkov benötigte Items + Hideout: offene Quests (FIR) und nicht gebaute S
   } finally { cleanup(); }
 });
 
-test('Tarkov Item-Scanner: Ausschnitt → Gemini erkennt Item → Preise, Wert pro Slot, gebraucht für Quests', async () => {
+test('Tarkov Item-Scanner: Ausschnitt → lokale KI erkennt Item → Preise, Wert pro Slot, gebraucht für Quests', async () => {
   const items = { data: { items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU', width: 2, height: 1, basePrice: 1, avg24hPrice: 400000, lastLowPrice: 390000, low24hPrice: 380000, sellFor: [{ vendor: { name: 'Therapeut' }, priceRUB: 250000 }, { vendor: { name: 'Flohmarkt' }, priceRUB: 400000 }] }] } };
   const tasks = { data: { tasks: [{ id: 'a'.repeat(24), name: 'Gunsmith 1', minPlayerLevel: 1, kappaRequired: true, trader: { name: 'Mechanic' }, map: null, taskRequirements: [], objectives: [{ id: 'o1', type: 'giveItem', description: 'x', maps: [], items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU' }], count: 1, foundInRaid: true }] }] } };
-  const { core, cleanup } = tempCore({ script: [{ text: JSON.stringify({ name: 'Graphikkarte', english: 'Graphics card', confidence: 0.9 }) }],
+  const { core, cleanup } = tempCore({ local: true, script: [{ text: JSON.stringify({ name: 'Graphikkarte', english: 'Graphics card', confidence: 0.9 }) }],
     fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : /hideoutStations/.test(String(init?.body)) ? { data: { hideoutStations: [] } } : tasks), { headers: { 'Content-Type': 'application/json' } }) });
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
@@ -1272,10 +1254,10 @@ test('Tarkov Item-Scanner: Ausschnitt → Gemini erkennt Item → Preise, Wert p
   } finally { cleanup(); }
 });
 
-test('„Was ist das?“ in Tarkov: Mauszeiger-Ausschnitt zuerst, Hinweis nicht im Verlauf, Item-Wert erscheint als Karte', async () => {
+test('„Was ist das?“ in Tarkov: lokale Bilder, Hinweis nicht im Verlauf, externe Werkzeuge gesperrt', async () => {
   const items = { data: { items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU', width: 2, height: 1, avg24hPrice: 400000, lastLowPrice: 390000, sellFor: [{ vendor: { name: 'Therapeut' }, priceRUB: 250000 }] }] } };
   const script = [{ calls: [{ name: 'tarkov_item_value', args: { item: 'Graphikkarte' } }] }, { text: 'Graphikkarte: Flohmarkt 400.000 ₽, behalten für Gunsmith.' }];
-  const { core, fake, cleanup } = tempCore({ script, fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : { data: { tasks: [], hideoutStations: [] } }), { headers: { 'Content-Type': 'application/json' } }) });
+  const { core, fake, cleanup } = tempCore({ local: true, script, fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : { data: { tasks: [], hideoutStations: [] } }), { headers: { 'Content-Type': 'application/json' } }) });
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
     await core.gemini.discover();
@@ -1291,6 +1273,10 @@ test('„Was ist das?“ in Tarkov: Mauszeiger-Ausschnitt zuerst, Hinweis nicht 
     assert.ok(parts.some((p) => /tarkov_item_value/.test(p.text || '')), 'Hinweis in der Anfrage');
     const stored = core.conversations.messages(msg.conversationId || core.conversations.current().id, { limit: 10 }).find((m) => m.role === 'user');
     assert.doesNotMatch(stored.content, /tarkov_item_value/, 'Hinweis nicht im gespeicherten Verlauf');
-    assert.equal(scans.at(-1).name, 'Graphikkarte'); assert.equal(scans.at(-1).perSlot, 200000);
+    assert.equal(scans.length, 0, 'privater Screenshot darf keine externen Tools starten');
+    assert.ok(fake.requests.every(r => r.local));
+    const denied = fake.requests[1].contents.flatMap(c => c.parts).find(p => p.functionResponse);
+    assert.match(denied.functionResponse.response.error, /Private/);
   } finally { core.gaming.context.running = []; cleanup(); }
 });
+

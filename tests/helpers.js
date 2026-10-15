@@ -42,7 +42,18 @@ function tempCore(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-test-'));
   const fake = fakeSdk(opts.script || []);
   const core = createCore({ dataDir: dir, version: '3.0.0', genaiSdk: opts.genaiSdk || fake.sdk, fetch: opts.fetch || (async () => { throw new Error('offline'); }), platform: { toast: opts.toast } });
+  if (opts.local) {
+    // Scripted local provider; the separate loopback integration test exercises Ollama's wire protocol.
+    core.localLLM.stepStream = async (o) => {
+      fake.requests.push({ contents: structuredClone(o.contents), config: { systemInstruction: o.system }, local: true });
+      const step = fake.script.shift() || { text: 'ok' };
+      const functionCalls = (step.calls || []).map((c, i) => ({ ...c, id: 'local' + i }));
+      const text = step.text || ''; o.onText?.(text);
+      return { text, functionCalls, parts: functionCalls.length ? functionCalls.map(functionCall => ({ functionCall })) : [{ text }] };
+    };
+  }
   return { core, dir, fake, cleanup: () => { core.stop(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 
 module.exports = { fakeSdk, tempCore };
+

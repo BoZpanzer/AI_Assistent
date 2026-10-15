@@ -245,7 +245,8 @@ class Gaming {
     if (!Array.isArray(af)) return out;
     const n = (p) => ({ x: af[0] * p.x + af[1] * p.z + af[2], y: af[3] * p.x + af[4] * p.z + af[5] });
     try {
-      const m = (await this.tarkov.map(map, this.tracker?.tdMode?.()))?.value;
+      const baseMap = safeJson(this.context.getState(`mapsrc:eft:${map}`), null)?.baseMap || map;
+      const m = (await this.tarkov.map(baseMap, this.tracker?.tdMode?.()))?.value;
       out.name = m?.name || map;
       out.exits = (m?.extracts || []).filter((e) => e.position && (faction === 'all' || e.faction === faction || e.faction === 'shared' || !e.faction))
         .map((e) => ({ ...n(e.position), name: e.name, faction: e.faction || 'shared', kind: exitKind(e.name) }));
@@ -357,7 +358,7 @@ class Gaming {
     if (st.size > 40 * 1024 * 1024) throw new Error('Bild zu groß (max. 40 MB)');
     const r = this.saveMapFile(gid, name, fs.readFileSync(srcFile), ext, { width, height });
     // eigenes Bild statt tarkov.dev-Karte → deren automatische Kalibrierung passt nicht mehr
-    if (this.context.getState(`mapsrc:${gid}:${name}`)) {
+    if (this.context.getState(`mapsrc:${gid}:${name}`) || this.context.getState(`calib:${gid}:${name}`)) {
       this.db.run('DELETE FROM game_state WHERE key IN (?, ?)', `mapsrc:${gid}:${name}`, `calib:${gid}:${name}`);
       return this.maps(gid).find((m) => m.name === name);
     }
@@ -401,6 +402,16 @@ class Gaming {
   }
   /** Two reference points (image x/y in 0..1 ↔ game x/z) → similarity transform. */
   setCalibration(gid, map, points) {
+    if (Array.isArray(points) && points.length === 3) {
+      const affine = require('./calibration').affineFromPoints(points);
+      const image = this.mapImagePath(gid, map);
+      if (!image) throw new Error('Zuerst ein Kartenbild hinterlegen');
+      const imageHash = require('node:crypto').createHash('sha256').update(fs.readFileSync(image)).digest('hex');
+      const result = { points, affine, imageHash, source: 'reference-points' };
+      this.context.setState(`calib:${gid}:${map}`, result);
+      this.bus.emit('game:markers', { game: gid, map });
+      return result;
+    }
     if (!Array.isArray(points) || points.length !== 2) throw new Error('Genau zwei Referenzpunkte nötig');
     for (const p of points) for (const k of ['ix', 'iy', 'gx', 'gz']) if (!Number.isFinite(p[k])) throw new Error('Ungültiger Referenzpunkt');
     this.context.setState(`calib:${gid}:${map}`, { points });
@@ -413,7 +424,16 @@ class Gaming {
     const name = st?.map || this.db.get('SELECT map FROM game_markers WHERE game=? ORDER BY updated_at DESC LIMIT 1', gid)?.map || null;
     if (!name) return { map: null, hasImage: false, markers: [] };
     const pos = gid === 'eft' ? this.eftPosition() : null;
-    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name), position: pos && pos.map === name && pos.nx != null ? pos : null };
+    const baseMap = safeJson(this.context.getState(`mapsrc:${gid}:${name}`), null)?.baseMap || name;
+    const affine = safeJson(this.context.getState(`calib:${gid}:${name}`), null)?.affine;
+    let position = pos && pos.map === name && pos.nx != null ? pos : null;
+    if (pos && pos.map === baseMap && Array.isArray(affine)) {
+      const size = this.db.get('SELECT width, height FROM game_maps WHERE game=? AND name=?', gid, name) || {};
+      const dx = (affine[0] * (pos.fx || 0) + affine[1] * (pos.fz || 0)) * (size.width || 1000);
+      const dy = (affine[3] * (pos.fx || 0) + affine[4] * (pos.fz || 0)) * (size.height || 1000);
+      position = { ...pos, nx: affine[0] * pos.x + affine[1] * pos.z + affine[2], ny: affine[3] * pos.x + affine[4] * pos.z + affine[5], angle: Math.atan2(dy, dx) * 180 / Math.PI };
+    }
+    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name), position };
   }
   setLastMap(gid, map) { if (gid && map) { this.context.setState('lastmap:' + gid, { map: String(map).slice(0, 80) }); this.bus.emit('game:markers', { game: gid, map }); } return true; }
   markers(gid, map) {
@@ -443,10 +463,23 @@ class Gaming {
     if (m) this.bus.emit('game:markers', m);
   }
   clearMarkers(gid, map) { this.db.run('DELETE FROM game_markers WHERE game=? AND map=?', gid, map); this.bus.emit('game:markers', { game: gid, map }); }
+  routeGoal(map) { return safeJson(this.context.getState('eft:route-goal:' + map), null); }
+  setRouteGoal(map, goal) {
+    if (typeof map !== 'string' || !map.trim() || map.length > 80) throw new Error('Karte erforderlich');
+    if (goal !== null) {
+      if (!goal || !String(goal.label || '').trim()) throw new Error('Zielname erforderlich');
+      const placed = goal.x != null || goal.y != null;
+      if (placed && (![goal.x, goal.y].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1))) throw new Error('Ziel muss innerhalb der Karte liegen');
+      goal = { label: String(goal.label).trim().slice(0,120), x: placed ? goal.x : null, y: placed ? goal.y : null, floor: goal.floor ? String(goal.floor).slice(0,80) : null };
+    }
+    this.context.setState('eft:route-goal:' + map, goal);
+    this.bus.emit('game:markers', { game: 'eft', map }); return goal;
+  }
   routes(gid, map) { return this.db.all('SELECT * FROM game_routes WHERE game=? AND map=? ORDER BY created_at DESC', gid, map).map((r) => ({ id: r.id, name: r.name, points: safeJson(r.points, []) })); }
   saveRoute(gid, map, name, points) {
     if (!Array.isArray(points) || points.length < 2 || points.length > 50) throw new Error('Route braucht 2–50 Punkte');
     const clean = points.map((p) => ({ x: Number(p.x), y: Number(p.y), label: String(p.label || '').slice(0, 40) })).filter((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1);
+    if (clean.length !== points.length) throw new Error('Alle Routenpunkte müssen innerhalb der Karte liegen');
     const rid = id('rt');
     this.db.run('INSERT INTO game_routes(id,game,map,name,points,created_at) VALUES(?,?,?,?,?,?)', rid, gid, map, String(name).slice(0, 60), JSON.stringify(clean), nowIso());
     this.bus.emit('game:markers', { game: gid, map });
@@ -532,3 +565,4 @@ class Gaming {
 }
 
 module.exports = { Gaming, WIDGETS, LAYOUTS, WIDGET_TYPES: Object.keys(WIDGETS), extrasFor };
+
