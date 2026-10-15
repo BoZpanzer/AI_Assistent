@@ -68,6 +68,15 @@ jobs:
           MAKENSIS: C:\Program Files (x86)\NSIS\makensis.exe
         run: npm run dist:win
 
+      - name: Mitgeliefertes Offline-Whisper im Windows-Build prüfen
+        shell: pwsh
+        run: |
+          $voice = "release/win-unpacked/resources/voice"
+          if (!(Test-Path "$voice/whisper-cli.exe")) { throw "Mitgelieferte Whisper-Engine fehlt" }
+          if (!(Test-Path "$voice/ggml-base.bin")) { throw "Mitgeliefertes Whisper-Modell fehlt" }
+          $hash = (Get-FileHash "$voice/ggml-base.bin" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe') { throw "Whisper-Modell SHA-256 stimmt nicht" }
+          Write-Host "Verifizierte Whisper-Engine und Modell liegen im Installer-Paket"
       - name: Smoke-Test der gebauten App
         shell: pwsh
         run: |
