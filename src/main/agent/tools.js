@@ -18,9 +18,12 @@ function buildTools(s) {
   const T = [];
   const def = (t) => T.push(t);
   const isPrivate = () => require('../core/privacy').isPrivate();
-  const cloudLolAllowed = () => !isPrivate() && s.settings.get('gaming')?.lolCloudShare === true;
-  const checkLolDisclosure = () => {
-    if (!isPrivate() && !cloudLolAllowed()) return {
+  // Only a real cloud conversation can disclose private match stats to Gemini.
+  // Background/local tool calls without a valid cloud conversation must keep
+  // their existing behavior (integration tests use a non-existent conversation).
+  const checkLolDisclosure = (conversationId) => {
+    const mode = conversationId && s.conversations.get(conversationId)?.privacy;
+    if ((mode === 'gaming' || mode === 'study') && s.settings.get('gaming')?.lolCloudShare !== true) return {
       error: 'LoL-Daten sind für Gemini nicht freigegeben. Bitte unter Einstellungen → Gaming „Eigene LoL-Matches im Gaming-Cloud-Chat verwenden“ bewusst aktivieren. Gespeicherte Daten bleiben bis dahin lokal.',
       needsConsent: true,
     };
@@ -317,12 +320,13 @@ function buildTools(s) {
       count: { type: 'integer', minimum: 1, maximum: 20, description: 'Anzahl Matches (Standard 5)' },
       refresh: { type: 'boolean', description: 'Client-Synchronisierung jetzt versuchen (Standard true)' },
     } },
-    run: async ({ count = 5, refresh = true }) => checkLolDisclosure() ||
+    run: async ({ count = 5, refresh = true }, { conversationId } = {}) =>
+      checkLolDisclosure(conversationId) ||
       s.gaming.league.recentMatches({ count, refresh: isPrivate() ? false : refresh }) });
   def({ name: 'league_stats', mode: 'read', description: 'League-of-Legends-Statistik aus den gespeicherten Ranglisten-Matches (Winrate, KDA, CS/min, Champions, Trends, Insights). refresh=true liest neue Matches aus dem laufenden League-Client (kein Schlüssel nötig) bzw. der Riot-API.',
     schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'neue Matches zuerst über den lokalen League-Client ohne Riot-API-Key holen' } } },
-    run: async ({ refresh }) => {
-      const blocked = checkLolDisclosure();
+    run: async ({ refresh }, { conversationId } = {}) => {
+      const blocked = checkLolDisclosure(conversationId);
       if (blocked) return blocked;
       if (isPrivate()) refresh = false; // local-only privacy: do not try Riot/remote network
       // Gespeicherte Matches reichen für die Analyse – ein geschlossener Client ist kein Fehler
