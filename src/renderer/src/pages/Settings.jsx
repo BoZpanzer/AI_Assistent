@@ -358,6 +358,12 @@ function GamingCard({ s, secrets }) {
       <Field label="Ressourcen beim Spielen reduzieren"><Toggle checked={g.reduceWhileGaming} onChange={(v) => upd({ gaming: { reduceWhileGaming: v } })} /></Field>
       <Field label="Erkannte Spiele"><span class="small muted" style={{ textAlign: 'right' }}>{st.loading ? '…' : installed.map((p) => p.short || p.name).join(', ') || 'keine'}</span></Field>
       <div class="notice small">League of Legends: Matchhistorie und Rang werden aus dem laufenden League-Client gelesen – <b>kein API-Schlüssel nötig</b>. Riot-ID/Schlüssel unten nur, wenn du Daten auch ohne geöffneten Client willst.</div>
+      <Field label="Eigene LoL-Matches im Gaming-Cloud-Chat verwenden" hint="Standard: aus. Bei Aktivierung können Matchdaten und Statistiken zur Beantwortung deiner League-Fragen an Gemini übertragen werden. Kein Audio, keine Riot-Zugangsdaten.">
+        <Toggle checked={g.lolCloudShare === true} onChange={async (v) => {
+          if (v && !window.confirm('Eigene League-Matchhistorie und Auswertungen bei Gaming-Cloud-Fragen an Google Gemini übermitteln? Du kannst dies jederzeit ausschalten.')) return;
+          await upd({ gaming: { lolCloudShare: v } });
+        }} />
+      </Field>
       <Field label="League-Ordner (nur falls nicht Standard)"><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.leagueDir} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) upd({ gaming: { leagueDir: f } }); }}><FolderOpen size={14} /></button></div></Field>
       <Field label="Riot-ID (Name#TAG, optional)"><input class="inp" value={g.riotId} onChange={(e) => upd({ gaming: { riotId: e.currentTarget.value.trim() } })} placeholder="Name#EUW" /></Field>
       <Field label="Region"><Select value={g.riotRegion} onChange={(v) => upd({ gaming: { riotRegion: v } })} options={['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1']} /></Field>

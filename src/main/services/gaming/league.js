@@ -202,7 +202,9 @@ class League {
   // ---------- Lokaler League-Client (LCU) – ohne API-Schlüssel ----------
   /** Port + Passwort des laufenden Clients (lockfile oder Prozess-Kommandozeile). */
   async lcuCreds() {
-    if (this._lcu && Date.now() - this._lcu.at < 60000) return this._lcu.creds;
+    // A missing/expired client must be re-checked promptly after launch/restart.
+    // Old lockfile credentials must not trap the integration for a full minute.
+    if (this._lcu && Date.now() - this._lcu.at < (this._lcu.creds ? 15000 : 2000)) return this._lcu.creds;
     const fs = require('node:fs'); const path = require('node:path');
     const dirs = [this.settings.get('gaming').leagueDir, ...['C', 'D', 'E', 'F'].flatMap((d) => [`${d}:\\Riot Games\\League of Legends`, `${d}:\\Program Files\\Riot Games\\League of Legends`, `${d}:\\Games\\Riot Games\\League of Legends`])].filter(Boolean);
     let creds = null;
@@ -332,7 +334,56 @@ class League {
     throw new Error('Das Replay ist gestartet, aber die Replay-API antwortet nicht. Ist „EnableReplayApi=1“ in der game.cfg (League einmal neu starten)?');
   }
 
-  async clientAvailable() { try { await this.lcuGet('/lol-summoner/v1/current-summoner'); return true; } catch { return false; } }
+  /**
+   * Diagnostics distinguish an absent lockfile from a running but inaccessible
+   * League-Client. Never disclose the local port, auth token or command line.
+   */
+  async clientStatus() {
+    const creds = await this.lcuCreds().catch(() => null);
+    if (!creds) return {
+      connected: false, reason: 'Der League-Client wurde lokal nicht gefunden. Bitte LeagueClientUx.exe starten und ggf. den League-Ordner in JARVIS auswählen.',
+      code: 'not-found',
+    };
+    try {
+      const me = await this.lcuGet('/lol-summoner/v1/current-summoner');
+      if (!me?.puuid) throw new Error('League-Client: aktueller Account nicht lesbar');
+      return { connected: true, code: 'connected' };
+    } catch (e) {
+      this._lcu = null; // Do not reuse expired credentials after League restarts.
+      const message = String(e?.message || '');
+      const code = /verweigert|401|403/i.test(message) ? 'unauthorized'
+        : /404/i.test(message) ? 'not-ready' : 'unreachable';
+      const reasons = {
+        unauthorized: 'League-Client hat die Anmeldung abgelehnt. JARVIS versucht beim nächsten Abruf automatisch neue lokale Zugangsdaten.',
+        'not-ready': 'League-Client läuft, aber die Kontodaten sind noch nicht verfügbar. Bitte warten, bis du vollständig angemeldet bist.',
+        unreachable: 'League-Client erkannt, aber die lokale Schnittstelle ist gerade nicht erreichbar. Bitte Client vollständig starten oder neu starten.',
+      };
+      return { connected: false, code, reason: reasons[code] };
+    }
+  }
+  async clientAvailable() { return (await this.clientStatus()).connected; }
+  async recentMatches({ count = 5, refresh = true } = {}) {
+    const limit = Math.max(1, Math.min(20, Number.isInteger(count) ? count : 5));
+    let sync = null, error = null;
+    if (refresh) {
+      try { sync = await this.syncMatches(); }
+      catch (e) { error = e.message; }
+    }
+    const matches = this.matches(limit);
+    const lastSync = this.cache.get('lol:lastsync', { allowStale: true })?.value || null;
+    const status = await this.clientStatus();
+    return {
+      matches, count: matches.length,
+      fresh: !!(sync && ['client', 'api'].includes(sync.source)),
+      source: sync?.source === 'client' ? 'League-Client (jetzt aktualisiert)'
+        : sync?.source === 'api' ? 'Riot-Web-API (jetzt aktualisiert)'
+          : 'lokal gespeicherte Matches (nicht live)',
+      lastSync: lastSync?.at || null,
+      sync, status, warning: error || (!status.connected ? status.reason : null),
+      note: matches.length ? 'Zeige die gespeicherten Matches auch ohne Clientzugriff. Keine neuen Spiele behaupten, wenn fresh=false.'
+        : 'Noch keine gespeicherten Spiele. Ohne erreichbaren League-Client oder Riot-API-Schlüssel können keine neuen Matches geladen werden.',
+    };
+  }
 
   /**
    * Matchliste aus dem Client. Die „current-summoner“-Liste ist ein Zwischenspeicher, den der Client
@@ -583,14 +634,24 @@ class League {
    * Schlüssel), sonst – falls hinterlegt – über die Riot-Web-API.
    */
   async syncMatches(opts = {}) {
-    if (await this.clientAvailable()) return this.syncFromClient();
+    const status = await this.clientStatus();
+    if (status.connected) {
+      try { return await this.syncFromClient(opts); }
+      catch (e) {
+        this._lcu = null;
+        if (!this.hasKey()) throw new Error('League-Client-Verbindung beim Laden der Matches fehlgeschlagen: ' + e.message);
+      }
+    }
     if (this.hasKey()) return this.syncMatchesApi(opts);
-    throw new Error('Starte den League-Client – JARVIS liest deine Matches dann direkt aus (kein API-Schlüssel nötig).');
+    throw new Error(status.reason);
   }
 
   async source() {
     const last = this.cache.get('lol:lastsync', { allowStale: true })?.value || null;
-    return { client: await this.clientAvailable(), key: this.hasKey(), lastSync: last, me: this.cache.get('lol:me', { allowStale: true })?.value || null };
+    const status = await this.clientStatus();
+    return { client: status.connected, clientStatus: status.code, clientReason: status.reason || null, key: this.hasKey(),
+      lastSync: last, savedMatches: this.matches(20).length,
+      me: this.cache.get('lol:me', { allowStale: true })?.value || null };
   }
 
   /** Riot-Web-API (optional, mit eigenem Schlüssel). */
