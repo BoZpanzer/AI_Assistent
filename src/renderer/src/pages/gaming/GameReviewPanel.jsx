@@ -18,7 +18,7 @@ export function GameReviewPanel({ game }) {
   async function analyze() {
     setBusy(true); setError(''); setStage(null);
     try {
-      const response = await rpc('screen.ask', { question: 'Analysiere nur sichtbare, eindeutig lesbare Werte zum aktiven Spiel ' + game.name + '. Antworte ausschließlich als JSON-Array (maximal 20 Objekte) mit category (character,quest,commander,building,research,hero,item,skill,creature,base,achievement,resource,other), name, value, note und status (todo,in_progress,done,failed oder null). Wenn nichts sicher erkennbar ist, antworte []. Erfinde nichts. Keine anderen Inhalte.' });
+      const response = await rpc('game.reviewScreenshot', { game: game.id });
       const entries = parseSuggestions(response?.content);
       if (!entries.length) { setError('Keine sicher erkennbaren Spieldaten gefunden.'); return; }
       const result = await rpc('game.reviewStage', { game: game.id, entries });
