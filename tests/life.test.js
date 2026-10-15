@@ -70,7 +70,7 @@ test('Einkauf: nach Ladenbereich sortiert, keine Duplikate, gekauft → Vorräte
 test('Rezeptideen aus den Vorräten (gespeichert pro Vorratsstand) und Geschenkideen aus dem Brain', async () => {
   const recipes = { recipes: [{ name: 'Nudeln mit Tomatensoße', uses: ['Nudeln', 'Passata'], minutes: 20, steps: ['Nudeln kochen', 'Soße erhitzen'] }] };
   const gifts = { ideas: [{ idea: 'Kletterhallen-Gutschein', why: 'Lisa bouldert gern', budget: '20 €' }] };
-  const { core, cleanup, fake } = tempCore({ script: [{ text: JSON.stringify(recipes) }, { text: JSON.stringify(gifts) }] });
+  const { core, cleanup, fake } = tempCore({ local: true, script: [{ text: JSON.stringify(recipes) }, { text: JSON.stringify(gifts) }] });
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
     const L = core.life;
@@ -130,7 +130,7 @@ test('Abgabe-Tracker: Kalender, Aufgaben, Klausuren, gestaffelte Erinnerungen, M
     throw new Error('offline ' + url);
   };
   const extracted = { deadlines: [{ mailId: 'm1', title: 'Praxisbericht abgeben', dueAt: '2026-10-30T23:59:00+01:00', course: 'Praxis' }, { mailId: 'zzz', title: 'Erfunden', dueAt: '2026-11-01T10:00:00Z' }] };
-  const { core, cleanup, fake } = tempCore({ fetch: google, script: [{ text: JSON.stringify(extracted) }] });
+  const { core, cleanup, fake } = tempCore({ local: true, fetch: google, script: [{ text: JSON.stringify(extracted) }] });
   try {
     const D = core.deadlines;
     const in3d = new Date(Date.now() + 3 * 86400000);
@@ -181,21 +181,20 @@ test('Unterwegs: Haltestelle, Abfahrten, Verbindung zum Termin mit Ort, „Los�
   const { core, cleanup } = tempCore({ fetch });
   try {
     const T = core.transit;
-    assert.equal(await T.check(), null, 'ohne Haltestelle nichts');
+    assert.equal((await T.check()).skipped, 'private-calendar');
     const [h] = await T.searchStops('Leipzig Hbf');
     T.setHome(h);
     const d = await T.departures();
     assert.deepEqual([d[0].line, d[0].delayMin, d[0].platform], ['STR 16', 2, '2']);
     await core.calendar.create({ title: 'Vorlesung Datenbanken', start: start.toISOString(), location: 'Poetenweg 28, Leipzig' });
     await core.calendar.create({ title: 'Teams-Call', start: new Date(start.getTime() - 30 * 60000).toISOString(), location: 'Microsoft Teams' });
-    let r = await T.check();
-    assert.equal(r.event.title, 'Vorlesung Datenbanken', 'Online-Termine zählen nicht');
-    assert.equal(r.plan.journeys[0].leave, leave.toISOString());
-    assert.equal(core.db.get("SELECT COUNT(*) n FROM notifications WHERE dedupe_key LIKE 'leave:%'").n, 0, 'noch zu früh');
-    r = await T.check(new Date(leave.getTime() - 8 * 60000));
-    const n = core.db.get("SELECT * FROM notifications WHERE dedupe_key LIKE 'leave:%'");
-    assert.match(n.title, /Los in 8 min: Vorlesung Datenbanken/);
-    assert.match(n.body, /STR 4 ab Leipzig, Hauptbahnhof um .*Gl\. 1 \(\+1\)/);
+    const before = calls.length;
+    const r = await T.check();
+    assert.equal(r.skipped, 'private-calendar');
+    assert.equal(calls.length, before, 'keine Kalenderadresse an Fahrplan-API');
+    // Explicit public journey lookup remains supported.
+    const plan = await T.plan('Poetenweg 28, Leipzig', start.toISOString());
+    assert.equal(plan.journeys[0].leave, leave.toISOString());
   } finally { cleanup(); }
 });
 
@@ -226,3 +225,4 @@ test('Feste Einnahmen & Fixkosten: Stichtag, vierteljährlich/jährlich, einmali
     assert.equal(out.response.monthly, 255);
   } finally { cleanup(); }
 });
+

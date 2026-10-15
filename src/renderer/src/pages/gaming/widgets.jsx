@@ -64,7 +64,9 @@ function MapWidget({ game, params }) {
   const [routeDraft, setRouteDraft] = useState(null);
   const [goal] = useRpc('tarkov.routeGoal', { map }, { enabled: isEft, deps: [map], events: ['game:markers'] });
   const [placingGoal, setPlacingGoal] = useState(false);
-  useEffect(() => { setRouteDraft(null); setPlacingGoal(false); }, [map]);
+  useEffect(() => { setRouteDraft(null); setPlacingGoal(false); setCalib(null); setLandmark('manual'); }, [map]);
+  const [landmark, setLandmark] = useState('manual');
+  const references = (apiMap?.map?.extracts || []).filter(e => Number.isFinite(e.position?.x) && Number.isFinite(e.position?.z));
   const [calib, setCalib] = useState(null); // {step, points:[]}
   const [imgSize, setImgSize] = useState({ w: 1600, h: 1000 });
   const box = useRef(); const drag = useRef(null);
@@ -103,12 +105,17 @@ function MapWidget({ game, params }) {
     const p = toNorm(e);
     if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return;
     if (calib) {
-      const ref = await ask(`Referenzpunkt ${calib.points.length + 1}: Spielkoordinaten „x, z“ dieses Punktes (z. B. aus tarkov.dev)`, '');
+      const known = landmark === 'manual' ? null : references[Number(landmark)];
+      const ref = known ? `${known.position.x}, ${known.position.z}` : await ask(`Referenzpunkt ${calib.points.length + 1}/3: Spielkoordinaten „x, z“ (drei weit auseinanderliegende Punkte auf der Hauptkarte, keine Stockwerk-Inserts)`, '');
       if (!ref) return;
-      const [gx, gz] = ref.split(/[,;\s]+/).map(Number);
-      if (!Number.isFinite(gx) || !Number.isFinite(gz)) return toast('Bitte zwei Zahlen eingeben', 'error');
+      const values = ref.trim().split(/[,;\s]+/).map(Number);
+      if (values.length !== 2 || !values.every(Number.isFinite)) return toast('Bitte zwei Zahlen eingeben', 'error');
+      const [gx, gz] = values;
       const pts = [...calib.points, { ix: p.x, iy: p.y, gx, gz }];
-      if (pts.length === 2) { await guard(() => rpc('game.calibrate', { game: game.id, map, points: pts }), 'Karte kalibriert – API-Punkte werden eingeblendet'); setCalib(null); reloadMaps(); } else setCalib({ points: pts });
+      if (pts.length === 3) {
+        const saved = await guard(() => rpc('game.calibrate', { game: game.id, map, points: pts }), 'Kalibrierung berechnet – Positionen bitte an weiteren Landmarken prüfen');
+        if (saved) { setCalib(null); reloadMaps(); }
+      } else setCalib({ points: pts });
       return;
     }
     if (placingGoal) {
@@ -158,7 +165,8 @@ function MapWidget({ game, params }) {
             <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setPlacingGoal(false); setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
             {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}SVG-Karten laden</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
-            {isEft && !meta?.calibration?.affine && <div class={`tool ${calib ? 'active' : ''}`} title="Zwei Punkte mit bekannten Spielkoordinaten anklicken" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
+            {isEft && (!meta?.calibration?.affine || meta?.source?.source === 'wiki-bundle') && <div class={`tool ${calib ? 'active' : ''}`} title="Drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
+            {calib && <><Select value={landmark} onChange={setLandmark} options={[{ value: 'manual', label: 'Koordinaten eingeben' }, ...references.map((e, i) => ({ value: String(i), label: e.name }))]} /><span class="tiny">Exit auswählen, auf Hauptkarte anklicken. Drei verschiedene Punkte; keine Insets.</span></>}
             {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
             {isEft && transform && showApi && <div class="row" style={{ gap: 3, flexWrap: 'wrap' }} title="Welche Exits angezeigt werden">{[['pmc', 'PMC'], ['scav', 'Scav'], ['all', 'Alle']].map(([v, l]) => <span class={`chip ${faction === v ? 'active' : ''}`} style={{ fontSize: 10, padding: '1px 6px' }} onClick={() => guard(() => rpc('settings.update', { gaming: { eftFaction: v } }))}>{l}</span>)}</div>}
             {isEft && transform && showApi && <div class="tiny muted" style={{ lineHeight: 1.5 }}>{Object.entries({ normal: 'Exit', flare: 'Flare', coop: 'Co-op', car: 'Auto', transit: 'Transit' }).map(([k, l]) => <span style={{ whiteSpace: 'nowrap', marginRight: 6 }}><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: EXIT_COLOR[k], marginRight: 3 }} />{l}</span>)}</div>}
@@ -189,8 +197,8 @@ function MapWidget({ game, params }) {
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); fit(); }}><Crosshair size={14} /></button>
             </div>
             {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Kalibrierte Vektorkarten kannst du über „SVG-Karten laden“ ergänzen. Die zwölf mitgelieferten Wiki-Karten findest du in der Kartenauswahl unter „Wiki“; sie sind offline verfügbar.' : ''}</div>}
-            {imgUrl && meta?.source?.source === 'wiki-bundle' && !transform && <div class="notice" style={{ position: 'absolute', left: 8, top: 8, maxWidth: '75%', pointerEvents: 'none' }}>Wiki-Karte: Ziele und Routen per Klick nutzbar. Spielkoordinaten noch nicht kalibriert; API-Punkte bleiben ausgeblendet.</div>}
-            {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/2 anklicken</div>}
+            {imgUrl && meta?.source?.source === 'wiki-bundle' && !transform && !calib && <div class="notice" style={{ position: 'absolute', left: 8, top: 8, maxWidth: '75%', pointerEvents: 'none' }}>Wiki-Karte: Ziele und Routen per Klick nutzbar. Spielkoordinaten noch nicht kalibriert; API-Punkte bleiben ausgeblendet.</div>}
+            {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/3 anklicken</div>}
             {imgUrl && (meta?.calibration?.attribution || meta?.source?.attribution) && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration?.attribution || meta.source?.attribution}</div>}
             {imgUrl && floors.length > 0 && <div class="row gap-s" style={{ position: 'absolute', right: 10, bottom: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: '70%' }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
               {[{ id: null, label: 'Erdgeschoss' }, ...floors].map((f) => <button class={`chip ${floor === f.id ? 'active' : ''}`} onClick={() => setFloor(f.id)}>{f.label}</button>)}

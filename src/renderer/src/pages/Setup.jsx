@@ -5,16 +5,16 @@ import { useStore, setState, guard, toast, getState } from '../lib/store.js';
 import { Field, Toggle, Select, Spinner, StatusDot } from '../components/ui.jsx';
 import { BrandMark } from '../components/Shell.jsx';
 import { audio, chime } from '../lib/audio.js';
-import { upd } from './Settings.jsx';
+import { upd, LocalAI } from './Settings.jsx';
 
-const STEPS = ['Willkommen & System', 'Gemini', 'Sprache', 'Google', 'Studium', 'Gaming', 'Desktop', 'Abschluss'];
+const STEPS = ['Willkommen & System', 'Lokale KI / Gemini', 'Sprache', 'Google', 'Studium', 'Gaming', 'Desktop', 'Abschluss'];
 
 export function Setup() {
   const show = useStore((s) => s.showSetup);
   const [step, setStep] = useState(0);
   const [ok, setOk] = useState({});
   if (!show) return null;
-  const required = { 1: true };
+  const required = {};
   const canNext = !required[step] || ok[step];
   const finish = async () => { await upd({ setupComplete: true }); setState({ showSetup: false }); toast('Einrichtung abgeschlossen. Willkommen, ' + (getState().settings?.nickname || 'Chef') + '!'); };
   const P = [Welcome, Gemini, Voice, Google, Study, Gaming, Desktop, Finish][step];
@@ -23,7 +23,7 @@ export function Setup() {
       <div class="panel glow setup">
         <div class="steps">
           <div class="row" style={{ padding: '0 6px 14px' }}><BrandMark /><div><div class="brand-name" style={{ fontSize: 20 }}>JARVIS<b style={{ color: 'var(--cyan)' }}>.</b></div><div class="tiny muted">Einrichtung</div></div></div>
-          {STEPS.map((s, i) => <div class={`step ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`} onClick={() => i < step && setStep(i)} style={i < step ? { cursor: 'pointer' } : undefined}><span class="n">{i < step ? '✓' : i + 1}</span>{s}{[3, 4, 5].includes(i) && <span class="tiny muted" style={{ marginLeft: 'auto' }}>optional</span>}</div>)}
+          {STEPS.map((s, i) => <div class={`step ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`} onClick={() => i < step && setStep(i)} style={i < step ? { cursor: 'pointer' } : undefined}><span class="n">{i < step ? '✓' : i + 1}</span>{s}{[1, 2, 3, 4, 5].includes(i) && <span class="tiny muted" style={{ marginLeft: 'auto' }}>optional</span>}</div>)}
           <span class="grow" />
           <button class="btn xs ghost" onClick={() => setState({ showSetup: false })}>Später fortsetzen</button>
         </div>
@@ -32,7 +32,7 @@ export function Setup() {
           <div class="pane-foot">
             {step > 0 && <button class="btn sm ghost" onClick={() => setStep(step - 1)}>Zurück</button>}
             <span class="grow" />
-            {[3, 4, 5].includes(step) && <button class="btn sm ghost" onClick={() => setStep(step + 1)}>Überspringen</button>}
+            {[1, 2, 3, 4, 5].includes(step) && <button class="btn sm ghost" onClick={() => setStep(step + 1)}>Überspringen</button>}
             {step < STEPS.length - 1 ? <button class="btn sm primary" disabled={!canNext} onClick={() => setStep(step + 1)}>Weiter</button> : <button class="btn sm primary" onClick={finish}><Flag size={14} />Einrichtung abschließen</button>}
           </div>
         </div>
@@ -69,6 +69,7 @@ function Welcome({ done }) {
 }
 
 function Gemini({ done, ok }) {
+  const settings = useStore((s) => s.settings);
   const secrets = useStore((s) => s.secrets);
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -81,7 +82,8 @@ function Gemini({ done, ok }) {
   useEffect(() => { if (secrets['gemini.api_key'] && !ok) test(''); }, []);
   return (
     <>
-      <H icon={KeyRound} t="Gemini verbinden" s="Pflichtschritt – JARVIS denkt mit Google Gemini (in der Cloud, schont deine GPU)." />
+      <LocalAI s={settings} />
+      <H icon={KeyRound} t="Gemini optional verbinden" s="Nur für ausdrücklich freigegebene Uni- und Gaming-Chats. Private Inhalte verarbeitet das lokale Modell." />
       <div class="small muted">Schlüssel erstellen: <a onClick={() => rpc('shell.openExternal', { url: 'https://aistudio.google.com/app/apikey' })}>aistudio.google.com → API-Schlüssel</a>. Der Schlüssel wird mit Windows-DPAPI verschlüsselt gespeichert und verlässt JARVIS nur in Richtung Google.</div>
       <div class="row mt"><input class="inp grow" type="password" placeholder={secrets['gemini.api_key'] ? 'gespeichert – neu eingeben zum Ersetzen' : 'AIza…'} value={key} onInput={(e) => setKey(e.currentTarget.value)} /><button class="btn sm primary" disabled={busy || (!key && !secrets['gemini.api_key'])} onClick={() => test(key)}>{busy ? <Spinner /> : 'Verbindung testen'}</button></div>
       {r && !r.ok && <div class="notice warn">{r.error}</div>}
@@ -107,13 +109,13 @@ function Voice({ done }) {
   };
   return (
     <>
-      <H icon={Mic} t="Sprache" s="Mikrofon, Lautsprecher und „Hey Jarvis“." />
+      <H icon={Mic} t="Sprache" s="Lokaler Mikrofontest und Wake-Word. Cloud-Sprachchat ist zum Schutz privater Inhalte gesperrt." />
       <Field label="Mikrofon" wide><Select value={s.voice.inputDeviceId} onChange={(v) => upd({ voice: { inputDeviceId: v } })} options={[{ value: 'default', label: 'Windows-Standard' }, ...devs.in.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Mikrofon' }))]} /></Field>
       <Field label="Lautsprecher" wide><Select value={s.voice.outputDeviceId} onChange={(v) => upd({ voice: { outputDeviceId: v } })} options={[{ value: 'default', label: 'Windows-Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
       <div class="row"><button class="btn sm" onClick={test} disabled={level !== null}><Mic size={14} />Testaufnahme (4 s sprechen)</button>{level !== null && <div class="meter grow"><i style={{ width: `${level * 100}%` }} /></div>}{heard && <span class="ok small">Mikrofon funktioniert</span>}</div>
       <div class="row"><button class="btn sm" onClick={() => chime(0.4)}><Volume2 size={14} />Tonausgabe prüfen</button><span class="small muted">Du solltest einen kurzen Signalton hören.</span></div>
       <Field label="„Hey Jarvis“ aktivieren (lokale Erkennung, auch im Tray)" wide><Toggle checked={s.voice.wakeWord} onChange={(v) => upd({ voice: { wakeWord: v } })} /></Field>
-      <div class="notice small">Tipp: Mit Headset ist das Unterbrechen (Barge-in) am zuverlässigsten. Ohne Headset nutzt JARVIS die Echo-Unterdrückung von Chromium.</div>
+      <div class="notice small">Lokale Spracheingabe ist noch nicht eingerichtet. Nutze für private Anfragen den Textchat; die Testaufnahme bleibt auf diesem PC.</div>
     </>
   );
 }
@@ -134,7 +136,7 @@ function Google({ done }) {
   };
   return (
     <>
-      <H icon={Link2} t="Google Kalender" s="Termine zwischen PC und Smartphone synchronisieren (optional)." />
+      <H icon={Link2} t="Google Kalender" s="Vorhandene Google-Termine lesen (optional). Neue und geänderte Termine bleiben lokal." />
       <ol class="small" style={{ color: 'var(--text-2)', lineHeight: 1.6, margin: 0, paddingLeft: 18 }}>
         <li>console.cloud.google.com → Projekt anlegen → „Google Calendar API“ aktivieren.</li>
         <li>Google Auth Platform → Jetzt starten (Zielgruppe <b>Extern</b>) → unter <b>Zielgruppe</b> dich als Testnutzer eintragen.</li>
@@ -225,3 +227,4 @@ function Finish() {
     </>
   );
 }
+

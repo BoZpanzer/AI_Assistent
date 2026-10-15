@@ -245,7 +245,8 @@ class Gaming {
     if (!Array.isArray(af)) return out;
     const n = (p) => ({ x: af[0] * p.x + af[1] * p.z + af[2], y: af[3] * p.x + af[4] * p.z + af[5] });
     try {
-      const m = (await this.tarkov.map(map, this.tracker?.tdMode?.()))?.value;
+      const baseMap = safeJson(this.context.getState(`mapsrc:eft:${map}`), null)?.baseMap || map;
+      const m = (await this.tarkov.map(baseMap, this.tracker?.tdMode?.()))?.value;
       out.name = m?.name || map;
       out.exits = (m?.extracts || []).filter((e) => e.position && (faction === 'all' || e.faction === faction || e.faction === 'shared' || !e.faction))
         .map((e) => ({ ...n(e.position), name: e.name, faction: e.faction || 'shared', kind: exitKind(e.name) }));
@@ -357,7 +358,7 @@ class Gaming {
     if (st.size > 40 * 1024 * 1024) throw new Error('Bild zu groß (max. 40 MB)');
     const r = this.saveMapFile(gid, name, fs.readFileSync(srcFile), ext, { width, height });
     // eigenes Bild statt tarkov.dev-Karte → deren automatische Kalibrierung passt nicht mehr
-    if (this.context.getState(`mapsrc:${gid}:${name}`)) {
+    if (this.context.getState(`mapsrc:${gid}:${name}`) || this.context.getState(`calib:${gid}:${name}`)) {
       this.db.run('DELETE FROM game_state WHERE key IN (?, ?)', `mapsrc:${gid}:${name}`, `calib:${gid}:${name}`);
       return this.maps(gid).find((m) => m.name === name);
     }
@@ -401,6 +402,16 @@ class Gaming {
   }
   /** Two reference points (image x/y in 0..1 ↔ game x/z) → similarity transform. */
   setCalibration(gid, map, points) {
+    if (Array.isArray(points) && points.length === 3) {
+      const affine = require('./calibration').affineFromPoints(points);
+      const image = this.mapImagePath(gid, map);
+      if (!image) throw new Error('Zuerst ein Kartenbild hinterlegen');
+      const imageHash = require('node:crypto').createHash('sha256').update(fs.readFileSync(image)).digest('hex');
+      const result = { points, affine, imageHash, source: 'reference-points' };
+      this.context.setState(`calib:${gid}:${map}`, result);
+      this.bus.emit('game:markers', { game: gid, map });
+      return result;
+    }
     if (!Array.isArray(points) || points.length !== 2) throw new Error('Genau zwei Referenzpunkte nötig');
     for (const p of points) for (const k of ['ix', 'iy', 'gx', 'gz']) if (!Number.isFinite(p[k])) throw new Error('Ungültiger Referenzpunkt');
     this.context.setState(`calib:${gid}:${map}`, { points });
@@ -413,7 +424,16 @@ class Gaming {
     const name = st?.map || this.db.get('SELECT map FROM game_markers WHERE game=? ORDER BY updated_at DESC LIMIT 1', gid)?.map || null;
     if (!name) return { map: null, hasImage: false, markers: [] };
     const pos = gid === 'eft' ? this.eftPosition() : null;
-    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name), position: pos && pos.map === name && pos.nx != null ? pos : null };
+    const baseMap = safeJson(this.context.getState(`mapsrc:${gid}:${name}`), null)?.baseMap || name;
+    const affine = safeJson(this.context.getState(`calib:${gid}:${name}`), null)?.affine;
+    let position = pos && pos.map === name && pos.nx != null ? pos : null;
+    if (pos && pos.map === baseMap && Array.isArray(affine)) {
+      const size = this.db.get('SELECT width, height FROM game_maps WHERE game=? AND name=?', gid, name) || {};
+      const dx = (affine[0] * (pos.fx || 0) + affine[1] * (pos.fz || 0)) * (size.width || 1000);
+      const dy = (affine[3] * (pos.fx || 0) + affine[4] * (pos.fz || 0)) * (size.height || 1000);
+      position = { ...pos, nx: affine[0] * pos.x + affine[1] * pos.z + affine[2], ny: affine[3] * pos.x + affine[4] * pos.z + affine[5], angle: Math.atan2(dy, dx) * 180 / Math.PI };
+    }
+    return { map: name, hasImage: !!this.mapImagePath(gid, name), markers: this.markers(gid, name), position };
   }
   setLastMap(gid, map) { if (gid && map) { this.context.setState('lastmap:' + gid, { map: String(map).slice(0, 80) }); this.bus.emit('game:markers', { game: gid, map }); } return true; }
   markers(gid, map) {

@@ -69,7 +69,7 @@ test('Orchestrator: „Ich habe Operation Aquarius abgeschlossen“ → gespeich
   await core.gemini.discover();
   const cards = [];
   core.bus.on('chat:card', (c) => cards.push(c.card));
-  await core.orchestrator.chat({ text: 'Ich hab grad Operation Aquarius in Tarkov abgeschlossen und bin Level 21' });
+  await core.orchestrator.chat({ conversationId: core.conversations.create('Gaming', 'gaming').id, text: 'Ich hab grad Operation Aquarius in Tarkov abgeschlossen und bin Level 21' });
   const items = core.gaming.progress.list('eft');
   assert.equal(items.length, 2);
   assert.equal(items.find((x) => x.category === 'quest').name, 'Operation Aquarius - Part 1', 'offizieller Questname von tarkov.dev');
@@ -98,9 +98,9 @@ test('Migration einer bestehenden 3.0.0-Datenbank (Schema v1 → v2) – Daten b
   raw.exec("INSERT INTO tasks(id,title,status,created_at,updated_at) VALUES('t1','Alte Aufgabe','open','2026-10-12','2026-10-12')");
   raw.close();
   const db = new Database(path.join(dir, 'jarvis.sqlite3'), { backupDir: path.join(dir, 'backups') });
-  assert.equal(db.version, 8);
+  assert.equal(db.version, 9);
   assert.equal(db.get('SELECT title FROM tasks').title, 'Alte Aufgabe');
-  assert.ok(fs.readdirSync(path.join(dir, 'backups')).some((f) => f.includes('vor-migration-v1-zu-v8')));
+  assert.ok(fs.readdirSync(path.join(dir, 'backups')).some((f) => f.includes('vor-migration-v1-zu-v9')));
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -126,3 +126,4 @@ test('Spieldaten im Brain: Spielstand-Eintrag wird angelegt und aktualisiert, Lo
   assert.ok(r.results.some((x) => /Spielstand/.test(x.title)));
   cleanup();
 });
+

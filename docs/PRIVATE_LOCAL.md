@@ -35,9 +35,14 @@ Unter **Alltag → Geplante Ausgaben · Buckets** einen Namen, Betrag und Zielmo
 
 Im Raid-Planer Karte wählen, Ziel beschreiben und **Ziel speichern & Karte** klicken. Auf der Karte **Mein Ziel setzen** aktivieren und einen Kartenpunkt oder vorhandenen Marker anklicken. Das Ziel bleibt pro Karte inklusive Stockwerk gespeichert, kann ersetzt oder entfernt werden. Im Routenmodus kann **Ziel an Route anhängen** den Zielpunkt ergänzen. Die Route danach wie bisher speichern; ihr Endpunkt wird beschriftet angezeigt. Dies sind manuelle Routen, keine berechneten begehbaren Wege durch die Karte.
 
+## Kartenkalibrierung
+
+Die zwölf mitgelieferten Wiki-Bilder sind offline nutzbar. Unter „Kalibrieren“ drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen; bekannte Exits können aus der Liste gewählt werden. Die Umrechnung wird daraus berechnet und berücksichtigt auch Spiegelung. Separat gezeichnete Stockwerke dürfen nicht als Referenz dienen. Die Bilder sind noch nicht mit geprüften Standardreferenzen vorkalibriert; ohne Referenzen bleiben Spielpositionen ausgeblendet.
+
 ## Validierung
 
-- Renderer-Build erfolgreich.
-- `node --test tests/private-features.test.js tests/gamebase.test.js`: 23/23 erfolgreich. Einschließlich lokalem HTTP-Testserver, Remote-Modell-/Redirect-Sperre, Tool-Loop, Cloud-Kontexttrennung, Fehler ohne Cloud-Fallback, Bucket-Transaktion und Kartenvalidierung.
-- Gesamtsuite: 93/117 erfolgreich, 24 fehlgeschlagen. Sie ist noch **nicht grün**: viele ältere Tests erwarten ausdrücklich die jetzt gesperrten Cloud-Kalender-/Backup-/Embedding-/Voice-Pfade oder Gemini als Standardmodell. Weitere Fixture-Tests konnten in dieser Arbeitskopie mangels binärer PDF-/Wakeword-Fixtures nicht laufen. Die zwei Tests mit fest erwarteter alter Schema-Version brauchen Anpassung an v9.
-- Kein echter Modelllauf mit deiner Hardware und kein Windows-Electron-End-to-End-Test durchgeführt. Daher als Draft-PR zur weiteren Integration, nicht als ungeprüftes Release.
+- `npm run test:ci`: 118 Tests bestanden, keine Fehler, keine übersprungenen Tests; inklusive echter ONNX-Wake-Word-Erkennung und vollständiger PDF-/Audio-Fixtures.
+- Renderer-Build erfolgreich. Zusätzlicher gezielter Lauf für Kartenkalibrierung und Migration: 8/8 erfolgreich.
+- Cloud-Kalender-Schreiben, vollständige Cloud-Backups und Cloud-Audio werden in den Regressionstests ausdrücklich als gesperrt geprüft. Tests für private Aufgaben und Kalenderaktionen verwenden einen separaten lokalen Modell-Fake; ein Loopback-HTTP-Test prüft zusätzlich das Ollama-Protokoll und die Sperre entfernter Modelle/Redirects.
+- GitHub Actions prüft Linux sowie Windows-Build, Smoke-Test und Installation/Deinstallation am jeweiligen PR-Commit. Den aktuellen Status zeigt PR #1.
+- Kein echter Ollama-Modelllauf auf deiner Hardware und kein vollständiger Electron-UI-End-to-End-Lauf in dieser Arbeitsumgebung durchgeführt.

@@ -640,7 +640,7 @@ function ImportModal({ onClose }) {
 }
 
 
-function LocalAI({ s }) {
+export function LocalAI({ s }) {
   const [models, setModels] = useState([]);
   return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub="Private Daten bleiben auf diesem PC">
     <p class="small">Finanzen, Persönliches, Familie und Termine werden lokal verarbeitet. Ollama mit OLLAMA_NO_CLOUD=1 starten und ein lokales Modell mit Werkzeugunterstützung installieren. Kein Cloud-Fallback.</p>
