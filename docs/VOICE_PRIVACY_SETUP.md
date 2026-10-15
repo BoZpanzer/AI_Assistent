@@ -6,13 +6,19 @@ Die bestehende Gemini-Live-Funktion wurde bisher in jedem Chatmodus sofort gespe
 
 ## Private · lokal
 
-1. Installiere **whisper.cpp** aus dem offiziellen Projekt `ggml-org/whisper.cpp` lokal auf Windows und stelle die ausführbare Datei `whisper-cli.exe` bereit. Eine selbst installierte, vertrauenswürdige Engine ist erforderlich; JARVIS lädt kein ausführbares Programm automatisch herunter.
-2. Lade ein **mehrsprachiges** GGML-Modell (beispielsweise `ggml-base.bin` oder `ggml-small.bin`) aus den offiziellen whisper.cpp-Modellquellen. Englische `.en`-Modelle sind für Deutsch ungeeignet.
-3. Öffne JARVIS → **Einstellungen → Sprache** und wähle zuerst `whisper-cli.exe`, anschließend das Modell `.bin`.
-4. Wähle **Private · lokal**, drücke das Mikrofon, sprich bis zu 30 Sekunden und drücke es erneut.
-5. Audio wird in einem temporären Ordner auf dem PC an `whisper-cli` übergeben. JARVIS löscht WAV und Transkript danach. Nur der erkannte Text wird in den privaten JARVIS-Chat übernommen.
+**Keine zusätzliche Installation erforderlich.** Ab der neuen Windows-Version liefert
+\`JARVIS_Setup.exe\` die lokale Whisper-Spracherkennung bereits mit:
 
-Die Erkennung ist zunächst **Push-to-Talk / Diktat**, nicht ein voll-duplex Live-Dialog. Whisper.cpp und das Modell sind **nicht** im JARVIS-Installer enthalten. Der Text wird entsprechend der bereits bestehenden privaten JARVIS-Chat-Regeln lokal weiterverarbeitet; es gibt keinen Cloud-Fallback. Ein vom Nutzer selbst installiertes fremdes CLI-Programm muss vertrauenswürdig sein.
+- CPU-kompatible offizielle **whisper.cpp**-Engine (gepinnt auf b5130).
+- Mehrsprachiges deutschtaugliches **ggml-base.bin**-Modell (ca. 148 MB).
+- SHA-256-Prüfung **beim Release-Build** für beide Downloads. Wenn Download oder Prüfung fehlschlägt, wird **kein Installer veröffentlicht**.
+- Gespeichert unter \`resources/voice\` im Installationsverzeichnis, außerhalb des Electron-ASAR; kein Modelldownload beim ersten Start.
+
+Beim Öffnen von JARVIS → **Einstellungen → Sprache** erscheint automatisch „Whisper bereits im JARVIS-Installer enthalten – einsatzbereit“. Im privaten Chat: Mikrofon drücken, sprechen (bis zu 30 Sekunden), erneut drücken. Whisper verarbeitet die Audiodaten ausschließlich lokal und JARVIS entfernt temporäre WAV- und Transkriptdateien. Es gibt keinen Cloud-Fallback.
+
+Fortgeschrittene können weiterhin eine eigene ausführbare Datei oder ein anderes Modell auswählen; wenn diese Dateien fehlen, wird auf das geprüfte Bundle zurückgegriffen.
+
+Der Installer wird entsprechend größer (über 150 MB zusätzliche Dateien vor Kompression). Die CI-Build-Maschine benötigt Internetzugriff zum Abrufen der geprüften Artefakte, **dein PC bei der Spracheingabe nicht**. Der reguläre Textmodus von JARVIS funktioniert unverändert ohne Mikrofon. Ein normaler Windows-Build überprüft die Bundle-Dateien und testet die Installation; eine echte gesprochene Deutschaufnahme sollte nach Installation einmal manuell ausprobiert werden.
 
 ## Uni · Cloud und Gaming · Cloud
 
