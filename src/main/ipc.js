@@ -125,6 +125,12 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'calendar.calendars': () => s.calendar.calendars(),
     'calendar.select': ({ id, selected }) => s.calendar.selectCalendar(id, selected),
     'calendar.sync': () => s.calendar.sync(),
+    'calendar.exportToGoogle': async ({ calendarId }) => {
+      const { exportToGoogle } = require('./services/calendar-google-export');
+      const from = new Date(Date.now() - 30 * 86400000).toISOString();
+      const to = new Date(Date.now() + 180 * 86400000).toISOString();
+      return exportToGoogle({ db: s.db, google: s.google, calendarId, from, to });
+    },
     'calendar.status': () => s.calendar.status(),
     'calendar.resolveConflict': ({ id, keep }) => s.calendar.resolveConflict(id, keep),
     'calendar.freeSlots': (p) => s.calendar.freeSlots(p),
