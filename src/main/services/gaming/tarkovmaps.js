@@ -155,9 +155,6 @@ class TarkovMaps {
     return Array.isArray(cal?.affine) && src?.source === 'tarkov.dev' ? def.baseMap : null;
   }
 
-  /* END WIKI ALIGNMENT */
-  }
-
   async defs() {
     try {
       const r = await this.fetch(MAPS_JSON, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
