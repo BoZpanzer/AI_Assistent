@@ -124,6 +124,40 @@ class TarkovMaps {
     return { done, skipped, failed };
   }
 
+  /** Accept only image-hash-bound, independently verified local image registration. */
+  saveWikiAlignment(map, alignment) {
+    const id = String(map || '');
+    const def = require('../../assets/tarkov-wiki/manifest.json').find(d => d.baseMap + '-wiki' === id);
+    const file = def && this.g.mapImagePath('eft', id);
+    if (!file) throw new Error('Keine originale Wiki-Karte');
+    const src = JSON.parse(this.g.context.getState('mapsrc:eft:' + id) || 'null');
+    if (src?.source !== 'wiki-bundle') throw new Error('Keine Wiki-Bundle-Karte');
+    const hash = require('node:crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    if (hash !== def.sha256) throw new Error('Wiki-Kartenbild verändert');
+    const base = JSON.parse(this.g.context.getState('calib:eft:' + def.baseMap) || 'null');
+    if (!Array.isArray(base?.affine) || base.affine.length !== 6) throw new Error('Zuerst SVG-Referenzkarte laden');
+    const { affine: a, quality: q } = alignment || {};
+    if (!Array.isArray(a) || a.length !== 6 || !a.every(Number.isFinite) || !q || q.inliers < 12 || q.spread < .28 || q.medianError > .007) throw new Error('Bildzuordnung nicht ausreichend sicher');
+    // compose game->SVG with SVG->Wiki
+    const b = base.affine;
+    const composed = [a[0]*b[0]+a[1]*b[3],a[0]*b[1]+a[1]*b[4],a[0]*b[2]+a[1]*b[5]+a[2],a[3]*b[0]+a[4]*b[3],a[3]*b[1]+a[4]*b[4],a[3]*b[2]+a[4]*b[5]+a[5]];
+    this.g.context.setState('calib:eft:' + id, { affine: composed, imageHash: hash, source: 'auto-image-registration', quality: q });
+    this.g.context.setState('mapsrc:eft:' + id, { ...src, calibrationStatus: 'auto' });
+    this.g.bus.emit('game:markers', { game: 'eft', map: id });
+    return { affine: composed, quality: q };
+  }
+
+  wikiAlignmentSource(map) {
+    const def = require('../../assets/tarkov-wiki/manifest.json').find(d => d.baseMap + '-wiki' === map);
+    if (!def || !this.g.mapImagePath('eft', def.baseMap)) return null;
+    const cal = JSON.parse(this.g.context.getState('calib:eft:' + def.baseMap) || 'null');
+    const src = JSON.parse(this.g.context.getState('mapsrc:eft:' + def.baseMap) || 'null');
+    return Array.isArray(cal?.affine) && src?.source === 'tarkov.dev' ? def.baseMap : null;
+  }
+
+  /* END WIKI ALIGNMENT */
+  }
+
   async defs() {
     try {
       const r = await this.fetch(MAPS_JSON, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
