@@ -14,6 +14,7 @@ export function Calendar() {
   const [view, setView] = useState('month');
   const [cursor, setCursor] = useState(new Date());
   const google = useStore((s) => s.google);
+  const appSettings = useStore((s) => s.settings);
   const range = useMemo(() => {
     if (view === 'week') { const s = startOfWeek(cursor); return [s, new Date(s.getTime() + 7 * 86400000)]; }
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -73,6 +74,7 @@ export function Calendar() {
               {status?.pending > 0 && <div class="small warn">{status.pending} Änderung(en) warten auf Upload</div>}
               {status?.error && <div class="small err">{status.error}</div>}
               <button class="btn sm mt" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}>{status?.syncing ? <Spinner /> : <RefreshCw size={14} />}Jetzt synchronisieren</button>
+              <label class="row gap-s mt small"><input type="checkbox" checked={!!appSettings?.google?.exportLocalToGoogle} onChange={(e) => guard(() => rpc('settings.update', { google: { exportLocalToGoogle: e.currentTarget.checked } }), e.currentTarget.checked ? 'Google-Export aktiviert' : 'Google-Export deaktiviert')} />Eigene Termine & Vorlesungen regelmäßig nach Google übertragen</label>
               <button class="btn sm mt" onClick={async () => {
                 const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
                 if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
