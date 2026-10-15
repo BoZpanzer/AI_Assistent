@@ -127,7 +127,7 @@ class TarkovMaps {
   /** Accept only image-hash-bound, independently verified local image registration. */
   saveWikiAlignment(map, alignment) {
     const id = String(map || '');
-    const def = require('../../assets/tarkov-wiki/manifest.json').find(d => d.baseMap + '-wiki' === id);
+    const def = require('../../assets/tarkov-wiki/manifest.json').find(d => d.id === id);
     const file = def && this.g.mapImagePath('eft', id);
     if (!file) throw new Error('Keine originale Wiki-Karte');
     const src = JSON.parse(this.g.context.getState('mapsrc:eft:' + id) || 'null');
@@ -148,7 +148,7 @@ class TarkovMaps {
   }
 
   wikiAlignmentSource(map) {
-    const def = require('../../assets/tarkov-wiki/manifest.json').find(d => d.baseMap + '-wiki' === map);
+    const def = require('../../assets/tarkov-wiki/manifest.json').find(d => d.id === map);
     if (!def || !this.g.mapImagePath('eft', def.baseMap)) return null;
     const cal = JSON.parse(this.g.context.getState('calib:eft:' + def.baseMap) || 'null');
     const src = JSON.parse(this.g.context.getState('mapsrc:eft:' + def.baseMap) || 'null');
