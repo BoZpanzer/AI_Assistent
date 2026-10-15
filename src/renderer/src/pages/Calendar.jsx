@@ -74,7 +74,15 @@ export function Calendar() {
               {status?.pending > 0 && <div class="small warn">{status.pending} Änderung(en) warten auf Upload</div>}
               {status?.error && <div class="small err">{status.error}</div>}
               <button class="btn sm mt" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}>{status?.syncing ? <Spinner /> : <RefreshCw size={14} />}Jetzt synchronisieren</button>
-              <label class="row gap-s mt small"><input type="checkbox" checked={!!appSettings?.google?.exportLocalToGoogle} onChange={(e) => guard(() => rpc('settings.update', { google: { exportLocalToGoogle: e.currentTarget.checked } }), e.currentTarget.checked ? 'Google-Export aktiviert' : 'Google-Export deaktiviert')} />Eigene Termine & Vorlesungen regelmäßig nach Google übertragen</label>
+               <label class="row gap-s mt small"><input type="checkbox" checked={!!appSettings?.google?.exportLocalToGoogle} onChange={async (e) => {
+                 const enabled = e.currentTarget.checked;
+                 if (enabled && !(await ask('Eigene JARVIS-Termine und als Vorlesungsplan markierte Stundenpläne automatisch an Google übertragen? Änderungen und Löschungen der Originale können auch die Google-Kopien ändern oder entfernen.', '', { confirmOnly: true, okLabel: 'Google-Synchronisation aktivieren' }))) {
+                   e.currentTarget.checked = false; return;
+                 }
+                 const saved = await guard(() => rpc('settings.update', { google: { exportLocalToGoogle: enabled } }), enabled ? 'Google-Übertragung aktiviert' : 'Google-Übertragung deaktiviert');
+                 if (saved && enabled) await guard(() => rpc('calendar.sync'), 'Kalender abgeglichen');
+               }} />JARVIS-Termine & Vorlesungen regelmäßig nach Google spiegeln</label>
+               {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden separat verändert und nicht überschrieben.</div>
               <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst Google-Synchronisation aktivieren' : ''} onClick={async () => {
                 const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
                 if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
