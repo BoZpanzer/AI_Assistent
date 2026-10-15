@@ -5,6 +5,7 @@ import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
 import { Empty, ask, Spinner } from '../components/ui.jsx';
 import { WIDGETS, SPAN } from './gaming/widgets.jsx';
+import { GameReviewPanel } from './gaming/GameReviewPanel.jsx';
 
 const GENRE_LABEL = { survival: 'Survival', shooter: 'Shooter', racing: 'Racing', sports: 'Sport', builder: 'Aufbau & Simulation', rpg: 'Rollenspiel', training: 'Aim-Training', casual: 'Casual & Party' };
 const fmtHours = (min) => (min >= 60 ? `${(min / 60).toLocaleString('de-DE', { maximumFractionDigits: 1 })} h gespielt` : `${min} Min. gespielt`);
@@ -46,6 +47,7 @@ export function Gaming() {
                 <Widget game={p} w={layout.focus} title={layout.widgetTitles[layout.focus.type]} activeId={active?.id} bare />
               </section>
             )}
+            <GameReviewPanel game={p} />
             <div class="widgets">
               {layout.widgets.map((w, i) => (
                 <div key={`${p.id}:${w.type}:${w.params?.name || i}`} class={SPAN[w.type] || 'w-6'}><Widget game={p} w={w} title={layout.widgetTitles[w.type]} activeId={active?.id} /></div>
