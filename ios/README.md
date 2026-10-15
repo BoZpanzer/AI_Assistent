@@ -1,20 +1,13 @@
-# JARVIS Companion – iOS foundation
+# JARVIS iOS
 
-This folder contains a **native SwiftUI app skeleton**, not a functioning paired client.
-Create a new iOS App project in Xcode (SwiftUI lifecycle, iOS 17+) and add the two Swift files in `JarvisCompanion/`.
-An Apple/macOS build environment is required; this repository's Windows CI does not compile Swift.
+Native SwiftUI foundation. The macOS GitHub Actions workflow generates an Xcode project with XcodeGen and builds an unsigned iOS Simulator app. This artifact cannot be installed on a real iPhone.
 
-## Privacy-first sync design (not yet implemented)
+For a physical iPhone: install Xcode and XcodeGen on a Mac, run `cd ios && xcodegen generate`, open `JarvisCompanion.xcodeproj`, configure an Apple development team and unique bundle ID, then build and run on the device. For distribution without a Mac, the next step is a signed TestFlight workflow with Apple Developer Program and App Store Connect credentials.
 
-1. Windows desktop creates a short-lived one-time pairing challenge only on explicit user action.
-2. iPhone and desktop authenticate each other; never expose an unauthenticated HTTP endpoint.
-3. Use TLS and authenticated encryption. No public port or automatic cloud upload.
-4. PC user selects individual games and data categories (progress, timers, notes); default all OFF.
-5. iPhone confirms the same scope; intersection of grants is the only allowed sync set.
-6. Only an allowlisted DTO is sent: game id, display name, approved task labels/statuses and timestamps.
-7. Never sync screenshots, chat, passwords, tokens, private memory, financial or health data.
-8. Pairing can be revoked on either device; revoke tokens and erase cached approved records.
-9. Version payloads, limit sizes, and handle offline/replay protection.
-10. Test threat model, permissions and device pairing before enabling any network code.
+No OneDrive OAuth, file download, knowledge import, calendar sync or startup sync has been implemented. These require Microsoft Graph authorization with PKCE, encrypted file decryption on device, ETag version checks at foreground launch, atomic merges, offline edit conflict handling and Keychain-protected credentials. The desktop must also check remote revisions at startup. Never synchronize raw ZIP backups or credentials as knowledge.
 
-The SwiftUI toggles are **nonfunctional UI previews**; they do not persist or grant permissions.
+## Gaming companion mock-up (PR #8)
+
+`JarvisCompanion/CompanionHomeView.swift` contains an optional, **nonfunctional** gaming companion preview with consent toggles. The current app still starts the knowledge-oriented `ContentView` from the iOS app scaffold. This preview does **not** pair with Windows, transfer game data, upload screenshots or activate any sync permissions.
+
+A future pairing implementation must require explicit approval on both devices, restrict transferred fields, authenticate the devices, protect network traffic and offer revocation. The existing OneDrive/TestFlight setup remains separate from this design. This is documentation, not an implemented synchronization feature.

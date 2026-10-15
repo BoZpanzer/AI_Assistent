@@ -85,6 +85,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
+    'local.installOllama': () => s.localLLM.installOllama(),
     'local.installTier': ({ model }) => s.localLLM.installTier(model),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),
     'conv.remove': ({ id }) => s.conversations.remove(id),
@@ -125,6 +126,12 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'calendar.calendars': () => s.calendar.calendars(),
     'calendar.select': ({ id, selected }) => s.calendar.selectCalendar(id, selected),
     'calendar.sync': () => s.calendar.sync(),
+    'calendar.exportToGoogle': async ({ calendarId }) => {
+      const { exportToGoogle } = require('./services/calendar-google-export');
+      const from = new Date(Date.now() - 30 * 86400000).toISOString();
+      const to = new Date(Date.now() + 180 * 86400000).toISOString();
+      return exportToGoogle({ db: s.db, google: s.google, calendarId, from, to });
+    },
     'calendar.status': () => s.calendar.status(),
     'calendar.resolveConflict': ({ id, keep }) => s.calendar.resolveConflict(id, keep),
     'calendar.freeSlots': (p) => s.calendar.freeSlots(p),
@@ -510,6 +517,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return r.canceled ? null : s.system.createBackup(r.filePath);
     },
     'system.backups': () => s.system.listBackups(),
+    'system.jobs': () => s.scheduler?.status?.() || [],
     // --- Schlüssel & Einstellungen sichern ---
     'keys.status': () => ({ backupPassword: s.secrets.has('backup.password'), count: Object.keys(s.secrets.status()).filter((k) => !keyvault.EXCLUDE.test(k)).length }),
     'keys.setBackupPassword': ({ password } = {}) => {

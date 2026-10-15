@@ -134,7 +134,7 @@ class GoogleClient {
   }
 
   async api(method, path, { query, body } = {}, base = CAL) {
-    if (method !== 'GET' && /calendar\/v3/.test(base)) throw new Error('Termine bleiben lokal: Google-Kalender-Schreibzugriff gesperrt.');
+    if (method !== 'GET' && /calendar\/v3/.test(base) && !this.settings.get('google').exportLocalToGoogle) throw new Error('Termine bleiben lokal: Google-Kalender-Schreibzugriff nicht freigegeben.');
     const url = new URL(base + path);
     if (query) for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -164,6 +164,20 @@ class GoogleClient {
       items.push(...(d.items || []));
       pageToken = d.nextPageToken;
     } while (pageToken && items.length < 10000);
+    return items;
+  }
+  /** Only JARVIS-tagged mirror masters. Without a bounded complete result, no deletion. */
+  async listMirroredEvents(calendarId) {
+    const items = [];
+    let pageToken;
+    do {
+      const d = await this.api('GET', '/calendars/' + encodeURIComponent(calendarId) + '/events', {
+        query: { privateExtendedProperty: 'jarvisMirror=1', singleEvents: false, showDeleted: false, maxResults: 2500, pageToken },
+      });
+      items.push(...(d.items || []));
+      pageToken = d.nextPageToken;
+      if (pageToken && items.length >= 10000) throw new Error('Google-Mirrordaten zu umfangreich; Abgleich abgebrochen');
+    } while (pageToken);
     return items;
   }
   getEvent(calendarId, eventId) { return this.api('GET', `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`); }

@@ -4,7 +4,7 @@ import SwiftUI
 struct JarvisCompanionApp: App {
     var body: some Scene {
         WindowGroup {
-            CompanionHomeView()
+            ContentView()
         }
     }
 }

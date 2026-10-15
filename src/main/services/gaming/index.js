@@ -68,12 +68,22 @@ const WIDGETS = {
 };
 
 /** Neue Widgets je Spiel – kommen automatisch dazu (eigene Layouts: einmalig, danach entscheidest du). */
+// Game-specific existing widgets: reuse supported functionality instead of creating empty placeholders.
+const GAME_EXTRAS = Object.freeze({
+  ark: ['ark-breeding'], ark_asa: ['ark-breeding'],
+  cs2: ['cs2-matches'], pubg: ['pubg-matches'],
+  assettocorsa: ['racing-laps'], raceroom: ['racing-laps'], mxbikes: ['racing-laps'],
+  stardew: ['stardew-farm'], factorio: ['factorio-calc'],
+});
 const SERVER_GAMES = new Set(['minecraft', 'arma3', 'rust', 'ark', 'ark_asa', 'palworld', 'cs2', 'sandstorm', 'pixark', 'hytale', 'terraria', 'theforest']);
 function extrasFor(p) {
   if (p.integration === 'league') return ['lol-game', 'lol-coach', 'lol-progress', 'playtime', 'news'];
   if (p.integration === 'tarkov') return ['tarkov-economy', 'tarkov-ammo', 'playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
-  return [...(['ark', 'ark_asa'].includes(p.id) ? ['ark-breeding'] : []), ...(p.id === 'cs2' ? ['cs2-matches'] : []), ...(p.id === 'assettocorsa' ? ['racing-laps'] : []), ...(p.id === 'pubg' ? ['pubg-matches'] : []), ...(p.id === 'stardew' ? ['stardew-farm'] : []), ...(p.id === 'factorio' ? ['factorio-calc'] : []), 'wiki-lists', 'playtime', ...(p.steamAppId ? ['news'] : []), ...(SERVER_GAMES.has(p.id) ? ['servers'] : []), ...(p.steamAppId ? ['deals'] : [])];
+  return [...(GAME_EXTRAS[p.id] || []), 'wiki-lists', 'playtime',
+    ...(p.steamAppId ? ['news'] : []),
+    ...(SERVER_GAMES.has(p.id) ? ['servers'] : []),
+    ...(p.steamAppId ? ['deals'] : [])];
 }
 const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
@@ -128,7 +138,14 @@ class Gaming {
       const at = widgets.findIndex((w) => w.type === 'other-games');
       if (missing.length) widgets = at >= 0 ? [...widgets.slice(0, at), ...missing, ...widgets.slice(at)] : [...widgets, ...missing];
     }
-    if (p.integration === 'generic' && !p.wiki) widgets = widgets.filter((w) => w.type !== 'wiki');
+    if (p.integration === 'generic') {
+      if (!p.wiki) widgets = widgets.filter(w => w.type !== 'wiki');
+      if (!(p.links || []).length && !p.schedule) widgets = widgets.filter(w => w.type !== 'links');
+      // Generic layouts must not expose specialist widgets from unrelated games.
+      const specialist = new Set(['ark-breeding', 'cs2-matches', 'pubg-matches', 'racing-laps', 'stardew-farm', 'factorio-calc']);
+      const allowed = new Set(GAME_EXTRAS[p.id] || []);
+      widgets = widgets.filter(w => !specialist.has(w.type) || allowed.has(w.type));
+    }
     const focus = this.focus && this.focus.game === gid ? this.focus : null;
     return { game: p, widgets, focus, widgetTitles: Object.fromEntries(Object.entries(WIDGETS).map(([k, v]) => [k, v.title])) };
   }
@@ -141,6 +158,8 @@ class Gaming {
     if (!p) throw new Error('Unbekanntes Spiel');
     if (type.startsWith('tarkov-') && p.integration !== 'tarkov') throw new Error('Widget passt nicht zum Spiel');
     if (type.startsWith('lol-') && p.integration !== 'league') throw new Error('Widget passt nicht zum Spiel');
+    const specialist = new Set(['ark-breeding', 'cs2-matches', 'pubg-matches', 'racing-laps', 'stardew-farm', 'factorio-calc']);
+    if (specialist.has(type) && !(GAME_EXTRAS[p.id] || []).includes(type)) throw new Error('Widget passt nicht zum Spiel');
     const v = validate({ type: 'object', additionalProperties: false, properties: def.params }, params);
     if (!v.ok) throw new Error(v.errors.join('; '));
     this.focus = { game: gid, type, params: v.value, at: nowIso() };

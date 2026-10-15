@@ -14,6 +14,7 @@ export function Calendar() {
   const [view, setView] = useState('month');
   const [cursor, setCursor] = useState(new Date());
   const google = useStore((s) => s.google);
+  const appSettings = useStore((s) => s.settings);
   const range = useMemo(() => {
     if (view === 'week') { const s = startOfWeek(cursor); return [s, new Date(s.getTime() + 7 * 86400000)]; }
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -73,6 +74,23 @@ export function Calendar() {
               {status?.pending > 0 && <div class="small warn">{status.pending} Änderung(en) warten auf Upload</div>}
               {status?.error && <div class="small err">{status.error}</div>}
               <button class="btn sm mt" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}>{status?.syncing ? <Spinner /> : <RefreshCw size={14} />}Jetzt synchronisieren</button>
+               <label class="row gap-s mt small"><input type="checkbox" checked={!!appSettings?.google?.exportLocalToGoogle} onChange={async (e) => {
+                 const enabled = e.currentTarget.checked;
+                 if (enabled && !(await ask('Eigene JARVIS-Termine und als Vorlesungsplan markierte Stundenpläne automatisch an Google übertragen? Änderungen und Löschungen der Originale können auch die Google-Kopien ändern oder entfernen.', '', { confirmOnly: true, okLabel: 'Google-Synchronisation aktivieren' }))) {
+                   e.currentTarget.checked = false; return;
+                 }
+                 const saved = await guard(() => rpc('settings.update', { google: { exportLocalToGoogle: enabled } }), enabled ? 'Google-Übertragung aktiviert' : 'Google-Übertragung deaktiviert');
+                 if (saved && enabled) await guard(() => rpc('calendar.sync'), 'Kalender abgeglichen');
+               }} />JARVIS-Termine & Vorlesungen regelmäßig nach Google spiegeln</label>
+               {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden separat verändert und nicht überschrieben.</div>}
+              <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst Google-Synchronisation aktivieren' : ''} onClick={async () => {
+                const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
+                if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
+                const ok = await ask('JARVIS-Termine und Vorlesungen der letzten 30 und nächsten 180 Tage in Google Kalender „' + target.name + '“ kopieren? Die Daten werden an Google übertragen.', '', { confirmOnly: true, okLabel: 'Zu Google kopieren' });
+                if (!ok) return;
+                const result = await guard(() => rpc('calendar.exportToGoogle', { calendarId: target.id }));
+                if (result) toast('Google: ' + result.created + ' neu, ' + result.updated + ' aktualisiert, ' + result.unchanged + ' unverändert, ' + result.deleted + ' entfernt, ' + result.conflicts + ' Konflikte, ' + result.failed + ' Fehler', result.failed ? 'error' : 'info', 10000);
+              }}><Cloud size={14} />JARVIS & Vorlesungen zu Google kopieren</button>
             </> : <><div class="small muted">Termine bleiben lokal, bis du Google verbindest.</div><button class="btn sm mt" onClick={() => setState({ page: 'settings' })}>Verbinden…</button></>}
           </Panel>
           <Panel title="Kalender" sub="Sichtbarkeit">
@@ -190,22 +208,9 @@ function Feeds({ onChange }) {
           {!feeds.some((f) => f.kind === 'campusdual-session') && <input class="inp" placeholder="ICS-Link (optional)" title="Optional – JARVIS versucht ihn selbst zu finden" value={cdIcs} onInput={(e) => setCdIcs(e.currentTarget.value)} />}
           <button class="btn sm primary" style={{ width: '100%', justifyContent: 'center' }} disabled={busy} onClick={loginCd}>{busy ? <Spinner /> : <Link2 size={14} />}{feeds.some((f) => f.kind === 'campusdual-session') ? 'Neu anmelden' : 'Bei Campus Dual anmelden'}</button>
           {cdSt.loggedIn && <button class="btn xs ghost" style={{ alignSelf: 'flex-end' }} title="Anmeldung in JARVIS löschen" onClick={() => guard(() => rpc('feeds.campusDualLogout'), 'Abgemeldet').then(reloadCdSt)}>Abmelden</button>}
-          <details class="tiny muted"><summary style={{ cursor: 'pointer' }}>Campus-Dual-Adresse (falls die Anmeldung „404“ zeigt)</summary>
-            <div class="mt">Im Browser bei Campus Dual anmelden und die Adresse aus der Adresszeile hier einfügen:</div>
-            <input class="inp mt" placeholder="https://….campus-dual.de/…" defaultValue={settings?.campusDualUrl || ''} onChange={(e) => guard(() => rpc('settings.update', { campusDualUrl: e.currentTarget.value.trim().split('#')[0] }), 'Adresse gespeichert')} />
-          </details>
+          
         </> : <div class="tiny muted">Die Anmeldung ist nur in der Desktop-App verfügbar.</div>}
-        {!cd.open && <button class="btn xs ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setCd({ ...cd, open: true })}>Altes Selfservice-Portal: Matrikelnummer + Hash</button>}
-        {cd.open && <>
-          <ol class="tiny" style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-2)' }}>
-            <li>Bei <a onClick={() => rpc('shell.openExternal', { url: 'https://selfservice.campus-dual.de/' })}>selfservice.campus-dual.de</a> anmelden und den Stundenplan öffnen.</li>
-            <li>F12 → Netzwerk → F5 → im Filter „room“ eingeben → Rechtsklick auf „json?userid=…“ → URL kopieren.</li>
-            <li>Die Adresse unten ins Hash-Feld einfügen (oder Matrikelnummer + Hash einzeln).</li>
-          </ol>
-          <input class="inp" placeholder="Matrikelnummer" value={cd.userid} onInput={(e) => setCd({ ...cd, userid: e.currentTarget.value })} />
-          <input class="inp" type="password" placeholder="Hash (oder kopierte json-Adresse)" value={cd.hash} onInput={(e) => setCd({ ...cd, hash: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && connectCd()} />
-          <div class="row gap-s" style={{ justifyContent: 'flex-end' }}><button class="btn xs ghost" onClick={() => setCd({ open: false, userid: '', hash: '' })}>Abbrechen</button><button class="btn sm" disabled={busy || !cd.hash.trim() || (!cd.userid.trim() && !cd.hash.includes('userid='))} onClick={connectCd}>{busy ? <Spinner /> : <Link2 size={14} />}Verbinden</button></div>
-        </>}
+        
       </div>
       <input class="inp mt" placeholder="Anderer Kalender: https://…/…ics oder webcal://…" value={url} onInput={(e) => setUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
       {fepLink && <div class="notice warn mt tiny">Campus-Dual-Links brauchen deine Anmeldung – nutze oben „Bei Campus Dual anmelden“ (den Link kannst du dort einfügen).</div>}

@@ -19,6 +19,8 @@ const SCHEMA = {
     closeToTray: { type: 'boolean' },
     notifications: { type: 'boolean' },
     notifyCategories: { type: 'object' },
+    notificationCooldownMinutes: { type: 'integer', minimum: 0, maximum: 1440 },
+    localBackup: { type: 'object', properties: { keep: { type: 'integer', minimum: 1, maximum: 100 } } },
     quietHours: { type: 'object', properties: { enabled: { type: 'boolean' }, from: { type: 'string', maxLength: 5 }, to: { type: 'string', maxLength: 5 } } },
     animations: { type: 'string', enum: ['full', 'reduced', 'off'] },
     hudTransparency: { type: 'number', minimum: 0.4, maximum: 1 },
@@ -58,7 +60,7 @@ const SCHEMA = {
       bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 } } },
     // Google
     google: { type: 'object', properties: {
-      clientId: { type: 'string', maxLength: 200 }, calendarSync: { type: 'boolean' },
+      clientId: { type: 'string', maxLength: 200 }, calendarSync: { type: 'boolean' }, exportLocalToGoogle: { type: 'boolean' },
       syncIntervalMinutes: { type: 'number', minimum: 5, maximum: 240 },
       defaultCalendarId: { type: 'string', maxLength: 300 }, account: { type: 'string', maxLength: 200 },
       scopes: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 200 } } } },
@@ -127,7 +129,7 @@ const DEFAULTS = {
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, warnPct: 80, brake: true, usdToEur: 0.86 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90 },
-  google: { clientId: '', calendarSync: true, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
+  google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
   gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: true, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: true, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },
   life: { budgetMonthly: 0, boughtToPantry: true, birthdayGifts: true },

@@ -37,6 +37,20 @@ class LocalLLM {
       req.end(payload ? JSON.stringify(payload) : undefined);
     });
   }
+  /** Windows-only, explicit action. winget verifies installer metadata; no shell interpolation. */
+  async installOllama() {
+    if (process.platform !== 'win32') throw new Error('Automatische Installation ist nur unter Windows verfügbar.');
+    const { spawn } = require('node:child_process');
+    return new Promise((resolve, reject) => {
+      const child = spawn('winget', ['install', '--id', 'Ollama.Ollama', '--exact',
+        '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity'], { windowsHide: true, shell: false });
+      let output = '';
+      child.stdout.on('data', b => { output = (output + b.toString()).slice(-3000); });
+      child.stderr.on('data', b => { output = (output + b.toString()).slice(-3000); });
+      child.on('error', () => reject(new Error('Windows-Paketmanager winget nicht gefunden. Ollama bitte über die offizielle Website installieren.')));
+      child.on('close', code => code === 0 ? resolve({ installed: true }) : reject(new Error('Ollama-Installation fehlgeschlagen (Code ' + code + '). ' + output.slice(-400))));
+    });
+  }
   async status() {
     const os = require('node:os');
     const ramGB = Math.round(os.totalmem() / 1073741824);

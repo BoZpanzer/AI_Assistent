@@ -329,7 +329,16 @@ class Calendar {
         const items = await this.google.listEvents(c.id, { timeMin, timeMax });
         const seen = new Set();
         this.db.tx(() => {
-          for (const g of items) { if (g.status === 'cancelled') continue; seen.add(g.id); this.upsertFromGoogle(c.id, g); }
+          for (const g of items) {
+            if (g.status === 'cancelled') continue;
+            // JARVIS/ICS mirrors already exist as source events. Never display
+            // their Google copies as a second calendar entry.
+            const p = g.extendedProperties?.private;
+            if (p && (p.jarvisMirror === '1' ||
+                (p.jarvisSourceId && (p.jarvisSource === 'local' || String(p.jarvisSource).startsWith('feed:'))))) continue;
+            seen.add(g.id);
+            this.upsertFromGoogle(c.id, g);
+          }
           // Remove synced events in window that disappeared remotely
           for (const r of this.db.all("SELECT id, google_id FROM events WHERE calendar_id=? AND sync_state='synced' AND start_at>=? AND start_at<=?", c.id, timeMin, timeMax)) {
             if (r.google_id && !seen.has(r.google_id)) this.db.run('DELETE FROM events WHERE id=?', r.id);
@@ -337,9 +346,18 @@ class Calendar {
           this.db.run('UPDATE calendars SET synced_at=? WHERE id=?', nowIso(), c.id);
         });
       }
+      if (this.settings.get('google').exportLocalToGoogle) {
+        const { exportToGoogle } = require('./calendar-google-export');
+        const target = this.defaultCalendarId();
+        if (target !== 'local') {
+          const exported = await exportToGoogle({ db: this.db, google: this.google, calendarId: target, from: timeMin, to: timeMax });
+          if (exported.failed) throw new Error('Google-Kalender-Export: ' + exported.failed + ' Termin(e) nicht übertragen');
+          this.lastMirror = exported;
+        }
+      }
       this.lastSync = nowIso(); this.lastError = null;
       this.bus.emit('calendar:changed', {});
-      return { ok: true, at: this.lastSync };
+      return { ok: true, at: this.lastSync, mirror: this.lastMirror || null };
     } catch (e) {
       this.lastError = e.message;
       log.warn('Sync fehlgeschlagen', e);
@@ -355,6 +373,7 @@ class Calendar {
       connected: this.connected(), account: this.settings.get('google').account, lastSync: this.lastSync, error: this.lastError,
       syncing: this.syncing, pending: this.db.get("SELECT COUNT(*) c FROM events WHERE sync_state LIKE 'pending_%'").c,
       conflicts: this.db.get("SELECT COUNT(*) c FROM events WHERE sync_state='conflict'").c,
+      mirror: this.lastMirror || null,
     };
   }
 
