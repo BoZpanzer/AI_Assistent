@@ -2,6 +2,15 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 4.3.0 – Zuverlässigere Sprache, klarere LoL-Analyse und Tarkov-Karten
+
+- **Mikrofon automatisch wiederherstellen:** Wenn das ausgewählte Mikrofon während Cloud-, Offline- oder Wake-Word-Aufnahme getrennt wird, versucht JARVIS eine erneute Verbindung; bei verschwundenem Gerät wird das Standardmikrofon verwendet. Verspätete Berechtigungen oder alte Audio-Nachrichten werden nach einem Stopp nicht weiterverarbeitet. Gelingt die Wiederherstellung nicht, zeigt JARVIS den Fehler, statt lautlos weiterzuwarten.
+- **Sprachsitzung sauber stoppen:** Ausstehende Audio-Wiedergabe wird bei Stopp oder Fehler verworfen. Die bereits eingeführten Datenschutzgrenzen bleiben erhalten: privates Audio bleibt lokal, Cloud-Audio erfordert ausdrückliche Zustimmung.
+- **League of Legends verständlicher:** Verfügbare Match-Zusammenfassungen und Timelines werden getrennt ausgewiesen. „Nachladen“ zählt fehlende Detaildaten nicht mehr als Erfolg. Die Spielanalyse öffnet einen passenden Gaming-Chat, weist auf die Freigabe zur Cloud-Auswertung persönlicher Matchdaten hin und erlaubt deren Widerruf. Beim Matchwechsel erscheinen keine veralteten Details; CS-Verlauf ist als kumulierte Werte beschriftet.
+- **Tarkov-Karten besser bedienen:** Karte und Kalibrierung zeigen Laden, Wiederholungen und ausgeschöpfte Versuche sichtbar an. Du kannst direkt erneut laden oder zur bereits kalibrierten Referenzkarte wechseln. Screenshot-Positionen sind als Momentaufnahmen gekennzeichnet, nicht als permanente Live-Ortung.
+- **Release-Qualität:** Windows-Release prüft neben dem portablem Start auch Installation, mitgelieferte Offline-Whisper-Dateien, installierten Start und Deinstallation. Das Update-Manifest wird weiter mit SHA-256 und Ed25519 abgesichert.
+
+
 ## 3.34.0 – Automatische Wiki-Kartenkalibrierung (Beta)
 
 - Wiki-Karten können lokal mit der kalibrierten tarkov.dev-SVG-Karte über Bildmerkmale abgeglichen werden. Die Zuordnung wird nur bei ausreichend vielen konsistenten, weit verteilten Treffern gespeichert.
