@@ -24,5 +24,9 @@ export function createMapAutoRetry({ maxAttempts = 4, initialDelayMs = 2000, max
     if (!entry.done) entry.nextAt = now + Math.min(maxDelayMs, initialDelayMs * (2 ** (entry.attempts - 1)));
     return due(key, now);
   };
-  return { due, start, finish, reset: (key) => records.delete(key) };
+  const status = (key) => {
+    const e = records.get(key);
+    return !e ? 'idle' : e.running ? 'running' : e.done ? 'ready' : e.attempts >= maxAttempts ? 'failed' : 'waiting';
+  };
+  return { due, start, finish, status, reset: (key) => records.delete(key) };
 }
