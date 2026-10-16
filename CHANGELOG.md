@@ -10,8 +10,6 @@ Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 - **Tarkov-Karten besser bedienen:** Karte und Kalibrierung zeigen Laden, Wiederholungen und ausgeschöpfte Versuche sichtbar an. Du kannst direkt erneut laden oder zur bereits kalibrierten Referenzkarte wechseln. Screenshot-Positionen sind als Momentaufnahmen gekennzeichnet, nicht als permanente Live-Ortung.
 - **Release-Qualität:** Windows-Release prüft neben dem portablem Start auch Installation, mitgelieferte Offline-Whisper-Dateien, installierten Start und Deinstallation. Das Update-Manifest wird weiter mit SHA-256 und Ed25519 abgesichert.
 
-**Hinweis:** Eine geführte Installation des lokalen Antwortmodells, automatische Sprechpausen-Erkennung und zusätzliche Offline-Vorleseabläufe aus parallel bearbeiteten Änderungen sind erst Bestandteil eines Releases, wenn der zugehörige Code eingecheckt und geprüft wurde.
-
 
 ## 3.34.0 – Automatische Wiki-Kartenkalibrierung (Beta)
 
