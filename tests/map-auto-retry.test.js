@@ -49,3 +49,16 @@ test('Tarkov retries are isolated between maps and can be reset after manual act
   retry.reset(failedMap);
   assert.equal(retry.start(failedMap, 10000), true);
 });
+
+test('Tarkov exposes preparation, exhausted failure and manual recovery separately', async () => {
+  const retry = await makeRetry({ maxAttempts: 1 });
+  assert.equal(retry.status('map'), 'idle');
+  retry.start('map', 0);
+  assert.equal(retry.status('map'), 'running');
+  retry.finish('map', false, 0);
+  assert.equal(retry.status('map'), 'failed');
+  retry.reset('map');
+  retry.start('map', 1);
+  retry.finish('map', true, 1);
+  assert.equal(retry.status('map'), 'ready');
+});

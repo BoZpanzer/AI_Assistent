@@ -504,10 +504,11 @@ class League {
     if (!canClient && !this.hasKey()) return { analyzed: 0, missing: todo.length, reason: 'Client geschlossen' };
     const me = canClient ? await this.lcuGet('/lol-summoner/v1/current-summoner').catch(() => null) : null;
     let analyzed = 0;
+    let updated = 0;
     for (const mid of todo) {
-      try { if (await this.deepAnalyze(mid, { me })) analyzed++; } catch (e) { log.debug('Tiefenanalyse ' + mid, e); }
+      try { const result = await this.deepAnalyze(mid, { me }); if (result) updated++; if (result?.hasTimeline) analyzed++; } catch (e) { log.debug('Tiefenanalyse ' + mid, e); }
     }
-    if (analyzed) this.bus.emit('game:data', { game: 'league' });
+    if (updated) this.bus.emit('game:data', { game: 'league' });
     return { analyzed, missing: todo.length - analyzed };
   }
 

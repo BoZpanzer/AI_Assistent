@@ -409,3 +409,33 @@ test('LoL-Nachbesprechung mit Debrief-Fragen, Wochenbericht einmal pro Woche, Re
     await assert.rejects(L.replayJump(m.matchId, 361, { sleep: async () => {} }), /League-Client läuft nicht/);
   } finally { cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('LoL analysis distinguishes summary-only games from timeline coverage', () => {
+  const { analyzeGame, patterns } = require('../src/main/services/gaming/lolanalysis');
+  const { game, timeline } = fullGame(30, {});
+  const summary = analyzeGame(game, null, 'me');
+  const detailed = analyzeGame(game, timeline, 'me');
+  const result = patterns([summary, summary, detailed]);
+  assert.equal(result.games, 3);
+  assert.equal(result.timelineGames, 1);
+  assert.equal(patterns([summary]).timelineGames, 0);
+  assert.equal(patterns([]).timelineGames, 0);
+});
+
+test('LoL deep sync keeps unavailable timelines missing and publishes summary updates', async () => {
+  const { core, cleanup } = tempCore();
+  try {
+    const league = core.gaming.league;
+    core.db.run('INSERT INTO lol_matches(match_id,puuid,played_at,summary) VALUES(?,?,?,?)', 'EUW1_999', 'me', new Date().toISOString(), '{}');
+    league.lcuCreds = async () => ({ port: 1 });
+    league.lcuGet = async () => ({ puuid: 'me' });
+    let complete = false;
+    league.deepAnalyze = async () => ({ hasTimeline: complete });
+    let updates = 0;
+    core.bus.on('game:data', () => updates++);
+    assert.deepEqual(await league.deepSync(), { analyzed: 0, missing: 1 });
+    assert.equal(updates, 1);
+    complete = true;
+    assert.deepEqual(await league.deepSync(), { analyzed: 1, missing: 0 });
+  } finally { cleanup(); }
+});

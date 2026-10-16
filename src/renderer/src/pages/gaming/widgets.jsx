@@ -50,6 +50,10 @@ function MapWidget({ game, params }) {
   const [autoAligning, setAutoAligning] = useState(false);
   const autoAttempts = useRef(createMapAutoRetry());
   const [autoRetryTick, setAutoRetryTick] = useState(0);
+  const autoKey = `${map}:${meta?.hasImage && meta?.source?.source === 'wiki-bundle' ? 'wiki:' + (meta?.source?.at || '') : 'svg'}`;
+  const retryStatus = autoAttempts.current.status(autoKey);
+  const calibratedAlternative = (userMaps || []).find((m) => m.name === baseMap && m.hasImage && m.calibration?.affine);
+  const retryMap = () => { autoAttempts.current.reset(autoKey); setAutoRetryTick((v) => v + 1); };
   const alignWiki = async ({ quiet = false } = {}) => {
     if (!meta?.hasImage || meta?.source?.source !== 'wiki-bundle') return false;
     setAutoAligning(true);
@@ -230,6 +234,12 @@ function MapWidget({ game, params }) {
           <Select style={{ width: 170 }} value={map} onChange={setMap} options={options.map((o) => ({ value: o.value, label: 'Karte: ' + o.label }))} />
           <button class="btn sm" onClick={() => setFull(!full)}>{full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}{full ? 'Schließen' : 'Vollbild'}</button>
         </div>}>
+        {isEft && <div class="notice small mb" role="status">
+          {transform ? 'Karte bereit · Spielkoordinaten sind zugeordnet.' : autoAligning || loadingMaps || retryStatus === 'running' ? 'Karte wird automatisch vorbereitet …' : retryStatus === 'waiting' ? 'Vorbereitung noch nicht möglich – JARVIS versucht es automatisch erneut.' : retryStatus === 'failed' ? 'Keine sichere Kartenzuordnung verfügbar. Eigene Marker und Routen bleiben nutzbar; Spielposition und Questpunkte bleiben ausgeblendet.' : 'Spielkoordinaten noch nicht zugeordnet.'}
+          {!transform && retryStatus === 'failed' && <button class="btn xs" onClick={retryMap}>Erneut versuchen</button>}
+          {!transform && calibratedAlternative && map !== baseMap && <button class="btn xs" onClick={() => setMap(baseMap)}>Kalibrierte Karte öffnen</button>}
+          <div class="tiny muted">Positionen stammen aus deinem letzten Tarkov-Screenshot, nicht aus einer Live-Ortung.</div>
+        </div>}
         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, height: full ? 'calc(100% - 10px)' : 380 }}>
           <div class="map-tools">
             <div class="hud-label" style={{ fontSize: 11 }}>Marker setzen</div>
@@ -241,12 +251,12 @@ function MapWidget({ game, params }) {
             <div class="tool" onClick={async () => { const last = history.at(-1); if (!last) return toast('Nichts zum Rückgängigmachen'); await rpc('game.removeMarker', { id: last }); setHistory(history.slice(0, -1)); }}><Undo2 size={15} />Rückgängig</div>
             <div class="tool" onClick={async () => { if (await ask(`Alle eigenen Marker auf ${map} löschen?`, '', { confirmOnly: true, danger: true, okLabel: 'Löschen' })) rpc('game.clearMarkers', { game: game.id, map }); }}><Trash2 size={15} />Marker löschen</div>
             <div class={`tool ${routeDraft ? 'active' : ''}`} onClick={async () => { if (!routeDraft) { setPlacingGoal(false); setRouteDraft([]); toast('Route: Punkte auf der Karte anklicken, dann erneut auf „Route“'); return; } if (routeDraft.length >= 2) { const n = await ask('Name der Route', 'Route ' + (routes.length + 1)); if (n) await guard(() => rpc('game.saveRoute', { game: game.id, map, name: n, points: routeDraft }), 'Route gespeichert'); } setRouteDraft(null); }}><Route size={15} />Route</div>
-            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}SVG-Karten laden</div>}
+            {isEft && <div class={`tool ${loadingMaps ? 'active' : ''}`} title="Vektorkarten von tarkov.dev laden (bereits geladene werden aktualisiert)" onClick={() => !loadingMaps && loadEftMaps({ force: true })}>{loadingMaps ? <Spinner /> : <MapIcon size={15} />}Karten aktualisieren</div>}
             <div class="tool" onClick={() => guard(() => rpc('game.importMap', { game: game.id, name: map }), 'Kartenbild importiert')}><ImagePlus size={15} />Kartenbild</div>
             {isEft && meta?.source?.source === 'wiki-bundle' && <div class={`tool ${autoAligning ? 'active' : ''}`} onClick={() => !autoAligning && alignWiki()} title="Wiki-Karte anhand der lokalen SVG-Referenz automatisch ausrichten">{autoAligning ? <Spinner /> : <Crosshair size={15} />}Auto-Kalibrieren</div>}
             {isEft && (!meta?.calibration?.affine || meta?.source?.source === 'wiki-bundle') && <div class={`tool ${calib ? 'active' : ''}`} title="Drei weit auseinanderliegende Punkte auf der Hauptkarte zuordnen" onClick={() => setCalib(calib ? null : { points: [] })}><Ruler size={15} />Kalibrieren</div>}
             {calib && <><Select value={landmark} onChange={setLandmark} options={[{ value: 'manual', label: 'Koordinaten eingeben' }, ...references.map((e, i) => ({ value: String(i), label: e.name }))]} /><span class="tiny">Exit auswählen, auf Hauptkarte anklicken. Drei verschiedene Punkte; keine Insets.</span></>}
-            {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />API-Punkte</div>}
+            {isEft && transform && <div class={`tool ${showApi ? 'active' : ''}`} onClick={() => setShowApi(!showApi)}><Layers size={15} />Exits & Schlüssel</div>}
             {isEft && transform && showApi && <div class="row" style={{ gap: 3, flexWrap: 'wrap' }} title="Welche Exits angezeigt werden">{[['pmc', 'PMC'], ['scav', 'Scav'], ['all', 'Alle']].map(([v, l]) => <span class={`chip ${faction === v ? 'active' : ''}`} style={{ fontSize: 10, padding: '1px 6px' }} onClick={() => guard(() => rpc('settings.update', { gaming: { eftFaction: v } }))}>{l}</span>)}</div>}
             {isEft && transform && showApi && <div class="tiny muted" style={{ lineHeight: 1.5 }}>{Object.entries({ normal: 'Exit', flare: 'Flare', coop: 'Co-op', car: 'Auto', transit: 'Transit' }).map(([k, l]) => <span style={{ whiteSpace: 'nowrap', marginRight: 6 }}><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: EXIT_COLOR[k], marginRight: 3 }} />{l}</span>)}</div>}
             {isEft && <div class={`tool ${follow ? 'active' : ''}`} title="Karte wechselt automatisch zur Raid-Karte, sobald du im Spiel einen Screenshot machst (Position + Blickrichtung)" onClick={() => setFollow(!follow)}><Crosshair size={15} />Position{pos ? ' ✓' : ''}</div>}
@@ -262,7 +272,7 @@ function MapWidget({ game, params }) {
               {isEft && goal?.x != null && (goal.floor || null) === floor && <div class="marker" style={{ left: goal.x * imgSize.w, top: goal.y * imgSize.h, transform: `translate(-50%, -100%) scale(${1 / view.z})`, transformOrigin: '50% 100%', zIndex: 6 }} onClick={(e) => e.stopPropagation()}><div class="pin mk-quest" style={{ background: '#e879f9' }}><Target size={18} /></div><div class="lbl">ZIEL · {goal.label}</div></div>}
               {me && (nowT - Date.parse(me.at)) < 900000 && <div class="marker" title={`Du – Stand ${new Date(me.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} (letzter Screenshot)`} style={{ left: me.x * imgSize.w, top: me.y * imgSize.h, transform: `translate(-50%, -50%) scale(${1 / view.z})`, zIndex: 5 }} onClick={(e) => e.stopPropagation()}>
                 <svg width="30" height="30" viewBox="-15 -15 30 30" style={{ opacity: nowT - Date.parse(me.at) < 120000 ? 1 : nowT - Date.parse(me.at) < 300000 ? 0.6 : 0.35, transform: `rotate(${me.angle + 90}deg)`, filter: 'drop-shadow(0 0 6px rgba(250,204,21,.9))' }}><circle r="13" fill="rgba(250,204,21,.18)" /><path d="M0 -11 L8 8 L0 4 L-8 8 Z" fill="#facc15" stroke="#000" stroke-width="1.5" /></svg>
-                <div class="lbl" style={{ color: '#facc15' }}>{(() => { const s = (nowT - Date.parse(me.at)) / 1000; return s < 60 ? 'Du · gerade' : `Du · vor ${Math.round(s / 60)} min`; })()}</div>
+                <div class="lbl" style={{ color: '#facc15' }}>{(() => { const s = (nowT - Date.parse(me.at)) / 1000; return s < 60 ? 'Screenshot · gerade' : `Screenshot · vor ${Math.round(s / 60)} min`; })()}</div>
               </div>}
               {all.map((m) => { const c = CATS.find((x) => x.id === m.category) || CATS[5]; return (
                 <div class="marker" style={{ left: m.x * imgSize.w, top: m.y * imgSize.h, transform: `translate(-50%, -100%) scale(${1 / view.z})`, transformOrigin: '50% 100%', opacity: m.api ? 0.85 : 1 }} onClick={(e) => { e.stopPropagation(); editMarker(m); }}>
@@ -275,8 +285,8 @@ function MapWidget({ game, params }) {
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); zoom(0.8); }}><Minus size={14} /></button>
               <button class="btn icon xs" onClick={(e) => { e.stopPropagation(); fit(); }}><Crosshair size={14} /></button>
             </div>
-            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Kalibrierte Vektorkarten kannst du über „SVG-Karten laden“ ergänzen. Die zwölf mitgelieferten Wiki-Karten findest du in der Kartenauswahl unter „Wiki“; sie sind offline verfügbar.' : ''}</div>}
-            {imgUrl && meta?.source?.source === 'wiki-bundle' && !transform && !calib && <div class="notice" style={{ position: 'absolute', left: 8, top: 8, maxWidth: '75%', pointerEvents: 'none' }}>Wiki-Karte: Ziele und Routen per Klick nutzbar. Spielkoordinaten noch nicht kalibriert; API-Punkte bleiben ausgeblendet.</div>}
+            {!imgUrl && <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }} class="notice">Kein Kartenbild hinterlegt. Importiere ein Kartenbild, das du verwenden darfst (z. B. eigener Screenshot) – Marker funktionieren auch auf dem Raster. {isEft ? 'Kalibrierte Vektorkarten kannst du über „Karten aktualisieren“ ergänzen. Die zwölf mitgelieferten Wiki-Karten findest du in der Kartenauswahl unter „Wiki“; sie sind offline verfügbar.' : ''}</div>}
+            {imgUrl && meta?.source?.source === 'wiki-bundle' && !transform && !calib && <div class="notice" style={{ position: 'absolute', left: 8, top: 8, maxWidth: '75%', pointerEvents: 'none' }}>Wiki-Karte: Ziele und Routen per Klick nutzbar. Spielkoordinaten noch nicht kalibriert; Spielposition, Exits und Questpunkte bleiben ausgeblendet.</div>}
             {calib && <div style={{ position: 'absolute', left: 12, top: 10 }} class="chip active">Kalibrierung: Punkt {calib.points.length + 1}/3 anklicken</div>}
             {imgUrl && (meta?.calibration?.attribution || meta?.source?.attribution) && <div class="tiny" style={{ position: 'absolute', left: 8, bottom: 6, opacity: 0.7, background: 'rgba(0,0,0,.45)', padding: '1px 6px', borderRadius: 4, pointerEvents: 'none' }}>{meta.calibration?.attribution || meta.source?.attribution}</div>}
             {imgUrl && floors.length > 0 && <div class="row gap-s" style={{ position: 'absolute', right: 10, bottom: 8, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: '70%' }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
@@ -462,6 +472,7 @@ function TarkovRaid({ game, params }) {
   return (
     <Panel title="Raid-Status & Intelligente Hilfe" sub="Kartenwissen (keine Live-Raid-Daten verfügbar)" right={<Select style={{ width: 150 }} value={map} onChange={setMap} options={(maps?.maps || [{ id: map, name: map }]).map((x) => ({ value: x.id, label: x.name }))} />}>
       <div class="tabs sm">{[['overview', 'Übersicht'], ['exits', 'Exits'], ['keys', 'Schlüssel'], ['bosses', 'Bosse']].map(([k, l]) => <button class={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+      <div class="tiny muted mt">{cloudShare ? 'LoL-Daten für Gaming-Cloud-Analysen freigegeben.' : 'Diese Statistiken werden lokal ausgewertet. Cloud-Analyse erst nach deiner Freigabe.'}{cloudShare && <button class="btn xs ghost" onClick={() => guard(() => rpc('settings.update', { gaming: { lolCloudShare: false } }), 'LoL-Cloud-Freigabe ausgeschaltet')}>Freigabe ausschalten</button>}</div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       {!m && !st.error && <div class="mt"><Spinner /></div>}
       {m && <div class="col mt" style={{ gap: 6, maxHeight: 260, overflow: 'auto' }}>
@@ -748,6 +759,16 @@ function Wiki({ game, params }) {
 }
 
 // ---------------------------------------------------------------- League
+async function openLolAnalysis(chatDraft) {
+  await guard(async () => {
+    if (getState().settings?.gaming?.lolCloudShare !== true) {
+      if (!(await ask('Für die ausführliche LoL-Analyse dürfen deine Matchdaten und Auswertungen an Google Gemini gesendet werden. Diese Freigabe gilt auch für spätere Gaming-Fragen, bis du sie hier oder unter Einstellungen → Gaming ausschaltest. Die Auswertung auf dieser Seite bleibt ohne Freigabe lokal verfügbar.', '', { confirmOnly: true, okLabel: 'Freigeben und Analyse öffnen' }))) return;
+      await rpc('settings.update', { gaming: { lolCloudShare: true } });
+    }
+    const c = await rpc('conv.create', { privacy: 'gaming', title: 'LoL-Analyse' });
+    setState({ conversationId: c.id, page: 'chat', chatDraft });
+  });
+}
 function useLol() {
   const [src, reloadSource] = useRpc('lol.source', {}, { events: ['settings:changed', 'game:data', 'game:running'] });
   const hasKey = !!(src?.client || src?.key);
@@ -759,6 +780,7 @@ const icon = (v, c) => (v ? `https://ddragon.leagueoflegends.com/cdn/${v}/img/ch
 function Delta({ d }) { if (d == null) return <span class="d muted">–</span>; return <span class={`d ${d >= 0 ? 'up' : 'down'}`}>{d >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {d >= 0 ? '+' : ''}{d}% vs. vorher</span>; }
 
 function LolOverview() {
+  const cloudShare = useStore((x) => x.settings?.gaming?.lolCloudShare === true);
   const { hasKey, stats, st, src, reloadSource } = useLol();
   const [busy, setBusy] = useState(false);
   const sync = async () => { setBusy(true); const r = await guard(() => rpc('lol.sync')); setBusy(false); await reloadSource(); if (r) toast(`${r.added} neue Matches geladen`); };
@@ -771,11 +793,11 @@ function LolOverview() {
         {src?.me && <span class="small muted">{src.me.name}</span>}
         <span class="pill"><span class={`status-dot ${src?.client ? 'dot-ok' : 'dot-off'}`} />{src?.client ? 'League-Client verbunden' : 'League-Client nicht erreichbar'}</span>
         <button class="btn xs" onClick={reloadSource} title="Lokale League-Client-Verbindung erneut prüfen">Verbindung prüfen</button>
-        <button class="btn sm" disabled={!hasKey} title={hasKey ? '' : 'League-Client starten'} onClick={sync}>{busy ? <Spinner /> : <RefreshCw size={14} />}Matches laden</button>
+        <button class="btn sm" disabled={!hasKey || busy} title={hasKey ? '' : 'League-Client starten'} onClick={sync}>{busy ? <Spinner /> : <RefreshCw size={14} />}Matches laden</button>
       </div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       {!src?.client && src?.clientReason && <div class="notice warn mt">{src.clientReason}{src.savedMatches ? ` · ${src.savedMatches} gespeicherte Matches bleiben sichtbar.` : ''}</div>}
-      {!c ? <div class="notice mt">Noch keine Ranglisten-Matches gespeichert. {src?.client ? 'Klicke „Matches laden“.' : 'Starte einfach den League-Client – JARVIS liest deine letzten Ranglistenspiele und deinen Rang direkt daraus (kein API-Schlüssel nötig) und aktualisiert alle 10 Minuten, solange der Client offen ist.'}</div> : (
+      {!c ? <div class="notice mt">Noch keine Ranglisten-Matches gespeichert. {src?.client ? 'JARVIS lädt die Spiele automatisch nach. Mit „Matches laden“ kannst du sofort aktualisieren.' : 'Starte einfach den League-Client – JARVIS liest deine letzten Ranglistenspiele und deinen Rang direkt daraus (kein API-Schlüssel nötig) und aktualisiert alle 10 Minuten, solange der Client offen ist.'}</div> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginTop: 12 }}>
           <div class="panel stat row"><div class="ring" style={{ '--p': c.winrate }}><span>{c.winrate}%</span></div><div><div class="hud-label">Winrate</div><div class="small muted">{c.wins}S – {c.games - c.wins}N</div></div></div>
           <div class="panel stat"><div class="hud-label">KDA (Ø)</div><div class="v">{c.kda}</div><div class="small muted">{c.avgK} / {c.avgD} / {c.avgA}</div><Delta d={stats.deltas.kda} /></div>
@@ -833,7 +855,7 @@ function LolCoaching() {
       <div class="col" style={{ gap: 8 }}>
         {!stats?.insights?.length && <Empty>Insights erscheinen, sobald Matches geladen sind.</Empty>}
         {(stats?.insights || []).map((i) => { const I = ICON[i.kind] || Sparkles; return <div class="result-row" style={{ alignItems: 'flex-start' }}><I size={20} /><div class="grow"><b class="small">{i.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{i.text}</div></div></div>; })}
-        <button class="btn sm" onClick={() => setState({ page: 'chat', chatDraft: 'Analysiere meine LoL-Statistik und die Fehleranalyse meiner Ranked-Spiele und erstelle mir einen Trainingsplan mit 3 messbaren Zielen.' })}><Sparkles size={14} />Ausführliche Analyse mit JARVIS</button>
+        <button class="btn sm" onClick={() => openLolAnalysis('Analysiere meine LoL-Statistik und die Fehleranalyse meiner Ranked-Spiele und erstelle mir einen Trainingsplan mit 3 messbaren Zielen.')}><Sparkles size={14} />Ausführliche Analyse mit JARVIS</button>
       </div>
     </Panel>
   );
@@ -843,12 +865,13 @@ function LolCoaching() {
 function LolMistakes() {
   const [p, reload] = useRpc('lol.patterns', { games: 20 }, { events: ['game:data'] });
   const [busy, setBusy] = useState(false);
-  const refresh = async () => { setBusy(true); const r = await guard(() => rpc('lol.deepSync')); setBusy(false); reload(); if (r) toast(r.analyzed ? `${r.analyzed} Spiele analysiert` : r.reason ? 'Client geschlossen – Analyse mit gespeicherten Daten' : 'Alles aktuell'); };
+  const refresh = async () => { setBusy(true); const r = await guard(() => rpc('lol.deepSync')); setBusy(false); reload(); if (r) toast(`${r.analyzed} Timelines geladen${r.missing ? ` · ${r.missing} noch nicht verfügbar${r.reason ? ' (' + r.reason + ')' : ''}` : ' · Details aktuell'}`); };
   const A = p?.averages || {};
   return (
-    <Panel icon={Skull} title="Fehleranalyse" sub={p?.games ? `${p.games} Ranked-Spiele mit Timeline · ${p.wins} Siege` : 'Aus den Timelines deiner Ranked-Spiele'}
-      right={<button class="btn xs ghost" title="Fehlende Spiele analysieren (Client muss laufen)" onClick={refresh}>{busy ? <Spinner size={12} /> : <RefreshCw size={13} />}</button>}>
+    <Panel icon={Skull} title="Fehleranalyse" sub={p?.games ? `${p.games} Ranked-Spiele · ${p.timelineGames ?? 0} mit Timeline · ${p.wins} Siege` : 'Aus den Timelines deiner Ranked-Spiele'}
+      right={<button class="btn xs ghost" title="Fehlende Spiele analysieren (Client muss laufen)" disabled={busy} onClick={refresh}>{busy ? <Spinner size={12} /> : <RefreshCw size={13} />}</button>}>
       {(!p || p.games < 3) && <Empty>Noch zu wenig Daten. Läuft der League-Client, lädt JARVIS die Details (Tode, Lane-Phase, Objectives) deiner letzten Ranked-Spiele automatisch nach.</Empty>}
+      {p && (p.timelineGames ?? 0) < p.games && <div class="notice small mb">Für {p.games - (p.timelineGames ?? 0)} Spiele fehlen Timeline-Details. Tode, Laufwege und Lane-Vergleiche sind nur für die übrigen Spiele auswertbar.</div>}
       {p?.games >= 3 && <>
         <div class="row wrap gap-s mb">
           <span class="chip static" title="Tode vor Minute 14">Frühe Tode Ø {A.earlyDeaths ?? '–'}</span>
@@ -862,12 +885,12 @@ function LolMistakes() {
           <div class="mt"><RiftMap size={300}><g filter="url(#rift-heat)">{p.deathPoints.map((x) => <circle cx={RX(x.x)} cy={RY(x.y)} r="3.6" fill={x.min < 14 ? '#ff4d4d' : '#ffb020'} opacity="0.45" />)}</g>{p.deathPoints.map((x) => <circle cx={RX(x.x)} cy={RY(x.y)} r="0.7" fill={x.min < 14 ? '#ff9a9a' : '#ffd27a'} />)}</RiftMap>
           <div class="tiny muted">Rot = vor Min. 14, gelb = später. Dichte Flecken = dort stirbst du oft.</div></div></details>}
         <div class="col" style={{ gap: 8 }}>
-          {!p.findings.length && <div class="small muted">Keine auffälligen Fehlermuster – solide.</div>}
+          {!p.findings.length && <div class="small muted">In den verfügbaren Daten wurden keine eindeutigen Fehlermuster erkannt.</div>}
           {p.findings.slice(0, 5).map((f) => <div class="result-row" style={{ alignItems: 'flex-start', cursor: 'default' }}><TriangleAlert size={18} style={{ color: 'var(--orange)' }} /><div class="grow"><b class="small">{f.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{f.text}</div></div></div>)}
           {p.strengths.map((f) => <div class="result-row" style={{ alignItems: 'flex-start', cursor: 'default' }}><Trophy size={18} style={{ color: 'var(--cyan)' }} /><div class="grow"><b class="small">{f.title}</b><div class="small" style={{ color: 'var(--text-2)' }}>{f.text}</div></div></div>)}
         </div>
       </>}
-      <button class="btn sm mt" onClick={() => setState({ page: 'chat', chatDraft: 'Was mache ich in meinen Ranked-Spielen falsch? Nutze die Fehleranalyse (league_deep_review) und gib mir einen Trainingsplan mit 3 messbaren Zielen.' })}><Sparkles size={14} />Mit JARVIS durchgehen</button>
+      <button class="btn sm mt" onClick={() => openLolAnalysis('Was mache ich in meinen Ranked-Spielen falsch? Nutze die Fehleranalyse (league_deep_review) und gib mir einen Trainingsplan mit 3 messbaren Zielen.')}><Sparkles size={14} />Mit JARVIS durchgehen</button>
       <div class="tiny muted mt">Orte und Anwesenheit bei Objectives sind aus Minuten-Positionen geschätzt.</div>
     </Panel>
   );
@@ -940,12 +963,14 @@ function LolGame({ params = {} }) {
   const [games] = useRpc('lol.games', { limit: 20 }, { events: ['game:data'], initial: [] });
   const [sel, setSel] = useState(params.matchId || null);
   const mid = sel || games[0]?.matchId || null;
-  const [d, reload] = useRpc('lol.deep', { matchId: mid }, { events: ['game:data'], enabled: !!mid });
+  const [detail, reload, detailState] = useRpc('lol.deep', { matchId: mid }, { events: ['game:data'], enabled: !!mid });
+  const d = detail?.matchId === mid ? detail : null;
   const [rs, reloadRs] = useRpc('lol.replayStatus', {}, {});
   const [replay, setReplay] = useState(null);
   const [show, setShow] = useState({ me: true, enemyJungler: true, ownJungler: false });
   const [real, setReal] = useState(false);
   const [ans, setAns] = useState({});
+  useEffect(() => { setAns({}); setReplay(null); }, [mid]);
   useEvent('lol:replay', (x) => setReplay(x));
   const jump = async (sec) => {
     setReplay({ phase: 'starting' });
@@ -964,6 +989,7 @@ function LolGame({ params = {} }) {
     <Panel icon={Route} title="Spielanalyse" sub="Jungle-Pfade, Tode, Lane-Phase – aus der Riot-Timeline, nach dem Spiel">
       {!games.length ? <Empty>Noch keine Spiele mit Timeline. Läuft der League-Client, lädt JARVIS die Details deiner letzten Ranked-Spiele automatisch.</Empty> : <>
         <Select value={mid} onChange={setSel} options={games.map((g) => ({ value: g.matchId, label: `${g.win ? 'Sieg' : 'Niederlage'} · ${g.champion || '?'}${g.vs ? ' vs ' + g.vs : ''} · ${g.kda} · ${ago(g.playedAt)}` }))} />
+        {!d && <div class="notice small mt">{detailState.error || 'Spieldetails werden geladen …'}</div>}
         {d && <>
           <div class="row wrap gap-s mt" style={{ alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 300px', maxWidth: 380 }}>
@@ -1008,7 +1034,7 @@ function CsCurve({ me, opp, oppName }) {
   const pts = (arr) => arr.map((v, i) => (v == null ? null : `${(i / (n - 1)) * 100},${40 - (v / max) * 36}`)).filter(Boolean).join(' ');
   return (
     <div class="mt">
-      <div class="row tiny muted"><span class="grow">CS pro Minute (1–{n})</span><span style={{ color: '#2fd5ff' }}>du {me[n - 1]}</span>{opp && <span style={{ color: '#ff8a5a', marginLeft: 8 }}>{oppName || 'Gegner'} {opp[n - 1]}</span>}</div>
+      <div class="row tiny muted"><span class="grow">Gesammelte CS bis Minute 1–{n}</span><span style={{ color: '#2fd5ff' }}>du {me[n - 1]}</span>{opp && <span style={{ color: '#ff8a5a', marginLeft: 8 }}>{oppName || 'Gegner'} {opp[n - 1]}</span>}</div>
       <svg viewBox="0 0 100 42" preserveAspectRatio="none" style={{ width: '100%', height: 70 }}>
         {[0.25, 0.5, 0.75].map((f) => <line x1="0" x2="100" y1={40 - f * 36} y2={40 - f * 36} stroke="var(--line)" stroke-width="0.3" />)}
         {n >= 10 && <line x1={(9 / (n - 1)) * 100} x2={(9 / (n - 1)) * 100} y1="2" y2="40" stroke="var(--line)" stroke-dasharray="1 1" stroke-width="0.3" />}
@@ -1625,4 +1651,3 @@ export const WIDGETS = {
   playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc, 'tarkov-economy': TarkovEconomy, 'lol-progress': LolProgress, 'tarkov-ammo': TarkovAmmo,
 };
 export { nextScheduled };
-

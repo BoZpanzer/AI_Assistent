@@ -20,6 +20,7 @@ class AudioEngine {
     this.lastActivityPing = 0;
     this.muted = false;
     this.micPending = null; this.playerPending = null; this.starting = false; this.startGeneration = 0; this.playbackGeneration = 0;
+    this.micGeneration = 0;
     on('voice:audio', (d) => this.play(d.data).catch((e) => toast('Audioausgabe: ' + e.message, 'error')));
     on('voice:interrupted', () => this.flush());
     on('voice:state', ({ state }) => this.onVoiceState(state));
@@ -34,32 +35,58 @@ class AudioEngine {
   }
 
   async openMic() {
+    const generation = this.micGeneration;
+    let stream = null, context = null;
     const s = getState().settings?.voice || {};
     const constraints = {
       audio: { deviceId: s.inputDeviceId && s.inputDeviceId !== 'default' ? { exact: s.inputDeviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
     };
     try {
-      try { this.stream = await navigator.mediaDevices.getUserMedia(constraints); }
+      try { stream = await navigator.mediaDevices.getUserMedia(constraints); }
       catch (e) {
         if (!constraints.audio.deviceId || !['NotFoundError', 'OverconstrainedError'].includes(e.name)) throw e;
         delete constraints.audio.deviceId;
-        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
       }
-      this.inCtx = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
-      await this.inCtx.audioWorklet.addModule('audio/capture-worklet.js');
-      const src = this.inCtx.createMediaStreamSource(this.stream);
+      if (generation !== this.micGeneration) { stream.getTracks().forEach(t => t.stop()); return; }
+      this.stream = stream;
+      context = this.inCtx = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
+      await context.audioWorklet.addModule('audio/capture-worklet.js');
+      if (generation !== this.micGeneration) return;
+      const src = context.createMediaStreamSource(stream);
       this.capture = new AudioWorkletNode(this.inCtx, 'jarvis-capture');
-      this.capture.port.onmessage = (e) => this.onFrame(e.data.pcm, e.data.rms);
+      this.capture.port.onmessage = (e) => { if (generation === this.micGeneration) this.onFrame(e.data.pcm, e.data.rms); };
       src.connect(this.capture);
       // Keep the graph alive without audible output.
       const mute = this.inCtx.createGain(); mute.gain.value = 0;
       this.capture.connect(mute).connect(this.inCtx.destination);
       if (this.inCtx.state === 'suspended') await this.inCtx.resume();
+      for (const track of stream.getAudioTracks()) track.onended = () => this.recoverMic(stream);
     } catch (e) {
-      this.stream?.getTracks().forEach(t => t.stop());
-      await this.inCtx?.close().catch(() => {});
-      this.stream = null; this.inCtx = null; this.capture = null;
+      stream?.getTracks().forEach(t => t.stop());
+      await context?.close().catch(() => {});
+      if (generation === this.micGeneration) { this.stream = null; this.inCtx = null; this.capture = null; }
       throw e;
+    }
+  }
+
+  async recoverMic(stream) {
+    if (this.stream !== stream) return;
+    this.disposeMic();
+    const generation = this.micGeneration;
+    if (!this.mode.stream && !this.mode.wake && !this.mode.local) return;
+    try {
+      await this.micPending;
+      if (generation !== this.micGeneration) return;
+      if (!this.mode.stream && !this.mode.wake && !this.mode.local) return;
+      await this.ensureMic();
+      this.releaseMicIfIdle();
+    } catch (e) {
+      if (generation !== this.micGeneration) return;
+      if (this.mode.local) await this.stopLocalVoice();
+      await this.stopVoice();
+      await this.setWakeWord(false);
+      toast('Mikrofon getrennt; kein Ersatzgerät verfügbar: ' + e.message, 'error');
     }
   }
 
@@ -91,6 +118,11 @@ class AudioEngine {
 
   releaseMicIfIdle() {
     if (this.mode.stream || this.mode.wake || this.mode.local) return;
+    this.disposeMic();
+  }
+
+  disposeMic() {
+    this.micGeneration++;
     try { this.stream?.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
     try { this.inCtx?.close(); } catch { /* ignore */ }
     this.stream = null; this.inCtx = null; this.capture = null;
@@ -242,6 +274,7 @@ class AudioEngine {
   }
   onVoiceState(state) {
     if (['off', 'standby', 'error'].includes(state)) {
+      if (state !== 'standby') this.flush();
       this.mode.stream = false;
       this.cloudConversationId = null;
       if (state === 'standby') this.wakeWorker?.postMessage({ type: 'reset' });
@@ -345,4 +378,3 @@ export async function playStartSound(cfg) {
 }
 
 export const audio = new AudioEngine();
-

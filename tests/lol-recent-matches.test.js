@@ -61,3 +61,22 @@ test('missing client credentials are checked again rapidly after initial negativ
     if (process.platform === 'win32') assert.ok(seen.length > 0);
   } finally { cleanup(); }
 });
+
+test('all personal LoL tools honor cloud sharing consent before reading or changing game data', async () => {
+  const { core, cleanup } = tempCore();
+  const league = core.gaming.league;
+  const flow = core.gaming.lolflow;
+  try {
+    const chat = core.conversations.create('Gaming', 'gaming');
+    const forbidden = new Proxy({}, { get() { throw Error('personal data accessed before consent'); } });
+    core.gaming.league = forbidden;
+    core.gaming.lolflow = forbidden;
+    for (const name of ['league_recent_matches', 'league_stats', 'league_deep_review', 'league_live', 'league_progress', 'league_coaching', 'lol_matchup', 'lol_note', 'league_goal', 'lol_debrief', 'lol_replay']) {
+      const result = await core.orchestrator.byName[name].run({}, { conversationId: chat.id });
+      assert.equal(result.needsConsent, true, name);
+    }
+    core.gaming.league = { champion: async name => ({ name, source: 'public champion data' }) };
+    const champion = await core.orchestrator.execute('league_champion', { name: 'Jinx' }, { conversationId: chat.id });
+    assert.equal(champion.response.name, 'Jinx');
+  } finally { core.gaming.league = league; core.gaming.lolflow = flow; cleanup(); }
+});

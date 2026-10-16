@@ -9,7 +9,8 @@ function harness({ getUserMedia, addModule } = {}) {
   const state = { settings: { voice: { inputDeviceId: 'old-headset' } }, conversationId: 'a' };
   let stopped = 0, contexts = 0;
   const posts = [];
-  const stream = { getTracks: () => [{ stop: () => stopped++ }], getAudioTracks: () => [{ readyState: 'live' }] };
+  const track = { readyState: 'live', stop: () => { stopped++; track.readyState = 'ended'; } };
+  const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
   class Context {
     constructor() { contexts++; this.state = 'suspended'; this.audioWorklet = { addModule: addModule || (async () => {}) }; }
     async close() { this.state = 'closed'; }
@@ -27,7 +28,7 @@ function harness({ getUserMedia, addModule } = {}) {
     on() {}, rpc: async () => ({}), getState: () => state, setState: patch => Object.assign(state, patch), toast() {}, ask: async () => true,
     speechSynthesis: { cancel() {} }, atob: x => Buffer.from(x, 'base64').toString('binary'), setTimeout, clearTimeout };
   vm.runInNewContext(source, sandbox);
-  return { audio: sandbox.engine, state, stream, posts, stopped: () => stopped, contexts: () => contexts };
+  return { audio: sandbox.engine, state, stream, track, posts, stopped: () => stopped, contexts: () => contexts };
 }
 
 test('concurrent microphone starts share one stream and resume the audio context', async () => {
@@ -54,6 +55,48 @@ test('failed microphone worklet setup releases the device and allows a clean ret
   await assert.rejects(h.audio.ensureMic(), /load failed/);
   assert.equal(h.stopped(), 1); assert.equal(h.audio.stream, null);
   await h.audio.ensureMic(); assert.equal(h.audio.inCtx.state, 'running'); h.audio.releaseMicIfIdle();
+});
+
+test('stopping while microphone permission is pending closes the eventual stream', async () => {
+  let release, h;
+  h = harness({ getUserMedia: () => new Promise(r => { release = r; }) });
+  const pending = h.audio.ensureMic();
+  h.audio.releaseMicIfIdle(); release(h.stream); await pending;
+  assert.equal(h.stopped(), 1); assert.equal(h.audio.stream, null); assert.equal(h.contexts(), 0);
+});
+
+test('stopping during worklet initialization cannot resurrect a capture graph', async () => {
+  let release;
+  const gate = new Promise(r => { release = r; });
+  const h = harness({ addModule: () => gate });
+  const pending = h.audio.ensureMic();
+  await Promise.resolve();
+  h.audio.releaseMicIfIdle(); release(); await pending;
+  assert.equal(h.stopped(), 1); assert.equal(h.audio.stream, null); assert.equal(h.audio.capture, null);
+});
+
+test('unplugged microphone automatically reopens capture for an active session', async () => {
+  let h, calls = 0;
+  const replacement = { getTracks: () => [], getAudioTracks: () => [{ readyState: 'live' }] };
+  h = harness({ getUserMedia: async () => ++calls === 1 ? h.stream : replacement });
+  h.audio.mode.stream = true;
+  await h.audio.ensureMic();
+  const oldCapture = h.audio.capture;
+  h.track.readyState = 'ended';
+  await h.track.onended();
+  assert.equal(calls, 2); assert.equal(h.audio.stream, replacement); assert.equal(h.audio.mode.stream, true);
+  let staleFrames = 0; h.audio.onFrame = () => staleFrames++;
+  oldCapture.port.onmessage({ data: { pcm: new Int16Array(1), rms: 1 } });
+  assert.equal(staleFrames, 0);
+  h.audio.mode.stream = false; h.audio.releaseMicIfIdle();
+});
+
+test('server-side stop flushes speech still waiting for player initialization', async () => {
+  let release;
+  const h = harness({ addModule: () => new Promise(r => { release = r; }) });
+  const pending = h.audio.play('AAA=');
+  h.audio.onVoiceState('off'); release(); await pending;
+  assert.equal(h.posts.filter(m => m.type === 'push').length, 0);
 });
 
 test('interruption during asynchronous player startup discards queued speech', async () => {

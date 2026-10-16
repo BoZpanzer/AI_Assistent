@@ -232,7 +232,7 @@ function levelTimes(frames, events, pid) {
 function patterns(list) {
   const games = list.filter(Boolean);
   const n = games.length;
-  const res = { games: n, wins: games.filter((g) => g.win).length, findings: [], strengths: [], averages: {} };
+  const res = { games: n, timelineGames: games.filter((g) => g.hasTimeline).length, wins: games.filter((g) => g.win).length, findings: [], strengths: [], averages: {} };
   if (n < 3) return res;
   const wins = games.filter((g) => g.win); const losses = games.filter((g) => !g.win);
   const tl = games.filter((g) => g.hasTimeline);

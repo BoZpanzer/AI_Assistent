@@ -127,6 +127,7 @@ test('Gaming LoL tools execute, while private tools and Study access remain rest
   const { core, cleanup } = tempCore();
   try {
     const gaming = core.conversations.create('LoL', 'gaming'), study = core.conversations.create('Uni', 'study');
+    core.settings.update({ gaming: { lolCloudShare: true } });
     core.gaming.league.live = async () => ({ connected: true, champion: 'Jinx' });
     const r = await core.orchestrator.execute('league_live', {}, { conversationId: gaming.id, channel: 'voice' });
     assert.equal(r.response.champion, 'Jinx');

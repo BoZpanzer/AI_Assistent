@@ -16,7 +16,10 @@ const REC = { type: 'object', nullable: true, description: 'Wiederholung', prope
  */
 function buildTools(s) {
   const T = [];
-  const def = (t) => T.push(t);
+  const personalLolTools = new Set(['league_recent_matches', 'league_stats', 'league_deep_review', 'league_live', 'league_progress', 'league_coaching', 'lol_matchup', 'lol_note', 'league_goal', 'lol_debrief', 'lol_replay']);
+  const def = (t) => T.push(personalLolTools.has(t.name) ? {
+    ...t, run: (args, ctx = {}) => checkLolDisclosure(ctx.conversationId) || t.run(args, ctx),
+  } : t);
   const isPrivate = () => require('../core/privacy').isPrivate();
   // Only a real cloud conversation can disclose private match stats to Gemini.
   // Background/local tool calls without a valid cloud conversation must keep
@@ -586,4 +589,3 @@ function internalTools(s) {
 }
 
 module.exports = { buildTools, internalTools, fmt };
-
