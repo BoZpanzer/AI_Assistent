@@ -84,6 +84,23 @@ jobs:
           Get-Content "$env:TEMP\jarvis-smoke-report.json"
           if ($p.ExitCode -ne 0) { throw "Smoke-Test fehlgeschlagen ($($p.ExitCode))" }
 
+      - name: Installer installieren, starten und deinstallieren
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\JARVIS-Release-Install"
+          $i = Start-Process -FilePath "release\JARVIS_Setup.exe" -ArgumentList "/S","/D=$dir" -PassThru -Wait
+          if ($i.ExitCode -ne 0) { throw "Release-Installation fehlgeschlagen" }
+          if (!(Test-Path "$dir\JARVIS.exe")) { throw "JARVIS.exe fehlt nach Installation" }
+          if (!(Test-Path "$dir\resources\voice\whisper-cli.exe")) { throw "Offline-Whisper fehlt nach Installation" }
+          if (!(Test-Path "$dir\resources\voice\ggml-base.bin")) { throw "Offline-Sprachmodell fehlt nach Installation" }
+          $s = Start-Process -FilePath "$dir\JARVIS.exe" -ArgumentList "--smoke" -PassThru -Wait
+          if ($s.ExitCode -ne 0) { throw "Installierte Release-App: Smoke-Test fehlgeschlagen" }
+          $u = Start-Process -FilePath "$dir\Uninstall JARVIS.exe" -ArgumentList "/S" -PassThru -Wait
+          if ($u.ExitCode -ne 0) { throw "Deinstallation fehlgeschlagen" }
+          Start-Sleep -Seconds 5
+          if (Test-Path "$dir\JARVIS.exe") { throw "Release-Deinstallation unvollständig" }
+          Write-Host "Release-Installer, erster Start, Offline-Whisper und Deinstallation geprüft"
+
       - name: Update-Manifest signieren
         env:
           UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
