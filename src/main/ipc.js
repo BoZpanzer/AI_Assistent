@@ -105,6 +105,16 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.private': ({ id }) => { if (s.voice.conversationId === id) s.voice.stop(); s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
+    // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
+    'tts.status': () => s.tts.status(),
+    'tts.prepare': ({ text, full } = {}) => require('./voice/speakable').speakable(String(text || '').slice(0, 20000), { full: !!full || s.settings.get('voice').tts?.short === false }),
+    'tts.synthesize': async ({ text, override } = {}) => {
+      const o = override && typeof override === 'object' ? { voice: override.voice, style: override.style, speaker: override.speaker, speed: override.speed, pitch: override.pitch } : {};
+      const r = await s.tts.synthesize(String(text || ''), Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)));
+      return { audio: r.wav.toString('base64'), pitch: r.pitch };
+    },
+    'tts.install': ({ id }) => s.tts.install(String(id || '')),
+    'tts.remove': ({ id }) => s.tts.remove(String(id || '')),
     'local.installOllama': () => s.localLLM.installOllama(),
     'local.installTier': ({ model }) => s.localLLM.installTier(model),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),

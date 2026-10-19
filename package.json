@@ -105,6 +105,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/piper-runtime",
+        "to": "tts",
+        "filter": [
+          "**/*"
+        ]
       }
     ]
   }
