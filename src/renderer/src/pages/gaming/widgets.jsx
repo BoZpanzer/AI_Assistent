@@ -559,14 +559,17 @@ function GameStats({ game, params }) {
 function TarkovQuests({ params }) {
   const [q, setQ] = useState(params.query || '');
   useEffect(() => { if (params.query) setQ(params.query); }, [params.query]);
-  const [r, , st] = useRpc('tarkov.quests', { map: params.map, q }, { deps: [q, params.map], debounce: 300 });
+  const [all, setAll] = useState(false);
+  const [r, , st] = useRpc('tarkov.quests', { map: params.map, q, all }, { deps: [q, params.map, all], debounce: 300, events: ['game:progress'] });
   const [doneList] = useRpc('game.doneQuests', {}, { events: ['game:progress'], initial: [] });
   const done = new Set(doneList || []);
   const norm = (x) => String(x).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   const [hideDone, setHideDone] = useState(true);
   const [open, setOpen] = useState(null);
   return (
-    <Panel title="Quest-Hinweise" sub={params.map ? `Karte: ${params.map}` : 'Alle Karten'}>
+    <Panel title="Quest-Hinweise" sub={(all ? 'Alle Quests' : 'Nur aktuell machbare') + ' · ' + (params.map ? `Karte: ${params.map}` : 'alle Karten')}>
+      <div class="row gap-s mb"><span class={`chip ${!all ? 'active' : ''}`} title="Nicht erledigt, Level reicht, Vorgänger erledigt" onClick={() => setAll(false)}>Machbar{r?.available != null && !all ? ` (${r.available})` : ''}</span><span class={`chip ${all ? 'active' : ''}`} onClick={() => setAll(true)}>Alle</span>
+        <span class="tiny muted grow" style={{ textAlign: 'right' }}>{r?.level ? `PMC-Level ${r.level}` : 'Level unbekannt – „Mein Level ist 15“ sagen oder TarkovTracker verbinden'}</span></div>
       <div class="row"><input class="inp grow" placeholder="Quest, Händler oder Ziel suchen…" value={q} onInput={(e) => setQ(e.currentTarget.value)} /><span class={`chip ${hideDone ? 'active' : ''}`} title="Erledigte Quests ausblenden" onClick={() => setHideDone(!hideDone)}>{done.size} erledigt {hideDone ? 'ausgeblendet' : 'sichtbar'}</span></div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       <div class="col mt" style={{ gap: 6, maxHeight: 250, overflow: 'auto' }}>
@@ -576,7 +579,7 @@ function TarkovQuests({ params }) {
             {open === t.id && <>{t.objectives.map((o) => <div class="tiny" style={{ color: 'var(--text-2)', paddingLeft: 22 }}>• {o.description}{o.optional ? ' (optional)' : ''}</div>)}{t.wikiLink && <a class="tiny" style={{ paddingLeft: 22 }} onClick={(e) => { e.stopPropagation(); rpc('shell.openExternal', { url: t.wikiLink }); }}>Wiki</a>}</>}
           </div>
         ))}
-        {r && !r.items.length && <Empty>Keine Quests gefunden.</Empty>}
+        {r && !r.items.length && <Empty>{all ? 'Keine Quests gefunden.' : 'Keine machbaren Quests gefunden – erledigte Quests aus dem Tarkov-Log/TarkovTracker schalten neue frei.'}</Empty>}
       </div>
       <div class="mt"><SourceTag source={r?.source} fetchedAt={r?.fetchedAt} offline={r?.offline} /></div>
     </Panel>

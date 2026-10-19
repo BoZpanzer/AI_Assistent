@@ -159,16 +159,35 @@ class Tarkov {
   }
 
   /**
+   * Welche Quests du JETZT machen kannst: nicht erledigt/fehlgeschlagen, Level reicht (falls bekannt),
+   * alle Vorgänger erledigt (bzw. fehlgeschlagen, wenn die Quest das verlangt). Liefert Quest-IDs.
+   */
+  async availableTasks({ done = new Set(), failed = new Set(), level = null, gameMode } = {}) {
+    const r = await this.taskNeeds(gameMode);
+    const tasks = r.value.tasks || [];
+    const doneIds = new Set(tasks.filter((t) => done.has(t.name)).map((t) => t.id));
+    const failedIds = new Set(tasks.filter((t) => failed.has(t.name)).map((t) => t.id));
+    const ok = (q) => {
+      if (!q?.task?.id) return true;
+      const st = (q.status || []).map((x) => String(x).toLowerCase());
+      if (st.some((x) => x.includes('complete'))) return doneIds.has(q.task.id) || (st.some((x) => x.includes('fail')) && failedIds.has(q.task.id));
+      if (st.some((x) => x.includes('fail'))) return failedIds.has(q.task.id);
+      return true; // „aktiv“ o. ä.: Vorgänger muss nur angenommen sein – nicht prüfbar, also erlauben
+    };
+    const ids = new Set(tasks.filter((t) => !done.has(t.name) && !failed.has(t.name)
+      && (level == null || (t.minPlayerLevel || 0) <= level) && (t.taskRequirements || []).every(ok)).map((t) => t.id));
+    return { ids, total: tasks.length, source: r.source, fetchedAt: r.fetchedAt, offline: r.offline };
+  }
+
+  /**
    * Raid-Planer: offene, verfügbare Quests (nicht erledigt, Level reicht, Vorgänger erledigt) nach Karte.
    * Ohne Kartenwahl: Rangliste der Karten nach offenen Zielen; mit Karte: Ziele, was mitzunehmen ist.
    */
   async raidPlan({ map, done = new Set(), failed = new Set(), level = null, gameMode } = {}) {
     const r = await this.taskNeeds(gameMode);
     const { tasks, detailed } = r.value;
-    const doneIds = new Set(tasks.filter((t) => done.has(t.name)).map((t) => t.id));
-    const avail = tasks.filter((t) => !done.has(t.name) && !failed.has(t.name)
-      && (level == null || (t.minPlayerLevel || 0) <= level)
-      && (t.taskRequirements || []).every((q) => !q?.task?.id || !(q.status || []).some((st) => /complete/i.test(st)) || doneIds.has(q.task.id)));
+    const { ids } = await this.availableTasks({ done, failed, level, gameMode });
+    const avail = tasks.filter((t) => ids.has(t.id));
     const objMaps = (t, o) => { const m = (o.maps || []).map((x) => x.normalizedName); return m.length ? m : t.map?.normalizedName ? [t.map.normalizedName] : []; };
     const counts = new Map();
     for (const t of avail) {
@@ -312,23 +331,33 @@ class Tarkov {
   }
 
   /** Questziele auf einer Karte – ohne erledigte Quests (Spielstand/TarkovTracker), optional bis zum eigenen Level. */
-  async questMarkers(map, { done = new Set(), level = null, gameMode } = {}) {
+  async questMarkers(map, { done = new Set(), failed = new Set(), level = null, gameMode, all = false } = {}) {
     const z = await this.taskZones(gameMode);
+    const avail = all ? null : await this.availableTasks({ done, failed, level, gameMode }).then((a) => a.ids).catch(() => null);
     const out = [];
     for (const t of z.value) {
       if (done.has(t.name)) continue;
       if (level != null && t.minPlayerLevel > level) continue;
+      if (avail && !avail.has(t.id)) continue; // nur Quests, die du gerade machen kannst
       for (const o of t.objectives) for (const p of o.points) if (p.map === map) out.push({ x: p.x, z: p.z, y: p.y, task: t.name, objective: o.description, item: !!p.item, optional: o.optional });
     }
     return { markers: out.slice(0, 250), total: out.length, source: z.source, fetchedAt: z.fetchedAt, offline: z.offline };
   }
 
-  async searchTasks(q, { map, limit = 8, gameMode } = {}) {
+  async searchTasks(q, { map, limit = 8, gameMode, available = null } = {}) {
     const t = await this.tasks(gameMode);
     const needle = String(q || '').toLowerCase();
-    const list = t.value.filter((x) => (!map || x.map?.normalizedName === map || x.objectives.some((o) => o.maps.some((m) => m.normalizedName === map)))
+    const list = t.value.filter((x) => (!available || available.has(x.id)) && (!map || x.map?.normalizedName === map || x.objectives.some((o) => o.maps.some((m) => m.normalizedName === map)))
       && (!needle || x.name.toLowerCase().includes(needle) || x.trader?.name.toLowerCase().includes(needle) || x.objectives.some((o) => o.description.toLowerCase().includes(needle))));
     return { items: list.slice(0, limit), total: list.length, source: t.source, fetchedAt: t.fetchedAt, offline: t.offline };
+  }
+
+  /** Questsuche, standardmäßig nur aktuell machbare Quests (all = true: alle). */
+  async quests({ q, map, limit = 30, all = false, progress }) {
+    const c = progress;
+    const a = all ? null : await this.availableTasks({ done: c.done, failed: c.failed, level: c.level, gameMode: c.gameMode });
+    const r = await this.searchTasks(q, { map, limit, gameMode: c.gameMode, available: a?.ids || null });
+    return { ...r, onlyAvailable: !all, available: a ? a.ids.size : null, level: c.level, doneCount: c.done.size };
   }
 
   async items(q, { keysOnly = false, limit = 10, gameMode = 'regular' } = {}) {

@@ -223,9 +223,18 @@ function campusDualOData(records, zone = 'Europe/Berlin') {
   const startT = pick((k) => isStart(k) || /zeit|time|uhr/i.test(k) && !isEnd(k), ['time']);
   const endT = pick(isEnd, ['time']);
   const strKey = (re) => keys.find((k) => re.test(k) && list.some((r) => typeof r[k] === 'string' && r[k].trim() && !sapValue(r[k]) && !/^\d+$/.test(r[k].trim())));
-  const titleK = strKey(/^(title|titel|stext|short|kurz|text|name|bezeichnung|description|event|veranstaltung|modul|subject|lv)/i) || strKey(/title|text|name|bez|desc|veranst|modul/i);
-  const roomK = strKey(/room|raum|location|ort|gebaeude|building/i);
-  const instrK = strKey(/instr|dozent|lecturer|lehr|teacher|prof|person/i);
+  // Art des Termins (z. B. „Vorlesung/Seminar“, „Modulprüfung“) ist NICHT der Titel
+  const TYPE_KEY = /type|typ$|^typ|^art$|kind|categ|kateg/i;
+  const typeK = ['EventType', 'AppointmentType'].find((k) => keys.includes(k) && list.some((r) => typeof r[k] === 'string' && r[k].trim())) || strKey(TYPE_KEY);
+  // Titel: Modul-/Veranstaltungsname – bekannte Campus-Dual-Felder zuerst, dann nach Namen; je Termin das erste gefüllte Feld
+  const exact = ['EventTitle', 'Title', 'Titel', 'EventStext', 'Stext', 'ModuleTitle', 'ModuleText', 'CourseTitle', 'EventDescription', 'Description', 'EventShort', 'ExamShort'];
+  const fuzzy = keys.filter((k) => /title|titel|stext|modul|module|course|kurs|veranst|subject|fach|bezeich|name|text|desc|short|kurz|^lv/i.test(k)
+    && !TYPE_KEY.test(k) && !/lectur|dozent|instr|examiner|prüfer|pruefer|teacher|remark|hinweis|note|room|raum|cohort|kohort|group|grupp|objid|^id$|location/i.test(k));
+  const titleKeys = [...new Set([...exact.filter((k) => keys.includes(k)), ...fuzzy])].filter((k) => list.some((r) => typeof r[k] === 'string' && r[k].trim() && !sapValue(r[k])));
+  const roomK = ['Room', 'Raum', 'Rooms'].find((k) => keys.includes(k)) || strKey(/room|raum|gebaeude|building|^ort$|location/i);
+  const placeK = roomK !== 'Location' && keys.includes('Location') ? 'Location' : null;
+  const instrK = strKey(/instr|dozent|lecturer|lehr|teacher|prof/i);
+  const examinerK = strKey(/examiner|prüfer|pruefer/i);
   const remK = strKey(/remark|hinweis|note|comment|bemerk|info/i);
   if (!startD) return [];
   const toIso = (dp, tp) => {
@@ -242,9 +251,15 @@ function campusDualOData(records, zone = 'Europe/Berlin') {
     const start = toIso(sd, st); let end = toIso(ed || sd, et);
     const hasTime = !!st || sd.kind === 'datetime';
     if (!end || Date.parse(end) <= Date.parse(start)) end = new Date(Date.parse(start) + (hasTime ? 90 : 1440) * 60000).toISOString();
-    const title = String((titleK && r[titleK]) || 'Vorlesung').trim();
-    const desc = [instrK && r[instrK] ? 'Dozent: ' + r[instrK] : null, remK && r[remK] && r[remK] !== title ? 'Hinweis: ' + r[remK] : null].filter(Boolean).join('\n');
-    out.push({ uid: 'cdo-' + sha256(title + '|' + start).slice(0, 16), title, location: String((roomK && r[roomK]) || ''), description: desc, start, end, allDay: !hasTime });
+    const kind = typeK && typeof r[typeK] === 'string' ? r[typeK].trim() : '';
+    const str = (k) => (k && typeof r[k] === 'string' ? r[k].trim() : '');
+    const name = titleKeys.map(str).find((v) => v && v !== kind && !/^\d+$/.test(v)) || '';
+    // Prüfungen/Labore bekommen die Art vorangestellt („Modulprüfung: Mathematik 1“), Vorlesungen nur den Namen
+    const title = (name ? (kind && /prüf|pruef|klausur|exam|labor|praktik|test|klaus/i.test(kind) && !name.toLowerCase().includes(kind.toLowerCase()) ? kind + ': ' + name : name) : kind || 'Vorlesung').slice(0, 300);
+    const room = [str(roomK), str(placeK)].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
+    const desc = [kind && kind !== title ? 'Art: ' + kind : null, str(instrK) ? 'Dozent: ' + str(instrK) : null, str(examinerK) && str(examinerK) !== str(instrK) ? 'Prüfer: ' + str(examinerK) : null,
+      str(remK) && str(remK) !== title ? 'Hinweis: ' + str(remK) : null].filter(Boolean).join('\n');
+    out.push({ uid: 'cdo-' + sha256(title + '|' + start).slice(0, 16), title, location: room, description: desc, start, end, allDay: !hasTime });
   }
   return out.sort((a, b) => a.start.localeCompare(b.start));
 }
