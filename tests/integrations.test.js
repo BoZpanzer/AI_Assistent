@@ -1285,3 +1285,14 @@ test('„Was ist das?" in Tarkov: nur der Mauszeiger-Ausschnitt geht an Gemini, 
     assert.equal(core.db.get('SELECT COUNT(*) AS n FROM screenshots').n, 0);
   } finally { core.gaming.context.running = []; cleanup(); }
 });
+
+test('Campus Dual (neues Portal): Modulname statt „Vorlesung/Seminar“, Raum statt Kohorte (echte Feldnamen)', () => {
+  const { campusDualOData } = require('../src/main/services/ics');
+  // Feldnamen und Reihenfolge wie vom EventListSet geliefert (Stand 10/2026)
+  const rec = (o) => ({ __metadata: {}, AppointmentType: '', ExaminerName: '', LecturerName: 'Prof. X', Otype: 'E', Cohorts: 'Informatik 2025 Gr. 1 (5CS25-1)', LecturerObjid: '1', Objid: '2', Remarks: '', EventType: 'Vorlesung/Seminar', Start: '/Date(1775030400000)/', ExamShort: '', Room: 'A 2.13', ExamCategory: '', EventShort: '5CS-MA1', End: '/Date(1775035800000)/', Location: '', EventDescription: '', EventTitle: 'Mathematik 1', ExaminerObjid: '', EventStext: 'Mathe 1', ...o });
+  const ev = campusDualOData([rec({}), rec({ EventType: 'Modulprüfung', EventTitle: 'Programmierung', ExaminerName: 'Dr. Y', LecturerName: '' }), rec({ EventTitle: '', EventStext: 'Datenbanken' })]);
+  assert.deepEqual(ev.map((e) => e.title), ['Mathematik 1', 'Modulprüfung: Programmierung', 'Datenbanken']);
+  assert.ok(ev.every((e) => e.location === 'A 2.13'), 'Raum, nicht die Kohorte');
+  assert.match(ev[0].description, /Art: Vorlesung\/Seminar/);
+  assert.match(ev[1].description, /Prüfer: Dr\. Y/);
+});

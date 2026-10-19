@@ -81,3 +81,28 @@ test('TarkovTracker sync works again: quest names come from the JSON files, prog
     assert.ok(calls.some((c) => c.startsWith('POST') && c.includes('completed')), 'Quest aus dem Log wird hochgeladen');
   } finally { cleanup(); }
 });
+
+test('Quests: only the ones you can do now (not done, level reached, predecessors done); "Alle" shows everything', async () => {
+  const { core, cleanup } = tempCore();
+  try {
+    const t = new Tarkov({ fetch: fakeFetch(), gameCache: new GameCache(core.db) });
+    const names = (r) => r.items.map((x) => x.id).sort();
+    const base = { failed: new Set(), gameMode: 'regular' };
+    // Level 1, nichts erledigt: nur die zwei Einstiegsquests ohne Vorgänger
+    let r = await t.quests({ progress: { ...base, done: new Set(), level: 1 } });
+    assert.deepEqual(names(r), ['657315ddab5a49b71f098853', '657315e4a6af4ab4b50f3459']);
+    assert.equal(r.available, 2); assert.equal(r.onlyAvailable, true);
+    // Level 7, erste Quest erledigt: die erledigte fällt weg, Level-7-Quest ohne Vorgänger kommt dazu; Quests mit offenem Vorgänger bleiben gesperrt
+    const first = (await t.tasks('regular')).value.find((x) => x.id === '657315ddab5a49b71f098853').name;
+    r = await t.quests({ progress: { ...base, done: new Set([first]), level: 7 } });
+    assert.deepEqual(names(r), ['5b4795fb86f7745876267770', '657315e4a6af4ab4b50f3459']);
+    // „Alle“
+    r = await t.quests({ all: true, progress: { ...base, done: new Set(), level: 1 } });
+    assert.equal(r.items.length, 5);
+    // Questpunkte auf der Karte nur für machbare Quests
+    const all = await t.questMarkers('ground-zero', { gameMode: 'regular', all: true });
+    const avail = await t.questMarkers('ground-zero', { gameMode: 'regular', level: 1, done: new Set([first]) });
+    assert.ok(avail.markers.length < all.markers.length);
+    assert.ok(avail.markers.every((m) => m.task !== first));
+  } finally { cleanup(); }
+});

@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 4.5.1 – Stundenplan mit Modulnamen, nur machbare Quests
+
+- **Stundenplan (Campus Dual):** Termine heißen jetzt wie das Modul (z. B. „Mathematik 1“) statt „Vorlesung/Seminar“; Prüfungen als „Modulprüfung: …“. Als Ort steht der Raum statt der Kohorte; Art, Dozent und Prüfer stehen in der Beschreibung. Wird beim nächsten Abgleich automatisch korrigiert (auch die Kopien in Google Kalender).
+- **Tarkov – nur machbare Quests:** Quest-Hinweise, Questpunkte auf der Karte und Chat-Antworten zeigen standardmäßig nur Quests, die du gerade machen kannst (nicht erledigt, Level reicht, Vorgänger-Quests erledigt). Mit „Alle“ im Widget bzw. „alle Quests“ im Chat siehst du weiterhin alles.
+
 ## 4.5.0 – Natürliche Stimme, Tarkov-Daten wieder da, Google Kalender je Art
 
 - **Natürliche Stimme statt Computerstimme:** JARVIS liest jetzt mit Piper vor – einer lokalen, neuronalen Stimme (nur CPU, offline, keine Kosten). „Thorsten“ ist im Installer enthalten; weitere Stimmen (Thorsten HD, Thorsten mit Stimmungen wie Flüstern/Belustigt, Kerstin, viele Sprecher) per Klick in Einstellungen → Sprachausgabe. Tempo, Tonhöhe und Lautstärke einstellbar, mit Hörprobe. Die Windows-Stimme bleibt als Alternative (jetzt automatisch die beste installierte).

@@ -305,16 +305,18 @@ function buildTools(s) {
   def({ name: 'lol_counters', mode: 'read', description: 'Konter aus den eigenen analysierten LoL-Spielen: ohne vs die schwierigsten Lane-Gegner, mit vs die eigenen Champions mit der besten Bilanz gegen diesen Gegner. Eigene Daten, keine Community-Statistik – kleine Stichproben so benennen.',
     schema: { type: 'object', properties: { vs: { type: 'string' } } },
     run: async ({ vs }) => s.gaming.stats.counters({ vs: vs || null }) }),
-  def({ name: 'tarkov_lookup', mode: 'read', description: 'Escape-from-Tarkov-Daten (tarkov.dev): quests, item, keys, extracts, bosses. Keine Live-Raid-Daten verfügbar.',
-    schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['quests', 'item', 'keys', 'extracts', 'bosses'] }, query: { type: 'string' }, map: { type: 'string', description: 'normalizedName z. B. customs, woods, shoreline, interchange, reserve, lighthouse, streets-of-tarkov, factory, the-lab, ground-zero' } } },
-    run: async ({ kind, query, map }) => {
+  def({ name: 'tarkov_lookup', mode: 'read', description: 'Escape-from-Tarkov-Daten (tarkov.dev): quests (standardmäßig nur die aktuell machbaren), item, keys, extracts, bosses. Keine Live-Raid-Daten verfügbar.',
+    schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['quests', 'item', 'keys', 'extracts', 'bosses'] }, query: { type: 'string' }, map: { type: 'string', description: 'normalizedName z. B. customs, woods, shoreline, interchange, reserve, lighthouse, streets-of-tarkov, factory, the-lab, ground-zero' }, all: { type: 'boolean', description: 'nur bei quests: true = auch gesperrte/erledigte Quests; Standard: nur aktuell machbare' } } },
+    run: async (args) => {
+      const { kind, query, map } = args;
       const t = s.gaming.tarkov;
       if (kind === 'quests') {
         const done = s.gaming.progress.doneKeys('eft', 'quest');
         const { normText } = require('../core/util');
-        const r = await t.searchTasks(query, { map, limit: 40 });
+        const all = /\b(alle|sämtliche|komplett|gesamt)\b/i.test(String(query || '')) || args?.all === true;
+        const r = await t.quests({ q: all ? String(query || '').replace(/\b(alle|sämtliche|komplett|gesamt)\b/gi, '').trim() : query, map, limit: 40, all, progress: s.gaming.eftProgress() });
         const items = r.items.map((q) => ({ name: q.name, trader: q.trader?.name, map: q.map?.name, minLevel: q.minPlayerLevel, kappa: q.kappaRequired, doneByUser: done.has(normText(q.name)) || undefined, objectives: q.objectives.map((o) => o.description).slice(0, 8), wiki: q.wikiLink }));
-        return { source: r.source, fetchedAt: r.fetchedAt, quests: [...items.filter((x) => !x.doneByUser), ...items.filter((x) => x.doneByUser)].slice(0, 8), note: done.size ? `${done.size} Quests sind laut Spielstand erledigt (doneByUser).` : undefined };
+        return { source: r.source, fetchedAt: r.fetchedAt, quests: [...items.filter((x) => !x.doneByUser), ...items.filter((x) => x.doneByUser)].slice(0, 8), note: [r.onlyAvailable ? `Nur aktuell machbare Quests (${r.available} von ${r.total} offen: nicht erledigt, Level ${r.level ?? 'unbekannt'}, Vorgänger erledigt). Für alle Quests „alle“ sagen.` : 'Alle Quests (auch gesperrte).', done.size ? `${done.size} Quests sind laut Spielstand erledigt.` : null].filter(Boolean).join(' ') };
       }
       if (kind === 'item' || kind === 'keys') {
         const r = kind === 'keys' && map && !query ? await t.keysForMap(map) : await t.items(query, { keysOnly: kind === 'keys' });
