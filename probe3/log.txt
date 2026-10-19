@@ -1,0 +1,76 @@
+barters translations [] keys "array"
+barters count 855 {"id":"s:6ad28401e4777408950323498","trader":"s:6617beeaa9cfa777ca915b7c","taskUnlock":null,"requiredItems":[{"item":"s:5d235b4d86f7742e017bc88a","count":155.1,"attributes":{}},"len1"],"restockAmount":185000,"buyLimit":1,"minTraderLevel":4,"offeredItem":{"item":"s:57347ca924597744596b4e71","count":1,"attributes":{}}}
+crafts translations [] keys "array"
+crafts count 214 {"id":"s:67da02e9078f1947650d7bb8","requiredItems":[{"item":"s:5c052fb986f7746b2101e909","count":1,"attributes":{"tool":true}},"len5"],"requiredQuestItems":[],"station":"s:5d484fdf654e7600691aadf8","duration":39600,"gameEditions":[],"level":2,"productItem":{"item":"s:6389c8c5dbfd5e4b95197e6b","count":1,"attributes":{}}}
+AMMO props {"propertiesType":"ItemPropertiesAmmo","ballisticCoeficient":0.233,"bulletDiameterMilimeters":5.7,"bulletMassGrams":4,"caliber":"Caliber556x45NATO","stackMaxSize":80,"tracer":false,"tracerColor":"red","ammoType":"bullet","projectileCount":1,"damage":54,"armorDamage":37,"fragmentationChance":0.5,"ricochetChance":0.4,"penetrationChance":0.5,"penetrationPower":31,"penetrationPowerDeviation":1,"accuracyModifier":0,"recoilModifier":0,"initialSpeed":922,"heavyBleedModifier":0,"lightBleedModifier":0,"durabilityBurnFactor":1.15,"heatFactor":1.615,"staminaBurnPerDamage":0.144,"misfireChance":0.175,"failureToFeedChance":0.02}
+KEY {"id":"5448ba0b4bdc2d02308b456c","name":"5448ba0b4bdc2d02308b456c Name","shortName":"5448ba0b4bdc2d02308b456c ShortName","normalizedName":"factory-emergency-exit-key","description":"5448ba0b4bdc2d02308b456c Description","updated":"2026-10-19T17:48:06.000Z","width":1,"height":1,"weight":0.01,"lastOfferCount":9,"types":["keys"],"wikiLink":"https://escapefromtarkov.fandom.com/wiki/Factory_emergency_exit_key","link":"https://tarkov.dev/item/factory-emergency-exit-key","iconLink":"https://assets.tarkov.dev/5448ba0b4bdc2d02308b456c-icon.webp","gridImageLink":"https://assets.tarkov.dev/5448ba0b4bdc2d
+mob sample {"id":"followerBullyBlackDiv","name":"followerBullyBlackDiv","normalizedName":"black-div-guard","imagePortraitLink":"https://assets.tarkov.dev/black-div-guard-portrait.webp","imagePosterLink":"https:/
+BONUS [{"type":"ExperienceRate","name":"hideout_ExperienceRate","value":0.15,"passive":true,"production":false},{"type":"SkillGroupLevelingBoost","name":"hideout_SkillGroupLevelingBoost","value":0.3,"passive":true,"production":false,"skill":"Practical"}]
+ENGINE {"url":"https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip","status":200,"size":22477236,"sha256":"f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"}
+VOICE {"name":"de_DE-thorsten-high","onnx":{"status":200,"size":113895201,"sha256":"9df1c43c61149ef9b39e618e2b861fbe41e1fcea9390b2dac62e8761573ea4f1"},"json":{"status":200,"size":4875,"sha256":"6de734444e4c3f9e33b7ebe2746dbc19b71e85f613e79c65acf623200b99a76a"},"sampleRate":22050,"speakers":1,"speakerMap":[]}
+CARD de_DE-thorsten-high: # Model card for thorsten (high) * Language: de_DE (German, Germany) * Speakers: 1 * Quality: medium * Samplerate: 22,050Hz ## Dataset * URL: https://github.com/thorstenMueller/Thorsten-Voice * License: CC0 ## Training Finetuned from U.S. English lessac voice (high quality). 
+VOICE {"name":"de_DE-thorsten-medium","onnx":{"status":200,"size":63201294,"sha256":"7e64762d8e5118bb578f2eea6207e1a35a8e0c30595010b666f983fc87bb7819"},"json":{"status":200,"size":4819,"sha256":"974adee790533adb273a1ac88f49027d2a1b8f0f2cf4905954a4791e79264e85"},"sampleRate":22050,"speakers":1,"speakerMap":[]}
+CARD de_DE-thorsten-medium: # Model card for thorsten (medium) * Language: de_DE (German, Germany) * Speakers: 1 * Quality: medium * Samplerate: 22,050Hz ## Dataset * URL: https://github.com/thorstenMueller/Thorsten-Voice * License: CC0 ## Training Finetuned from U.S. English lessac voice (medium quality). 
+VOICE {"name":"de_DE-thorsten_emotional-medium","onnx":{"status":200,"size":76745905,"sha256":"c1764e652266cd6dcebf1b95c61973df5970a5f5272e94b655ff1ddf9a99d1ff"},"json":{"status":200,"size":5031,"sha256":"92895b9e99f7cfc13f4a9879da615c3d6e0baa4d660e26d7b685abdd27a6d1d3"},"sampleRate":22050,"speakers":8,"speakerMap":["amused","angry","disgusted","drunk","neutral","sleepy","surprised","whisper"]}
+CARD de_DE-thorsten_emotional-medium: # Model card for thorsten_emotional (medium) * Language: de_DE (German, Germany) * Speakers: 8 (emotions) * Quality: medium * Samplerate: 22,050Hz ## Dataset * URL: https://github.com/thorstenMueller/Thorsten-Voice * License: CC0 ## Training Finetuned from German thorsten voice (medium quality). 
+VOICE {"name":"de_DE-kerstin-low","onnx":{"status":200,"size":63104526,"sha256":"d352a7641892cebf2903859af94e9ba81a141110215fe3943bcda7f7da401b7a"},"json":{"status":200,"size":4158,"sha256":"56e708556b7b9b7a53c4f8957e021421e69f11a600962bba554cffbe72cf2d47"},"sampleRate":16000,"speakers":1,"speakerMap":[]}
+CARD de_DE-kerstin-low: # Model card for kerstin (low) * Language: de_DE (German, Germany) * Speakers: 1 * Quality: low * Samplerate: 16,000Hz ## Dataset * URL: https://github.com/rhasspy/dataset-voice-kerstin * License: CC0 ## Training Finetuned from U.S. English Ryan voice (low quality). 
+VOICE {"name":"de_DE-ramona-low","onnx":{"status":200,"size":63104526,"sha256":"a1068592532aad8c49bf3d1a01b8749c11d7dba726689ee28ad64e7b627ae4c5"},"json":{"status":200,"size":4157,"sha256":"64906ab7a050ac685fa3dcea044baa798f67ed77be164f9c668a69298c6487d2"},"sampleRate":16000,"speakers":1,"speakerMap":[]}
+CARD de_DE-ramona-low: # Model card for ramona (low) * Language: de_DE (German, Germany) * Speakers: 1 * Quality: low * Samplerate: 16,000Hz ## Dataset * URL: https://www.caito.de/2019/01/03/the-m-ailabs-speech-dataset/ * License: See URL ## Training Trained from scratch. 
+VOICE {"name":"de_DE-eva_k-x_low","onnx":{"status":200,"size":20628813,"sha256":"e88cf290fbfb768bf111330d2e8a46e376b0d85e3423a28bfebbc863a260dad8"},"json":{"status":200,"size":4158,"sha256":"ef14b3dcb279ab4b18422a7a132877bee7a148821bd91152fb7ae9c4b3d79625"},"sampleRate":16000,"speakers":1,"speakerMap":[]}
+CARD de_DE-eva_k-x_low: # Model card for eva_k (x_low) * Language: de (German) * Speakers: 1 * Quality: x_low * Samplerate: 16,000Hz ## Dataset * URL: https://www.caito.de/2019/01/03/the-m-ailabs-speech-dataset/ * License: See URL ## Training Trained from scratch. 
+VOICE {"name":"de_DE-karlsson-low","onnx":{"status":200,"size":63104526,"sha256":"f9793bf7e461a472b3916cf260774bfc9812e9eb72601b147ed649d01064e8fe"},"json":{"status":200,"size":4159,"sha256":"3b2095adbfeede316f22007a0a09d4bfc25514b7189850740b06800a6cfb9838"},"sampleRate":16000,"speakers":1,"speakerMap":[]}
+CARD de_DE-karlsson-low: # Model card for karlsson (low) * Language: de_DE (German, Germany) * Speakers: 1 * Quality: low * Samplerate: 16,000Hz ## Dataset * URL: https://www.caito.de/2019/01/03/the-m-ailabs-speech-dataset/ * License: See URL ## Training Finetuned from U.S. English Ryan voice (low quality). 
+VOICE {"name":"de_DE-pavoque-low","onnx":{"status":200,"size":63104526,"sha256":"96cd41fe2303dfe4745422a2580658bdbc5f935b7ee67640a94da7435a502a26"},"json":{"status":200,"size":4158,"sha256":"07d43d8946e869209a12d9b4fd780e3f277fe9afb305c21491a68bd97e01b74f"},"sampleRate":16000,"speakers":1,"speakerMap":[]}
+CARD de_DE-pavoque-low: # Model card for pavoque (low) * Language: de_DE (German, Germany) * Speakers: 1 * Quality: low * Samplerate: 16,000Hz ## Dataset * URL: https://github.com/marytts/pavoque-data * License: http://creativecommons.org/licenses/by-nc-sa/4.0/ ## Training Finetuned from U.S. English Ryan voice (low quality). 
+VOICE {"name":"de_DE-mls-medium","onnx":{"status":200,"size":76961079,"sha256":"69cd1d2aa5a35839a518966fcc4924b5f93e5f8c948ed0752b1a616ad53f65bf"},"json":{"status":200,"size":8948,"sha256":"b0af1c89ddfdc72d32e015729b0e89b99eec13c2c8caa1db7488d98e9e570b40"},"sampleRate":22050,"speakers":236,"speakerMap":["19","20","91","135","136","137","138","139","140","141","143","144"]}
+CARD de_DE-mls-medium: # Model card for mls (medium) * Language: de_DE (German, Germany) * Speakers: 236 * Quality: medium * Samplerate: 22,050Hz ## Dataset * URL: http://openslr.org/94/ * License: CC-BY 4.0 ## Training Trained from scratch       404  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/michel
+      382  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/miguel
+      112  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/Mike
+      188  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/mike2
+     3193  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/Mr serious
+      280  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/Nguyen
+     3189  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/norbert
+     3142  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/pablo
+      284  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/paul
+      352  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/pedro
+      354  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/quincy
+      202  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/Reed
+      233  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/RicishayMax
+      435  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/RicishayMax2
+      435  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/RicishayMax3
+      265  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/rob
+      274  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robert
+      451  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft
+      454  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft2
+      455  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft3
+      447  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft4
+      445  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft5
+      287  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft6
+      410  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft7
+      243  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/robosoft8
+      530  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/sandro
+      280  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/shelby
+      364  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/steph
+      367  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/steph2
+      377  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/steph3
+      420  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/Storm
+      383  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/travis
+     3189  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/Tweaky
+      417  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/UniRobot
+      253  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/victor
+      186  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/whisper
+      392  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/whisperf
+      275  2023-09-13 20:13   piper/espeak-ng-data/voices/!v/zac
+---------                     -------
+ 38846222                     363 files
+2
+SYNTH de_DE-eva_k-x_low .744754444 s, wav 272428 bytes
+SYNTH de_DE-karlsson-low .858187909 s, wav 249900 bytes
+SYNTH de_DE-kerstin-low .830406369 s, wav 235052 bytes
+SYNTH de_DE-mls-medium 1.707255844 s, wav 672532 bytes
+SYNTH de_DE-pavoque-low 1.330522713 s, wav 239148 bytes
+SYNTH de_DE-ramona-low .931045180 s, wav 264236 bytes
+SYNTH de_DE-thorsten-high 4.525183861 s, wav 272660 bytes
+SYNTH de_DE-thorsten-medium .958310641 s, wav 297748 bytes
+SYNTH de_DE-thorsten_emotional-medium .998274853 s, wav 315156 bytes
