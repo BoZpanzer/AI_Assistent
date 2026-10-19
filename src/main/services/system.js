@@ -29,6 +29,39 @@ class System {
     };
   }
 
+  // ---------- Datenschutz: Überblick und Löschen ----------
+  /** Was liegt lokal gespeichert? (Anzahl/Größe, keine Inhalte) */
+  dataSummary() {
+    const dirSize = (d) => { try { return fs.readdirSync(d).reduce((a, f) => { try { return a + fs.statSync(path.join(d, f)).size; } catch { return a; } }, 0); } catch { return 0; } };
+    const count = (sql) => { try { return this.s.db.get(sql)?.n || 0; } catch { return 0; } };
+    const data = this.s.paths.data;
+    return {
+      screenshots: { files: (() => { try { return fs.readdirSync(path.join(data, 'screens')).length; } catch { return 0; } })(), bytes: dirSize(path.join(data, 'screens')), entries: count('SELECT COUNT(*) AS n FROM screenshots') },
+      logs: { bytes: dirSize(path.join(data, 'logs')) },
+      gameCache: { entries: count('SELECT COUNT(*) AS n FROM game_cache') },
+      conversations: { count: count('SELECT COUNT(*) AS n FROM conversations'), messages: count('SELECT COUNT(*) AS n FROM messages') },
+      aiLedger: { entries: count('SELECT COUNT(*) AS n FROM ai_ledger'), note: 'nur Zeitpunkt, Funktion, Modell, Token und Kosten – keine Inhalte' },
+    };
+  }
+
+  /** Gespeicherte Diagnose-, Cache- oder Bilddaten löschen (ausdrückliche Nutzeraktion). */
+  clearData(what) {
+    const data = this.s.paths.data;
+    if (what === 'screenshots') {
+      fs.rmSync(path.join(data, 'screens'), { recursive: true, force: true });
+      this.s.db.run('DELETE FROM screenshots');
+    } else if (what === 'logs') {
+      for (const f of ['jarvis.log', 'jarvis.log.1']) { try { fs.writeFileSync(path.join(data, 'logs', f), ''); } catch { /* missing */ } }
+    } else if (what === 'gameCache') {
+      this.s.db.run('DELETE FROM game_cache');
+    } else if (what === 'aiLedger') {
+      // Nur abgeschlossene Tage: der heutige Verbrauch bleibt für das Tagesbudget erhalten.
+      this.s.db.run('DELETE FROM ai_ledger WHERE day < ?', require('./costguard').localDay());
+    } else throw new Error('Unbekannter Bereich');
+    log.info('Daten gelöscht: ' + what);
+    return this.dataSummary();
+  }
+
   // ---------- Backups ----------
   backupDir() { return path.join(this.s.paths.data, 'backups'); }
 

@@ -21,6 +21,10 @@ class AudioEngine {
     this.muted = false;
     this.micPending = null; this.playerPending = null; this.starting = false; this.startGeneration = 0; this.playbackGeneration = 0;
     this.micGeneration = 0;
+    // Cloud-Audio nur bei erkannter Sprache senden (Vorlauf 4 Frames ≈ 320 ms, Nachlauf ≈ 1 s), sonst nichts.
+    this.preroll = []; this.sending = false; this.hangMs = 0;
+    // Lokale Aufnahme: automatisch beenden nach Sprechpause (für Wake-Word/Freihand beim Gaming)
+    this.localHeard = 0; this.localSilentMs = 0;
     on('voice:audio', (d) => this.play(d.data).catch((e) => toast('Audioausgabe: ' + e.message, 'error')));
     on('voice:interrupted', () => this.flush());
     on('voice:state', ({ state }) => this.onVoiceState(state));
@@ -134,11 +138,15 @@ class AudioEngine {
     if (rms < this.noiseFloor * 3) this.noiseFloor = this.noiseFloor * 0.98 + rms * 0.02;
     setState({ micLevel: Math.min(1, rms * 9) });
     if (this.mode.local) {
-      // Entire recording stays in the renderer until the user stops it. PCM is
-      // never sent to Gemini or persisted as a transcript in this process.
+      // Entire recording stays in the renderer until it ends; then only the local whisper.cpp process sees it.
+      // PCM is never sent to Gemini or persisted.
       this.localChunks.push(pcm);
       this.localSamples += pcm.length;
+      const speech = rms > Math.max(0.012, this.noiseFloor * 4);
+      if (speech) { this.localHeard += 80; this.localSilentMs = 0; } else this.localSilentMs += 80;
       if (this.localSamples >= 16000 * 30) this.stopLocalVoice();
+      else if (this.localHeard >= 400 && this.localSilentMs >= 1200) this.stopLocalVoice(); // Satz zu Ende
+      else if (!this.localHeard && this.localSamples >= 16000 * 8) this.cancelLocalVoice('Nichts gehört – Aufnahme beendet.');
       return;
     }
     if (this.mode.stream && getState().conversationId !== this.cloudConversationId) {
@@ -148,8 +156,17 @@ class AudioEngine {
     }
     if (this.mode.stream && this.muted) { setState({ micLevel: 0 }); return; }
     if (this.mode.stream) {
-      window.jarvis.sendAudio(pcm.buffer);
       const speechThresh = Math.max(0.012, this.noiseFloor * 4, this.playing ? this.outRms * 0.6 : 0);
+      if (getState().settings?.voice?.cloudVad === false) window.jarvis.sendAudio(pcm.buffer);
+      else if (rms > speechThresh) {
+        if (!this.sending) { for (const f of this.preroll) window.jarvis.sendAudio(f.buffer); this.preroll = []; this.sending = true; }
+        window.jarvis.sendAudio(pcm.buffer);
+        this.hangMs = 1000;
+      } else if (this.sending) {
+        window.jarvis.sendAudio(pcm.buffer);
+        this.hangMs -= 80;
+        if (this.hangMs <= 0) { this.sending = false; rpc('voice.audioEnd').catch(() => {}); }
+      } else { this.preroll.push(pcm.slice()); if (this.preroll.length > 4) this.preroll.shift(); }
       if (rms > speechThresh) {
         this.speechMs += 80;
         if (this.playing && this.speechMs >= 160 && getState().settings?.voice?.bargeIn !== false) this.flush(); // barge-in
@@ -196,7 +213,9 @@ class AudioEngine {
     try {
       const target = await rpc('voice.target', { conversationId });
       if (generation !== this.startGeneration || getState().conversationId !== conversationId) return;
-      if (target.privacy === 'private') return await this.startLocalVoice(conversationId, generation);
+      const cloud = getState().settings?.cloud || {};
+      // Standard: lokale Spracherkennung (whisper.cpp) für alle Chats – Gemini Live nur, wenn ausdrücklich eingeschaltet.
+      if (target.privacy === 'private' || cloud.mode === 'local' || cloud.features?.voice !== true) return await this.startLocalVoice(conversationId, generation);
       if (!['study', 'gaming'].includes(target.privacy)) throw new Error('Unbekannter Sprachmodus.');
       const approved = await ask(
         'Gemini Live überträgt dein Mikrofon-Audio an Google, verarbeitet das Gespräch in der Cloud und kann die freigegebene Chat-Historie verwenden. Audio jetzt für diesen Uni-/Gaming-Chat übertragen?',
@@ -229,10 +248,19 @@ class AudioEngine {
     if (this.inCtx.state === 'suspended') await this.inCtx.resume();
     this.localChunks = [];
     this.localSamples = 0;
+    this.localHeard = 0; this.localSilentMs = 0;
     this.localConversationId = conversationId;
     this.mode.local = true;
+    try { speechSynthesis.cancel(); } catch { /* ignore */ } // eigene Sprachausgabe nicht mit aufnehmen
     setState({ voice: 'recording-local' });
-    toast('Offline-Aufnahme läuft. Mikrofon erneut drücken zum Erkennen (max. 30 Sekunden).');
+    toast('Ich höre zu (lokal). Nach einer Sprechpause wird automatisch erkannt – oder Mikrofon erneut drücken.');
+  }
+  cancelLocalVoice(msg) {
+    if (!this.mode.local) return;
+    this.mode.local = false; this.localChunks = []; this.localSamples = 0; this.localConversationId = null;
+    this.releaseMicIfIdle();
+    setState({ voice: 'off' });
+    if (msg) toast(msg);
   }
   async stopLocalVoice() {
     if (!this.mode.local) return;
@@ -266,6 +294,7 @@ class AudioEngine {
   async stopVoice() {
     this.startGeneration++;
     this.mode.stream = false;
+    this.sending = false; this.preroll = [];
     this.cloudConversationId = null;
     this.setMuted(false);
     this.flush();
@@ -298,7 +327,8 @@ class AudioEngine {
         const m = e.data;
         if (m.type === 'ready') this.wakeReady = true;
         if (m.type === 'error') { toast('Wake-Word: ' + m.error, 'error'); this.setWakeWord(false); }
-        if (m.type === 'wake' && !this.mode.stream && !this.mode.local && !this.localWorking) { chime(); this.startVoice(); }
+        // Eigene Sprachausgabe/Wiedergabe darf das Wake-Word nicht auslösen (Rückkopplung)
+        if (m.type === 'wake' && !this.mode.stream && !this.mode.local && !this.localWorking && !this.playing && !speechSynthesis.speaking) { chime(); this.startVoice(); }
         if (m.type === 'score') setState({ wakeScore: m.score });
       };
       this.wakeWorker.postMessage({ type: 'init', threshold: sens });
@@ -310,7 +340,7 @@ class AudioEngine {
 
   /** Local Windows TTS (offline, no API cost) for read-aloud & coach tips. */
   speakLocal(text) {
-    if (!text || this.mode.stream) return;
+    if (!text || this.mode.stream || this.mode.local) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);

@@ -114,11 +114,23 @@ async function captureAroundCursor() {
   } finally { for (const o of hide) o.applyBounds(); }
 }
 
-/** Screenshot of the display under the mouse cursor (only on explicit request). */
-async function captureScreen() {
+/**
+ * Screenshot only on explicit request. With windowHints (active game) only that game's window is captured;
+ * only if no matching window is found the display under the cursor is used (scope tells which).
+ * Max. 1600 px wide – enough for text/items, fewer image tokens.
+ */
+async function captureScreen({ windowHints = [] } = {}) {
   const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const f = Math.min(1, 1920 / (disp.size.width * disp.scaleFactor));
+  const f = Math.min(1, 1600 / (disp.size.width * disp.scaleFactor));
   const size = { width: Math.round(disp.size.width * disp.scaleFactor * f), height: Math.round(disp.size.height * disp.scaleFactor * f) };
+  const hints = windowHints.map((h) => String(h).toLowerCase()).filter((h) => h.length >= 3);
+  if (hints.length) {
+    try {
+      const wins = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: size });
+      const w = wins.find((x) => hints.some((h) => String(x.name || '').toLowerCase().includes(h)) && !x.thumbnail.isEmpty());
+      if (w) return { data: w.thumbnail.toJPEG(85), ...w.thumbnail.getSize(), scope: 'window' };
+    } catch { /* fall back to the display */ }
+  }
   const ov = overlay?.win && !overlay.win.isDestroyed() && overlay.visible ? overlay.win : null;
   const mc = mapCorner?.win && !mapCorner.win.isDestroyed() && mapCorner.visible ? mapCorner.win : null;
   if (ov) ov.setOpacity(0);
@@ -129,7 +141,7 @@ async function captureScreen() {
     const src = sources.find((x) => String(x.display_id) === String(disp.id)) || sources[0];
     if (!src || src.thumbnail.isEmpty()) throw new Error('Kein Bildschirmbild erhalten');
     const img = src.thumbnail;
-    return { data: img.toJPEG(85), ...img.getSize() };
+    return { data: img.toJPEG(85), ...img.getSize(), scope: 'screen' };
   } finally { if (ov) overlay.applyBounds(); if (mc) mapCorner.applyBounds(); }
 }
 
@@ -205,7 +217,7 @@ function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
     'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
-    'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported',
+    'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported', 'cloud:usage', 'cloud:state', 'game:stats', 'privacy:capture',
     'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }
