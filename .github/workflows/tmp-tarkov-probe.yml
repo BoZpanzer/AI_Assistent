@@ -1,0 +1,38 @@
+name: tmp tarkov json probe
+on:
+  push:
+    branches: [tmp/tarkov-json-probe]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: probe
+        run: |
+          cat > p.mjs <<'JS'
+          const shape = (v, d = 0) => {
+            if (d > 6) return '…';
+            if (Array.isArray(v)) return v.length ? [shape(v.find((x) => x !== null) ?? v[0], d + 1)] : [];
+            if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v).slice(0, 60)) o[k] = shape(x, d + 1); return o; }
+            return typeof v === 'string' ? 's:' + v.slice(0, 40) : v;
+          };
+          const g = await fetch('https://api.tarkov.dev/graphql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: '{ maps(lang: de) { name } }' }) });
+          console.log('GRAPHQL', g.status, (await g.text()).slice(0, 200));
+          for (const mode of ['regular', 'pve']) for (const f of ['maps', 'tasks', 'hideout', 'traders', 'items', 'barters', 'crafts', 'ammo', 'goons', 'status', 'quests']) {
+            const r = await fetch(`https://json.tarkov.dev/${mode}/${f}`);
+            const t = await r.text();
+            console.log('\n=====', mode, f, r.status, t.length, r.headers.get('last-modified'));
+            if (!r.ok || mode === 'pve') continue;
+            const j = JSON.parse(t);
+            console.log('TOP', Object.keys(j), 'translations:', JSON.stringify(j.translations?.slice?.(0, 12)));
+            const d = j.data || j;
+            for (const [k, v] of Object.entries(d)) {
+              if (v && typeof v === 'object' && !Array.isArray(v)) { const vals = Object.values(v); console.log('KEY', k, 'count', vals.length); console.log(JSON.stringify(shape(vals[0])).slice(0, 6000)); if (f === 'maps') console.log('MAPSAMPLE', JSON.stringify(vals.find((m) => /customs|bigmap/i.test(JSON.stringify(m.normalizedName || m.nameId || ''))) || vals[0]).slice(0, 3000)); }
+              else console.log('KEY', k, JSON.stringify(shape(v)).slice(0, 1500));
+            }
+            if (f === 'tasks') { const t1 = Object.values(d.tasks || d)[5]; console.log('TASKSAMPLE', JSON.stringify(t1).slice(0, 4000)); }
+          }
+          for (const f of ['maps_de', 'tasks_de']) { const r = await fetch('https://json.tarkov.dev/regular/' + f); const t = await r.text(); console.log('\n=====', f, r.status, t.length); try { const j = JSON.parse(t); console.log(JSON.stringify(Object.entries(j.data || j).slice(0, 8))); } catch { console.log(t.slice(0, 300)); } }
+          JS
+          node p.mjs
