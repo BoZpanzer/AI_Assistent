@@ -13,23 +13,40 @@ jobs:
         with: { node-version: 22 }
       - name: probe
         run: |
-          mkdir -p probe
+          mkdir -p probe3
           cat > p.mjs <<'JS'
-          import fs from 'node:fs';
+          import fs from 'node:fs'; import crypto from 'node:crypto';
           const out = [];
-          const g = await fetch('https://api.tarkov.dev/graphql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: '{ maps(lang: de) { name } }' }) });
-          out.push('GRAPHQL ' + g.status + ' ' + (await g.text()).slice(0, 200));
-          const get = async (p) => { const r = await fetch('https://json.tarkov.dev/' + p); const t = await r.text(); out.push(p + ' ' + r.status + ' ' + t.length + ' ' + r.headers.get('last-modified')); try { return JSON.parse(t); } catch { return null; } };
-          const pick = (obj, n) => Object.fromEntries(Object.entries(obj).slice(0, n));
-          for (const f of ['maps', 'hideout', 'traders']) { const j = await get('regular/' + f); if (j) fs.writeFileSync('probe/' + f + '.json', JSON.stringify(j)); }
-          const tasks = await get('regular/tasks'); if (tasks) { const d = tasks.data; const t = d.tasks || d; fs.writeFileSync('probe/tasks.json', JSON.stringify({ ...tasks, data: { ...d, tasks: pick(t, 40) }, count: Object.keys(t).length, otherKeys: Object.keys(d) })); }
-          const items = await get('regular/items'); if (items) { const d = items.data; const it = d.items || d; const ids = Object.keys(it); const ammo = ids.filter((k) => (it[k].types || []).includes('ammo')).slice(0, 3); const keys = ids.filter((k) => (it[k].types || []).includes('keys')).slice(0, 2); fs.writeFileSync('probe/items.json', JSON.stringify({ translations: items.translations, otherKeys: Object.keys(d), count: ids.length, sample: Object.fromEntries([...ids.slice(0, 3), ...ammo, ...keys].map((k) => [k, it[k]])), restData: Object.fromEntries(Object.entries(d).filter(([k]) => k !== 'items').map(([k, v]) => [k, JSON.stringify(v).slice(0, 3000)])) })); }
-          for (const f of ['barters', 'crafts', 'ammo', 'goons', 'status', 'quests', 'items_de', 'archived_items']) await get('regular/' + f);
-          for (const f of ['maps', 'tasks', 'hideout', 'traders', 'items']) { const j = await get('regular/' + f + '_de'); if (j) { const e = Object.entries(j.data || j); fs.writeFileSync('probe/' + f + '_de.json', JSON.stringify({ count: e.length, sample: Object.fromEntries(f === 'items' ? e.slice(0, 200) : e) })); } }
-          await get('pve/maps'); await get('pve/tasks');
-          fs.writeFileSync('probe/log.txt', out.join('\n'));
+          const shape = (v, d = 0) => { if (d > 5) return '…'; if (Array.isArray(v)) return v.length ? [shape(v[0], d + 1), 'len' + v.length] : []; if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) o[k] = shape(x, d + 1); return o; } return typeof v === 'string' ? 's:' + v.slice(0, 40) : v; };
+          for (const f of ['barters', 'crafts']) { const j = await (await fetch('https://json.tarkov.dev/regular/' + f)).json(); const d = j.data; out.push(f + ' translations ' + JSON.stringify(j.translations) + ' keys ' + JSON.stringify(Array.isArray(d) ? 'array' : Object.keys(d).slice(0, 3))); const v = Array.isArray(d) ? d : Object.values(d); out.push(f + ' count ' + v.length + ' ' + JSON.stringify(shape(v[0])).slice(0, 2500)); }
+          const it = (await (await fetch('https://json.tarkov.dev/regular/items')).json()).data.items;
+          const ammo = Object.values(it).find((x) => x.properties?.propertiesType === 'ItemPropertiesAmmo'); out.push('AMMO props ' + JSON.stringify(ammo.properties).slice(0, 1500));
+          const key = Object.values(it).find((x) => x.types.includes('keys')); out.push('KEY ' + JSON.stringify({ ...key, containsItems: undefined }).slice(0, 600));
+          const m = (await (await fetch('https://json.tarkov.dev/regular/maps')).json()).data; out.push('mob sample ' + JSON.stringify(Object.values(m.mobs)[3]).slice(0, 200));
+          const hs = (await (await fetch('https://json.tarkov.dev/regular/hideout')).json()).data; const lv = Object.values(hs).flatMap((s) => s.levels).find((l) => l.bonuses?.length); out.push('BONUS ' + JSON.stringify(lv.bonuses).slice(0, 500));
+          // Piper
+          const hash = async (url) => { const r = await fetch(url); const b = Buffer.from(await r.arrayBuffer()); return { url, status: r.status, size: b.length, sha256: crypto.createHash('sha256').update(b).digest('hex'), buf: b }; };
+          const eng = await hash('https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip'); out.push('ENGINE ' + JSON.stringify({ ...eng, buf: undefined }));
+          fs.writeFileSync('/tmp/piper_win.zip', eng.buf);
+          const lin = await hash('https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz'); fs.writeFileSync('/tmp/piper_lin.tgz', lin.buf);
+          const voices = ['thorsten/high/de_DE-thorsten-high', 'thorsten/medium/de_DE-thorsten-medium', 'thorsten_emotional/medium/de_DE-thorsten_emotional-medium', 'kerstin/low/de_DE-kerstin-low', 'ramona/low/de_DE-ramona-low', 'eva_k/x_low/de_DE-eva_k-x_low', 'karlsson/low/de_DE-karlsson-low', 'pavoque/low/de_DE-pavoque-low', 'mls/medium/de_DE-mls-medium'];
+          fs.mkdirSync('/tmp/v', { recursive: true });
+          for (const v of voices) {
+            const base = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/' + v;
+            const dir = base.slice(0, base.lastIndexOf('/'));
+            const o = await hash(base + '.onnx'); const c = await hash(base + '.onnx.json'); const card = await (await fetch(dir + '/MODEL_CARD')).text();
+            const name = v.split('/').pop(); fs.writeFileSync('/tmp/v/' + name + '.onnx', o.buf); fs.writeFileSync('/tmp/v/' + name + '.onnx.json', c.buf);
+            let cfg = {}; try { cfg = JSON.parse(c.buf.toString()); } catch {}
+            out.push('VOICE ' + JSON.stringify({ name, onnx: { status: o.status, size: o.size, sha256: o.sha256 }, json: { status: c.status, size: c.size, sha256: c.sha256 }, sampleRate: cfg.audio?.sample_rate, speakers: cfg.num_speakers, speakerMap: Object.keys(cfg.speaker_id_map || {}).slice(0, 12) }));
+            out.push('CARD ' + name + ': ' + card.replace(/\s+/g, ' ').slice(0, 600));
+          }
+          fs.writeFileSync('probe3/log.txt', out.join('\n'));
           JS
           node p.mjs
-          ls -la probe
+          # Zeitmessung Linux-Piper (CPU des Runners)
+          mkdir -p /tmp/pl && tar xzf /tmp/piper_lin.tgz -C /tmp/pl && unzip -l /tmp/piper_win.zip | tail -40 >> probe3/log.txt
+          nproc >> probe3/log.txt
+          for v in /tmp/v/*.onnx; do n=$(basename $v .onnx); s=$(date +%s.%N); echo "Hallo, ich bin JARVIS. Deine Überlebensrate heute liegt bei sechzig Prozent, und du hast drei Raids gespielt." | /tmp/pl/piper/piper -m $v --output_file /tmp/$n.wav 2>/dev/null; e=$(date +%s.%N); echo "SYNTH $n $(echo "$e - $s" | bc) s, wav $(stat -c %s /tmp/$n.wav) bytes" >> probe3/log.txt; done
+          mkdir -p probe3/wav && cp /tmp/*.wav probe3/wav/ 2>/dev/null || true
           git config user.name probe; git config user.email probe@users.noreply.github.com
-          git add probe; git commit -qm "probe results"; git push
+          git add probe3; git commit -qm "probe3 results"; git push
