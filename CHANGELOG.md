@@ -2,7 +2,7 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
-## Unveröffentlicht
+## 4.5.0 – Google Kalender je Art
 
 - **Google Kalender – alles aus JARVIS, getrennt nach Art:** Mit eingeschalteter Übertragung (Kalender → Google Kalender) legt JARVIS eigene Google-Kalender an – *JARVIS · Termine*, *Geburtstage*, *Todos*, *Erinnerungen* und *Uni* – und hält sie automatisch aktuell. Neu dabei: offene Aufgaben mit Fälligkeit (Todos) und Erinnerungen (Google meldet sich zur eingestellten Zeit). Jede Art lässt sich einzeln abschalten. Erledigte Aufgaben verschwinden aus Google, in Google geänderte Kopien werden nie überschrieben, normale Google-Termine nie angefasst. Kopien aus der bisherigen Übertragung im Hauptkalender werden einmalig dorthin umgezogen.
 
