@@ -40,7 +40,7 @@ function MapWidget({ game, params }) {
   const [markers, reloadMarkers] = useRpc('game.markers', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const baseMap = (userMaps || []).find((m) => m.name === map)?.source?.baseMap || map;
-  const [apiMap] = useRpc('tarkov.map', { map: baseMap }, { enabled: isEft, deps: [baseMap] });
+  const [apiMap, , apiState] = useRpc('tarkov.map', { map: baseMap }, { enabled: isEft, deps: [baseMap] });
   const meta = (userMaps || []).find((m) => m.name === map);
   const [pos, setPos] = useState(null);
   const [follow, setFollow] = useState(true);
@@ -151,12 +151,14 @@ function MapWidget({ game, params }) {
   const references = (apiMap?.map?.extracts || []).filter(e => Number.isFinite(e.position?.x) && Number.isFinite(e.position?.z));
   const [calib, setCalib] = useState(null); // {step, points:[]}
   const [imgSize, setImgSize] = useState({ w: 1600, h: 1000 });
+  // Clicks are converted to 0..1 image coordinates – only valid once the real image size is known.
+  const [imgReady, setImgReady] = useState(false);
   const box = useRef(); const drag = useRef(null);
   const floors = Array.isArray(meta?.source?.floors) ? meta.source.floors : [];
   const [floor, setFloor] = useState(null);
   const [showQuests, setShowQuests] = useState(true);
   const imgUrl = meta?.hasImage ? `app://jarvis/map-image/${encodeURIComponent(game.id)}/${encodeURIComponent(map)}${floor ? '?layer=' + encodeURIComponent(floor) + '&v=' + encodeURIComponent(meta.source?.at || '') : ''}` : null;
-  useEffect(() => { setView({ z: 1, x: 0, y: 0 }); setFloor(null); }, [map]);
+  useEffect(() => { setView({ z: 1, x: 0, y: 0 }); setFloor(null); setImgReady(false); }, [map]);
   const fit = () => { const el = box.current; if (!el) return; const z = Math.min(el.clientWidth / imgSize.w, el.clientHeight / imgSize.h); setView({ z, x: (el.clientWidth - imgSize.w * z) / 2, y: (el.clientHeight - imgSize.h * z) / 2 }); };
   useEffect(() => { const t = setTimeout(fit, 50); return () => clearTimeout(t); }, [imgSize.w, imgSize.h, full, map]);
   const toNorm = (e) => { const r = box.current.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / (imgSize.w * view.z), y: (e.clientY - r.top - view.y) / (imgSize.h * view.z) }; };
@@ -187,6 +189,7 @@ function MapWidget({ game, params }) {
     const p = toNorm(e);
     if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return;
     if (calib) {
+      if (imgUrl && !imgReady) return toast('Kartenbild lädt noch – bitte gleich erneut klicken.', 'error');
       const known = landmark === 'manual' ? null : references[Number(landmark)];
       const ref = known ? `${known.position.x}, ${known.position.z}` : await ask(`Referenzpunkt ${calib.points.length + 1}/3: Spielkoordinaten „x, z“ (drei weit auseinanderliegende Punkte auf der Hauptkarte, keine Stockwerk-Inserts)`, '');
       if (!ref) return;
@@ -237,6 +240,8 @@ function MapWidget({ game, params }) {
         {isEft && <div class="notice small mb" role="status">
           {transform ? 'Karte bereit · Spielkoordinaten sind zugeordnet.' : autoAligning || loadingMaps || retryStatus === 'running' ? 'Karte wird automatisch vorbereitet …' : retryStatus === 'waiting' ? 'Vorbereitung noch nicht möglich – JARVIS versucht es automatisch erneut.' : retryStatus === 'failed' ? 'Keine sichere Kartenzuordnung verfügbar. Eigene Marker und Routen bleiben nutzbar; Spielposition und Questpunkte bleiben ausgeblendet.' : 'Spielkoordinaten noch nicht zugeordnet.'}
           {!transform && retryStatus === 'failed' && <button class="btn xs" onClick={retryMap}>Erneut versuchen</button>}
+          {apiState?.error && <div class="tiny mt" role="alert">{apiState.error}</div>}
+          {!apiState?.error && apiMap?.offline && <div class="tiny muted mt">tarkov.dev gerade nicht erreichbar – gespeicherter Stand vom {fmtDateTime(apiMap.fetchedAt)}.</div>}
           {!transform && calibratedAlternative && map !== baseMap && <button class="btn xs" onClick={() => setMap(baseMap)}>Kalibrierte Karte öffnen</button>}
           <div class="tiny muted">Positionen stammen aus deinem letzten Tarkov-Screenshot, nicht aus einer Live-Ortung.</div>
         </div>}
@@ -264,7 +269,7 @@ function MapWidget({ game, params }) {
           </div>
           <div class={`map-box ${imgUrl ? '' : 'grid-fallback'}`} ref={box} onWheel={wheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onClick={click}>
             <div class="map-inner" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`, width: imgSize.w, height: imgSize.h }}>
-              {imgUrl ? <img src={imgUrl} onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} /> : <div style={{ width: imgSize.w, height: imgSize.h }} />}
+              {imgUrl ? <img src={imgUrl} onLoad={(e) => { const w = e.currentTarget.naturalWidth, h = e.currentTarget.naturalHeight; if (w > 0 && h > 0) { setImgSize({ w, h }); setImgReady(true); } }} onError={() => setImgReady(false)} /> : <div style={{ width: imgSize.w, height: imgSize.h }} />}
               <svg width={imgSize.w} height={imgSize.h} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {[...routes, ...(routeDraft ? [{ id: 'draft', points: routeDraft }] : [])].map((r) => <polyline points={r.points.map((p) => `${p.x * imgSize.w},${p.y * imgSize.h}`).join(' ')} fill="none" stroke={r.id === 'draft' ? '#facc15' : '#22d3ee'} stroke-width={4 / view.z} stroke-dasharray={`${12 / view.z} ${8 / view.z}`} />)}
                 {routes.map((r) => { const end = r.points.at(-1); return end && <g><circle cx={end.x * imgSize.w} cy={end.y * imgSize.h} r={7 / view.z} fill="#22d3ee" /><text x={end.x * imgSize.w} y={end.y * imgSize.h - 12 / view.z} fill="#22d3ee" font-size={13 / view.z}>{end.label || r.name}</text></g>; })}
@@ -472,7 +477,6 @@ function TarkovRaid({ game, params }) {
   return (
     <Panel title="Raid-Status & Intelligente Hilfe" sub="Kartenwissen (keine Live-Raid-Daten verfügbar)" right={<Select style={{ width: 150 }} value={map} onChange={setMap} options={(maps?.maps || [{ id: map, name: map }]).map((x) => ({ value: x.id, label: x.name }))} />}>
       <div class="tabs sm">{[['overview', 'Übersicht'], ['exits', 'Exits'], ['keys', 'Schlüssel'], ['bosses', 'Bosse']].map(([k, l]) => <button class={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
-      <div class="tiny muted mt">{cloudShare ? 'LoL-Daten für Gaming-Cloud-Analysen freigegeben.' : 'Diese Statistiken werden lokal ausgewertet. Cloud-Analyse erst nach deiner Freigabe.'}{cloudShare && <button class="btn xs ghost" onClick={() => guard(() => rpc('settings.update', { gaming: { lolCloudShare: false } }), 'LoL-Cloud-Freigabe ausgeschaltet')}>Freigabe ausschalten</button>}</div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       {!m && !st.error && <div class="mt"><Spinner /></div>}
       {m && <div class="col mt" style={{ gap: 6, maxHeight: 260, overflow: 'auto' }}>
