@@ -38,7 +38,9 @@ const SCHEMA = {
     campusDualResults: { type: 'object', properties: { enabled: { type: 'boolean' }, intervalHours: { type: 'number', minimum: 1, maximum: 48 } } },
     backupDrive: { type: 'object', properties: { enabled: { type: 'boolean' }, folder: { type: 'string', maxLength: 200 }, keep: { type: 'number', minimum: 1, maximum: 100 }, intervalHours: { type: 'number', minimum: 1, maximum: 168 } } },
     updateCheck: { type: 'boolean' },
-    localLLM: { type: 'object', properties: { port: { type: 'integer', minimum: 1, maximum: 65535 }, model: { type: 'string', maxLength: 120 }, autoRecommend: { type: 'boolean' } } },
+    localLLM: { type: 'object', properties: { port: { type: 'integer', minimum: 1, maximum: 65535 }, model: { type: 'string', maxLength: 120 }, autoRecommend: { type: 'boolean' },
+      keepAlive: { type: 'string', pattern: '^\\d{1,4}[smh]$' }, threads: { type: 'integer', minimum: 1, maximum: 32 }, numCtx: { type: 'integer', minimum: 1024, maximum: 32768 },
+      whileGaming: { type: 'string', enum: ['cpu', 'pause', 'normal'] } } },
     // AI
     models: { type: 'object', properties: {
       fast: { type: 'string', maxLength: 80 }, reasoning: { type: 'string', maxLength: 80 },
@@ -49,7 +51,12 @@ const SCHEMA = {
     webSearch: { type: 'boolean' },
     autoMemory: { type: 'boolean' },
     aiCostMode: { type: 'string', enum: ['spar', 'max'] },
-    aiBudget: { type: 'object', properties: { monthlyEur: { type: 'number', minimum: 0, maximum: 1000 }, warnPct: { type: 'number', minimum: 10, maximum: 99 }, brake: { type: 'boolean' }, usdToEur: { type: 'number', minimum: 0.5, maximum: 1.5 } } },
+    aiBudget: { type: 'object', properties: { monthlyEur: { type: 'number', minimum: 0, maximum: 1000 }, dailyEur: { type: 'number', minimum: 0, maximum: 100 }, sessionEur: { type: 'number', minimum: 0, maximum: 100 }, hardStop: { type: 'boolean' }, warnPct: { type: 'number', minimum: 10, maximum: 99 }, brake: { type: 'boolean' }, usdToEur: { type: 'number', minimum: 0.5, maximum: 1.5 } } },
+    // Cloud-KI: 'hybrid' = Gemini nur in Uni-/Gaming-Chats und freigegebenen Funktionen; 'local' = keine externen KI-Aufrufe
+    cloud: { type: 'object', properties: {
+      mode: { type: 'string', enum: ['hybrid', 'local'] },
+      features: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['chat', 'voice', 'vision', 'research', 'lol', 'news', 'games', 'wikilist', 'study', 'diagnostics', 'meta'].map((k) => [k, { type: 'boolean' }])) },
+      maxConcurrent: { type: 'integer', minimum: 1, maximum: 4 }, maxOutputTokens: { type: 'integer', minimum: 256, maximum: 16384 }, timeoutSec: { type: 'integer', minimum: 10, maximum: 300 } } },
     birthdaysToCalendar: { type: 'boolean' },
     // Voice
     voice: { type: 'object', properties: {
@@ -58,6 +65,8 @@ const SCHEMA = {
       wakeWord: { type: 'boolean' }, wakeSensitivity: { type: 'number', minimum: 0.1, maximum: 0.95 },
       pushToTalkKey: { type: 'string', maxLength: 40 }, extendedThinking: { type: 'boolean' },
       whisperExecutable: { type: 'string', maxLength: 1000 }, whisperModel: { type: 'string', maxLength: 1000 },
+      whisperThreads: { type: 'integer', minimum: 1, maximum: 16 }, speakVoiceReplies: { type: 'boolean' },
+      cloudMaxMinutes: { type: 'number', minimum: 1, maximum: 60 }, cloudMaxEur: { type: 'number', minimum: 0.01, maximum: 5 }, cloudVad: { type: 'boolean' },
       bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 } } },
     // Google
     google: { type: 'object', properties: {
@@ -82,10 +91,11 @@ const SCHEMA = {
       detection: { type: 'boolean' }, reduceWhileGaming: { type: 'boolean' },
       riotId: { type: 'string', maxLength: 60 }, leagueDir: { type: 'string', maxLength: 500 }, riotRegion: { type: 'string', enum: ['euw1', 'eun1', 'na1', 'kr', 'br1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'jp1'] },
       lolLiveCoach: { type: 'boolean' }, lolMatchupCard: { type: 'boolean' }, patchNotes: { type: 'boolean' }, patchSummaries: { type: 'boolean' }, breakReminderMin: { type: 'number', minimum: 0, maximum: 600 }, wishlistAlerts: { type: 'boolean' }, wishlistMinDiscount: { type: 'number', minimum: 0, maximum: 100 }, gameRecap: { type: 'boolean' }, arkCuddleHours: { type: 'number', minimum: 0.1, maximum: 48 }, cs2Gsi: { type: 'boolean' }, acTelemetry: { type: 'boolean' }, pubgName: { type: 'string', maxLength: 40 }, pubgShard: { type: 'string', enum: ['steam', 'kakao', 'console'] }, stardewSave: { type: 'string', maxLength: 300 }, cs2GsiPort: { type: 'number', minimum: 1024, maximum: 65535 }, servers: { type: 'array', maxItems: 30, items: { type: 'object', additionalProperties: false, required: ['address'], properties: { address: { type: 'string', maxLength: 200 }, game: { type: 'string', maxLength: 40 }, name: { type: 'string', maxLength: 80 }, kind: { type: 'string', enum: ['steam', 'minecraft'] } } } }, lolBreakHint: { type: 'boolean' }, lolWeekly: { type: 'boolean' }, autoDesign: { type: 'boolean' }, eftLogWatch: { type: 'boolean' }, eftDir: { type: 'string', maxLength: 400 }, eftScreenshotsDir: { type: 'string', maxLength: 400 }, eftMoveShots: { type: 'boolean' }, eftFaction: { type: 'string', enum: ['pmc', 'scav', 'all'] }, eftRunthroughSec: { type: 'number', minimum: 0, maximum: 1800 }, eftScavCooldownMin: { type: 'number', minimum: 1, maximum: 60 }, eftScanHotkey: { type: 'string', maxLength: 40 }, eftAlerts: { type: 'object', properties: Object.fromEntries(['matchFound', 'raidStart', 'runthrough', 'scavReady', 'fleaSold', 'speak'].map((k) => [k, { type: 'boolean' }])) }, eftShotKeepDays: { type: 'number', minimum: 0, maximum: 365 }, lolObjectives: { type: 'boolean' }, lolObjectiveTimes: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['dragon', 'grubs', 'herald', 'atakhan', 'baron'].map((k) => [k, { type: 'number', minimum: 0, maximum: 3600 }])) }, favorites: { type: 'array', items: { type: 'string' } },
-      lolChampSelect: { type: 'boolean' }, lolReview: { type: 'boolean' }, lolCloudShare: { type: 'boolean' }, steamDir: { type: 'string', maxLength: 500 }, steamId: { type: 'string', maxLength: 20 }, steamAutoImport: { type: 'boolean' }, steamMinMinutes: { type: 'number', minimum: 0, maximum: 100000 }, lolReviewAi: { type: 'boolean' }, tarkovTrackerSync: { type: 'boolean' } } },
+      lolChampSelect: { type: 'boolean' }, lolReview: { type: 'boolean' }, lolCloudShare: { type: 'boolean' }, steamDir: { type: 'string', maxLength: 500 }, steamId: { type: 'string', maxLength: 20 }, steamAutoImport: { type: 'boolean' }, steamMinMinutes: { type: 'number', minimum: 0, maximum: 100000 }, lolReviewAi: { type: 'boolean' }, tarkovTrackerSync: { type: 'boolean' }, statsAnnounce: { type: 'boolean' }, lolTeamAdvice: { type: 'boolean' } } },
     // Screen analysis & in-game overlay
     screen: { type: 'object', properties: {
-      enabled: { type: 'boolean' }, hotkey: { type: 'string', maxLength: 40 }, defaultQuestion: { type: 'string', maxLength: 300 } } },
+      enabled: { type: 'boolean' }, hotkey: { type: 'string', maxLength: 40 }, defaultQuestion: { type: 'string', maxLength: 300 },
+      keepScreenshots: { type: 'boolean' }, preferGameWindow: { type: 'boolean' } } },
     overlay: { type: 'object', properties: {
       mode: { type: 'string', enum: ['auto', 'always', 'off'] }, hotkey: { type: 'string', maxLength: 40 }, interactHotkey: { type: 'string', maxLength: 40 },
       position: { type: 'string', enum: ['left', 'right'] }, opacity: { type: 'number', minimum: 0.4, maximum: 1 }, scale: { type: 'number', minimum: 0.7, maximum: 1.5 },
@@ -99,7 +109,7 @@ const SCHEMA = {
     pc: { type: 'object', properties: {
       enabled: { type: 'boolean' }, allowPower: { type: 'boolean' },
       apps: { type: 'array', maxItems: 60, items: { type: 'object', properties: { name: { type: 'string', maxLength: 60 }, kind: { type: 'string', enum: ['exe', 'steam', 'uri', 'folder'] }, target: { type: 'string', maxLength: 500 } } } } } },
-    // Local offline model (Ollama)
+    // Veraltet (nie ausgewertet; lokale KI = localLLM). Nur noch angenommen, damit alte Sicherungen importierbar bleiben.
     ollama: { type: 'object', properties: {
       enabled: { type: 'boolean' }, url: { type: 'string', maxLength: 100 }, model: { type: 'string', maxLength: 100 }, notWhileGaming: { type: 'boolean' } } },
     // GitHub projects
@@ -109,7 +119,7 @@ const SCHEMA = {
     proactive: { type: 'object', properties: {
       dailyBriefing: { type: 'boolean' }, briefingTime: { type: 'string', maxLength: 5 },
       overdueReminders: { type: 'boolean' } } },
-    // Security
+    // Veraltet (nie ausgewertet). Nur noch angenommen, damit alte Sicherungen importierbar bleiben.
     security: { type: 'object', properties: {
       localOnlyProcessing: { type: 'boolean' }, restrictFileAccess: { type: 'boolean' },
       lockAfterMinutes: { type: 'number', minimum: 0, maximum: 1440 } } },
@@ -127,24 +137,24 @@ const DEFAULTS = {
   campusDualResults: { enabled: true, intervalHours: 3 }, campusDualExams: { enabled: true },
   backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
-  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, warnPct: 80, brake: true, usdToEur: 0.86 },
+  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
+  // Sparsamer Standard: Gemini nur in ausdrücklichen Uni-/Gaming-Chats; Gemini Live (Echtzeit-Audio) aus → lokale Spracheingabe
+  cloud: { mode: 'hybrid', features: { chat: true, voice: false, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
-    wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 90,
-    whisperExecutable: '', whisperModel: '' },
+    wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 45,
+    whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true, cloudMaxMinutes: 10, cloudMaxEur: 0.1, cloudVad: true },
   google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
-  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: true, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, lolCloudShare: false, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: true, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: true, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },
+  gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: false, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, lolCloudShare: false, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: false, lolTeamAdvice: false, statsAnnounce: false, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: false, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },
   life: { budgetMonthly: 0, boughtToPantry: true, birthdayGifts: true },
   transit: { enabled: true, api: 'https://v6.db.transport.rest', homeId: '', homeName: '', bufferMin: 5, notifyBeforeMin: 10, lookaheadHours: 4 },
   deadlines: { enabled: true, mail: false, remindDays: [7, 2, 1] },
-  screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.' },
+  screen: { enabled: true, hotkey: 'Control+Alt+W', defaultQuestion: 'Was sehe ich hier? Hilf mir kurz und konkret.', keepScreenshots: false, preferGameWindow: true },
   overlay: { mode: 'auto', hotkey: 'Control+Alt+O', interactHotkey: 'Control+Alt+I', position: 'right', opacity: 0.92, scale: 1, showMap: true, speakAnswers: false, mapCorner: true, mapSize: 320, mapZoom: true },
   telegram: { enabled: false, forwardMode: 'idle', idleMinutes: 10, chats: [], allowConfirm: true },
   pc: { enabled: true, allowPower: true, apps: [] },
-  ollama: { enabled: false, url: 'http://127.0.0.1:11434', model: '', notWhileGaming: true },
   github: { enabled: false, repos: [], notifyFailures: true },
   proactive: { dailyBriefing: false, briefingTime: '08:00', overdueReminders: true },
-  security: { localOnlyProcessing: false, restrictFileAccess: true, lockAfterMinutes: 0 },
 };
 
 function isObj(v) { return v && typeof v === 'object' && !Array.isArray(v); }

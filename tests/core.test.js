@@ -10,7 +10,7 @@ const { redact } = require('../src/main/core/logger');
 
 test('Datenbank: Migration, Schema-Version, Backup vor Migration', () => {
   const { core, cleanup } = tempCore();
-  assert.equal(core.db.version, 9);
+  assert.equal(core.db.version, 10);
   const snap = core.db.snapshot('test');
   assert.ok(fs.existsSync(snap));
   cleanup();
@@ -112,7 +112,6 @@ test('Brain: Duplikate, Ersetzen persönlicher Fakten, Konflikt bei Quellen, sen
   const r = await core.brain.search('Hausautomation LLM');
   assert.equal(r.results[0].domain, 'projects');
   // Cloud-Embeddings bleiben gesperrt; lokale Suche liefert weiterhin Treffer.
-  await core.vectors.backfill();
   assert.equal(core.vectors.count('k'), 0, 'private Inhalte nicht an Cloud-Embeddings senden');
   const r2 = await core.brain.search('home assistant');
   assert.equal(r2.semantic, false); assert.ok(r2.results.length, 'lokale Volltextsuche bleibt nutzbar');
@@ -339,30 +338,33 @@ test('Kosten: Modell lehnt thinkingConfig ab → einmal ohne wiederholen, danach
   } finally { cleanup(); }
 });
 
-test('Kostenbremse: Schätzung nach Modell, Eichen mit AI-Studio-Stand, Warnung und Sparstufe', async () => {
+test('Kostenbremse: Schätzung nach Modell, Eichen mit AI-Studio-Stand, Warnung, Sparstufe und Sperre', async () => {
   const { costUsd } = require('../src/main/services/costguard');
-  // 1 Mio. Eingabe (davon 800k Cache) + 100k Ausgabe + 100k Denken mit Flash-Preisen
-  assert.ok(Math.abs(costUsd('gemini-3.8-flash', { in: 1e6, cached: 8e5, out: 1e5, think: 1e5 }) - (0.2 * 0.5 + 0.8 * 0.05 + 0.2 * 3)) < 1e-9);
+  // 1 Mio. Eingabe (davon 800k Cache) + 100k Ausgabe + 100k Denken mit Preisen gemini-3.8-flash (Stand 19.10.2026)
+  assert.ok(Math.abs(costUsd('gemini-3.8-flash', { in: 1e6, cached: 8e5, out: 1e5, think: 1e5 }, new Date('2026-10-19')) - (0.2 * 0.75 + 0.8 * 0.075 + 0.2 * 3.75)) < 1e-9);
+  // angekündigte Preiserhöhung ab 01.01.2027 wird berücksichtigt
+  assert.ok(Math.abs(costUsd('gemini-3.8-flash', { in: 1e6 }, new Date('2027-01-02')) - 1.5) < 1e-9);
   const { core, cleanup } = tempCore();
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
     await core.gemini.discover();
-    core.settings.update({ aiBudget: { monthlyEur: 5 } });
+    core.settings.update({ aiBudget: { monthlyEur: 5, dailyEur: 0, sessionEur: 0 } });
     assert.equal(core.costGuard.status().level, 'ok');
     // geeicht: 4,00 € laut AI Studio → 80 % → Warnung
     core.costGuard.calibrate('4,00');
     let st = core.costGuard.check();
     assert.equal(st.level, 'warn'); assert.equal(st.calibrated, true);
     assert.ok(core.notifications.list({ limit: 10 }).some((n) => /Budget: Achtung/.test(n.title)));
-    // Verbrauch nach dem Eichen kommt dazu (Pro: 1 Mio. Ausgabe ≈ 12 $ → weit über Budget) → Sparstufe
-    core.gemini.record('chat', 'gemini-3.1-pro-preview', { promptTokenCount: 1000, candidatesTokenCount: 1e6 });
+    // Verbrauch nach dem Eichen (Pro: 1 Mio. Ausgabe ≈ 12 $) → Monatsbudget überschritten → Sperre
+    const id = core.costGuard.reserve({ feature: 'chat', model: 'gemini-3.1-pro-preview', estUsd: 0 });
+    core.costGuard.settle(id, { usage: { in: 1000, out: 1e6 } });
     st = core.costGuard.check();
-    assert.equal(st.level, 'brake'); assert.equal(st.braking, true);
-    assert.equal(core.gemini.model('reasoning'), core.gemini.model('fast'), 'keine Pro-Analysen in der Sparstufe');
+    assert.equal(st.level, 'blocked'); assert.equal(st.blocked, 'month'); assert.equal(st.braking, true);
+    assert.equal(core.gemini.model('reasoning'), core.gemini.model('fast'), 'kein Pro-Modell in der Sparstufe');
     assert.deepEqual(core.gemini.thinkingFor('gemini-3.8-flash', 'high'), { thinkingLevel: 'low' });
-    await assert.rejects(core.gemini.generate({ feature: 'lol', contents: [] }), /Kostenbremse/);
-    // Sparstufe abschaltbar
-    core.settings.update({ aiBudget: { brake: false } });
+    await assert.rejects(core.gemini.generate({ feature: 'lol', contents: [{ role: 'user', parts: [{ text: 'Matchup' }] }] }), /Monatsbudget/);
+    // Sperre abschaltbar (dann nur noch Warnung/Sparstufe)
+    core.settings.update({ aiBudget: { hardStop: false, brake: false } });
     assert.equal(core.costGuard.braking(), false);
     assert.throws(() => core.costGuard.calibrate('abc'), /Betrag/);
   } finally { cleanup(); }

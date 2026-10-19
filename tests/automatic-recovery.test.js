@@ -14,13 +14,14 @@ function voiceHarness(connect) {
     bus: new EventEmitter(), settings: { get: () => ({}), update: () => {} },
     conversations: { get: id => ({ id, privacy: 'gaming' }), history: () => [], add: (id, m) => messages.push({ id, ...m }) },
     orchestrator: { declarations: () => [{ functionDeclarations: [] }], system: () => '', execute: async () => ({ response: { ok: true } }) },
-    gemini: { hasKey: () => true, model: () => null, requireModel: () => 'test', client: () => ({ live: { connect: async opts => {
-      callbacks.push(opts.callbacks);
-      const session = { closed: false, responses: [], close() { this.closed = true; }, sendToolResponse(r) { this.responses.push(r); } };
-      sessions.push(session);
-      if (connect) await connect();
-      return session;
-    } } }) },
+    gemini: { hasKey: () => true, policy: () => true, model: () => null, requireModel: () => 'test', liveUsage: () => ({}), liveEnd: () => {},
+      liveConnect: async (opts) => {
+        callbacks.push(opts.callbacks);
+        const session = { closed: false, responses: [], close() { this.closed = true; }, sendToolResponse(r) { this.responses.push(r); } };
+        sessions.push(session);
+        if (connect) await connect();
+        return { session, ledger: null };
+      } },
   };
   return { voice: new LiveVoice(s), s, messages, sessions, callbacks };
 }

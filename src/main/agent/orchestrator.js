@@ -85,12 +85,14 @@ class Orchestrator {
    * Text turn. Streams via bus events: chat:delta / chat:card / chat:done.
    * @returns final assistant message
    */
-  async chat({ conversationId, text, attachments = [], images = [], channel = 'text', hint = '' }) {
+  async chat({ conversationId, text, attachments = [], images = [], channel = 'text', hint = '', screen = false }) {
     const { conversations, gemini, bus } = this.s;
     const conv = conversationId ? conversations.get(conversationId) : conversations.current();
     if (!conv) throw new Error('Gespräch nicht gefunden');
     const cid = conv.id;
-    if (privacy.privateText(text) || attachments.length || images.length) conversations.markPrivate(cid);
+    // Eigene Dateien und eingefügte Bilder sind privat. Spielfenster-Aufnahmen per Hotkey (screen) gehen nur in
+    // einen ausdrücklichen Gaming-Chat (siehe ScreenVision.hotkeyQuestion).
+    if (privacy.privateText(text) || attachments.length || (images.length && !(screen && conv.privacy === 'gaming'))) conversations.markPrivate(cid);
     let userText = String(text || '').slice(0, 30000);
     const attachInfo = [];
     for (const a of attachments.slice(0, 5)) {
@@ -102,7 +104,16 @@ class Orchestrator {
     conversations.autoTitle(cid, text || attachInfo[0]?.name || 'Gespräch');
     const msg = conversations.add(cid, { role: 'assistant', content: '', meta: { streaming: true }, channel });
 
-    if (conversations.get(cid).privacy !== 'private' && !gemini.hasKey()) {
+    // Feste Fragen (Statistiken, Erfassungen) ohne Sprachmodell beantworten – kostenlos und lokal.
+    const det = !images.length && !attachments.length ? this.deterministic(text) : null;
+    if (det) {
+      conversations.update(msg.id, { content: det.text, meta: { streaming: false, deterministic: det.deterministic, model: 'lokal (ohne KI)' } });
+      bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
+      bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
+      if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) bus.emit('tts:speak', { text: det.text });
+      return conversations.messages(cid, { limit: 1 })[0];
+    }
+    if (conversations.get(cid).privacy !== 'private' && !gemini.hasKey() && !this.s.localLLM?.cfg().model) {
       const content = 'Ich brauche zuerst einen Gemini-API-Schlüssel, Chef. Öffne **Einstellungen → Gemini / KI** oder den Einrichtungsassistenten.';
       conversations.update(msg.id, { content, meta: { streaming: false, error: true } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
@@ -126,14 +137,44 @@ class Orchestrator {
     return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id });
   }
 
+  /** Deterministic answers (no model): game statistics and their spoken/typed entry. */
+  deterministic(text) {
+    try { return this.s.gaming?.stats?.answer(text) || null; } catch (e) { log.debug('deterministic', e); return null; }
+  }
+
+  /**
+   * Central routing for a chat turn: private → local model; study/gaming → Gemini if allowed,
+   * otherwise (local mode, function switched off, budget reached) the local model with a visible note.
+   * A local failure never triggers a cloud call.
+   */
+  route(cid, images = []) {
+    const conv = this.s.conversations.get(cid);
+    if (conv?.privacy === 'private') return { provider: 'local', tools: 'private' };
+    let reason = null;
+    try { this.s.gemini.policy(images.length ? 'vision' : 'chat'); const ex = this.s.costGuard?.exceeded(); if (ex) reason = { day: 'Tagesbudget erreicht', session: 'Sitzungsbudget erreicht', month: 'Monatsbudget erreicht' }[ex]; }
+    catch (e) { reason = e.code === 'CLOUD_OFF' ? e.message.replace(/\s*\(Einstellungen.*$|\s*Einstellungen →.*$/, '') : e.message; }
+    if (!reason) return { provider: 'cloud', tools: conv?.privacy };
+    if (this.s.localLLM?.cfg().model && !images.length) return { provider: 'local', tools: conv?.privacy, note: reason };
+    return { provider: 'blocked', reason };
+  }
+
   async run({ cid, msg, text, channel, images = [], upTo, hint = '' }) {
     const { conversations, gemini, bus } = this.s;
-    const isLocal = conversations.get(cid)?.privacy === 'private';
+    const routed = this.route(cid, images);
+    if (routed.provider === 'blocked') {
+      const content = `⚠️ ${routed.reason}. Für diesen Chat ist kein lokales Modell eingerichtet (Einstellungen → Lokale KI).`;
+      conversations.update(msg.id, { content, meta: { streaming: false, error: true } });
+      bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: content });
+      return conversations.messages(cid, { limit: 1 })[0];
+    }
+    const isLocal = routed.provider === 'local';
+    const isPrivateConv = routed.tools === 'private';
     const provider = isLocal ? this.s.localLLM : gemini;
     const ac = new AbortController();
     this.cancel(cid);
     this.active.set(cid, ac);
-    const contents = conversations.history(cid, 14, 24000, upTo);
+    const spar = this.s.settings.get('aiCostMode') !== 'max';
+    const contents = conversations.history(cid, spar ? 10 : 14, spar ? 16000 : 24000, upTo);
     if (images.length) {
       const lastUser = [...contents].reverse().find((c) => c.role === 'user');
       if (lastUser) lastUser.parts.unshift(...images.slice(0, 3).map((im) => ({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } })));
@@ -142,16 +183,18 @@ class Orchestrator {
     const model = isLocal ? this.s.localLLM.cfg().model : gemini.model(role) || gemini.requireModel('fast');
     // Fester Teil der Anweisung + Werkzeuge + bisheriger Verlauf bleiben gleich → Googles Cache greift.
     // Wechselnder Kontext (Uhrzeit, Spiel, Gedächtnis) hängt nur an der neuesten Nutzernachricht (wird nicht gespeichert).
-    const { stable, context } = isLocal ? this.systemSplit(channel, text) : { stable: privacy.CLOUD_SYSTEM, context: '' };
+    const { stable, context } = isPrivateConv ? this.systemSplit(channel, text) : { stable: privacy.CLOUD_SYSTEM, context: '' };
     const lastUser = [...contents].reverse().find((c) => c.role === 'user');
     if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts, ...(hint ? [{ text: hint }] : [])]; else contents.push({ role: 'user', parts: [{ text: context }] });
-    const cards = []; const sources = []; let full = '';
+    const cards = []; const sources = []; let full = routed.note ? `_(Lokal beantwortet – ${routed.note}.)_\n\n` : '';
+    if (routed.note) bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: full });
     bus.emit('orb:state', { state: 'thinking' });
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
         if (ac.signal.aborted || (!isLocal && conversations.get(cid)?.privacy === 'private')) throw new Error('Gespräch wurde auf Private gesetzt oder abgebrochen. Bitte lokal erneut senden.');
+        const allowed = isPrivateConv ? privacy.LOCAL_TOOLS : privacy.cloudTools(conversations.get(cid)?.privacy);
         const r = await provider.stepStream({
-          model, system: stable, contents, tools: isLocal ? [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => privacy.LOCAL_TOOLS.has(t.name)) }] : [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => privacy.cloudTools(conversations.get(cid)?.privacy).has(t.name)) }], signal: ac.signal, feature: channel === 'voice' ? 'voice' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
+          model, system: stable, contents, tools: [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => allowed.has(t.name)) }], signal: ac.signal, feature: images.length ? 'vision' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
           onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),
           onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); },
         });
@@ -161,7 +204,7 @@ class Orchestrator {
         for (const fc of r.functionCalls) {
           bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: fc.name, state: 'running' });
           const execute = () => this.execute(fc.name, fc.args, { conversationId: cid, channel });
-          const out = await (isLocal ? privacy.local(execute) : execute());
+          const out = await (isPrivateConv ? privacy.local(execute) : execute());
           if (out.card) { cards.push(out.card); bus.emit('chat:card', { conversationId: cid, messageId: msg.id, card: out.card }); }
           for (const src of out.response?.sources || []) if (src.url && !sources.some((x) => x.url === src.url)) sources.push(src);
           for (const res of out.response?.results || []) if (res.citation && !sources.some((x) => x.title === res.citation)) sources.push({ title: res.citation, docId: res.docId, page: res.page, kind: 'document' });
@@ -173,7 +216,9 @@ class Orchestrator {
       }
       const final = conversations.update(msg.id, { content: full.trim() || (cards.length ? '' : '…'), meta: { streaming: false, cards, sources: sources.slice(0, 12), model } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
-      if (!isLocal && this.s.settings.get('voice').speakReplies && channel === 'text') bus.emit('tts:speak', { text: stripMd(final.content).slice(0, 1200) });
+      const vs = this.s.settings.get('voice');
+      // Sprachausgabe lokal (Windows-Stimmen, keine Cloud): Sprach-Eingaben werden standardmäßig beantwortet.
+      if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: stripMd(final.content).slice(0, 1200) });
       return final;
     } catch (e) {
       // Lösungs-Marker → Markdown-Link (Chat rendert Markdown)
@@ -203,9 +248,9 @@ class Orchestrator {
 }
 
 /** Keep tool responses compact and JSON-safe for the model. */
-function sanitizeResponse(r) {
+function sanitizeResponse(r, max = 30000) {
   const json = JSON.stringify(r ?? {}, (k, v) => (typeof v === 'string' ? truncate(v, 8000) : v));
-  return JSON.parse(json.length > 60000 ? JSON.stringify({ truncated: true, data: json.slice(0, 60000) }) : json);
+  return JSON.parse(json.length > max ? JSON.stringify({ truncated: true, data: json.slice(0, max) }) : json);
 }
 function stripMd(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/[*_#>`|]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); }
 

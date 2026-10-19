@@ -223,5 +223,20 @@ module.exports = [
     CREATE TABLE expense_buckets(id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL CHECK(amount>0), month TEXT NOT NULL, category TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE INDEX ix_buckets_month ON expense_buckets(month);
   `),
+  // v10 — Cloud-KI-Verbrauch je Aufruf (Reservierung → gemeldeter Verbrauch; keine Inhalte) und Spielstatistik-Ereignisse
+  (db) => db.exec(`
+    CREATE TABLE ai_ledger(
+      id TEXT PRIMARY KEY, at TEXT NOT NULL, day TEXT NOT NULL, feature TEXT NOT NULL, model TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL CHECK(status IN ('reserved','done','failed','unsettled')),
+      est_usd REAL NOT NULL DEFAULT 0, usd REAL NOT NULL DEFAULT 0,
+      in_tok INTEGER NOT NULL DEFAULT 0, cached_tok INTEGER NOT NULL DEFAULT 0, out_tok INTEGER NOT NULL DEFAULT 0, think_tok INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX ix_ai_ledger_day ON ai_ledger(day);
+    CREATE INDEX ix_ai_ledger_at ON ai_ledger(at);
+    CREATE TABLE game_stat_events(
+      id TEXT PRIMARY KEY, game TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL, day TEXT NOT NULL,
+      session TEXT, source TEXT NOT NULL CHECK(source IN ('log','manual','api')),
+      dedupe TEXT UNIQUE, data TEXT NOT NULL DEFAULT '{}', deleted INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
+    CREATE INDEX ix_game_stats ON game_stat_events(game, kind, day);
+  `),
 ];
 

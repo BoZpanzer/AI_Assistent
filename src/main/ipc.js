@@ -62,6 +62,26 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     },
     'gemini.usage': () => s.gemini.usage,
     'ai.budget': () => s.costGuard.status(),
+    'ai.report': ({ days } = {}) => s.costGuard.report(Math.min(31, Math.max(1, Number(days) || 7))),
+    // --- Cloud-KI: Modus, Funktionsschalter, laufende Aufrufe (Durchsetzung im Gemini-Provider, nicht hier)
+    'cloud.status': () => ({ ...s.gemini.cloudCfg(), labels: require('./providers/gemini').FEATURES, active: s.gemini.running, budget: s.costGuard.status(), voice: s.voice.state }),
+    'cloud.setMode': ({ mode }) => {
+      if (!['hybrid', 'local'].includes(mode)) throw new Error('Unbekannter Modus');
+      s.settings.update({ cloud: { mode } });
+      if (mode === 'local') { s.voice.stop(); s.gemini.abortAll(); }
+      return s.gemini.cloudCfg();
+    },
+    // --- Spielstatistiken (deterministisch, lokal)
+    'stats.get': ({ game, period } = {}) => {
+      const p = ['session', 'today', 'total'].includes(period) ? period : 'today';
+      return game === 'league' ? s.gaming.stats.lol(p) : s.gaming.stats.tarkov(p);
+    },
+    'stats.recordRaid': (p = {}) => s.gaming.stats.recordRaid(p),
+    'stats.remove': ({ id }) => s.gaming.stats.remove(String(id || '')),
+    'stats.counters': ({ vs } = {}) => s.gaming.stats.counters({ vs: vs ? String(vs).slice(0, 40) : null }),
+    // --- Datenschutz: gespeicherte Daten löschen
+    'privacy.clear': ({ what } = {}) => s.system.clearData(what),
+    'privacy.summary': () => s.system.dataSummary(),
     'ai.calibrate': ({ eur }) => { const r = s.costGuard.calibrate(eur); s.costGuard.check(); return r; },
     'gemini.usageReport': ({ days } = {}) => s.gemini.usageReport(Math.min(31, Math.max(1, Number(days) || 7))),
 
@@ -234,7 +254,6 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'brain.maintain': () => s.brain.maintain(),
     'brain.birthdays': () => s.birthdays.list(),
     'brain.birthdaysSync': () => s.birthdays.sync(),
-    'brain.embed': () => s.vectors.backfill({ maxItems: 300 }),
     'brain.addSource': async ({ url }) => s.web.savePage(url, { refresh: true }),
 
     // --- study ---
@@ -518,17 +537,22 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       } catch (e) { return { ready: false, error: e.message }; }
     },
     'voice.transcribeLocal': async ({ conversationId, audio } = {}) => {
-      const getPrivate = () => s.conversations.get(conversationId)?.privacy === 'private';
-      if (!getPrivate()) throw new Error('Datenschutz: Lokale Spracheingabe nur in privaten Gesprächen.');
+      // Audio bleibt in jedem Gesprächsmodus auf dem PC (whisper.cpp). Nur der erkannte Text geht – wie getippter
+      // Text – den normalen Weg dieses Gesprächs (privat: lokal; Uni/Gaming: Gemini, sofern erlaubt).
+      const privacyOf = () => s.conversations.get(conversationId)?.privacy;
+      const before = privacyOf();
+      if (!before) throw new Error('Sprachchat nicht gefunden.');
       const { resolveWhisperPaths, transcribeLocal } = require('./voice/local-whisper');
-      const { executable, model } = resolveWhisperPaths(s.settings.get('voice'));
-      const text = await transcribeLocal({ audio, executable, model });
-      // Prevent a private audio transcript being routed to a cloud chat if the
-      // user switched the same conversation's privacy during transcription.
-      if (!getPrivate()) throw new Error('Gesprächsmodus während der Aufnahme geändert; nichts gesendet.');
-      s.orchestrator.chat({ conversationId, text, attachments: [] }).catch((e) => log.error('chat', e));
+      const vs = s.settings.get('voice');
+      const { executable, model } = resolveWhisperPaths(vs);
+      const gaming = !!s.gaming.context.state().gaming;
+      const text = await transcribeLocal({ audio, executable, model, threads: gaming ? Math.min(2, vs.whisperThreads || 4) : vs.whisperThreads || 4, lowPriority: gaming });
+      // A transcript must not change destination if the conversation's privacy changed during transcription.
+      if (privacyOf() !== before) throw new Error('Gesprächsmodus während der Aufnahme geändert; nichts gesendet.');
+      s.orchestrator.chat({ conversationId, text, attachments: [], channel: 'voice' }).catch((e) => log.error('chat', e));
       return { text, started: true };
     },
+    'voice.audioEnd': () => s.voice.sendAudioEnd(),
     'voice.start': ({ conversationId, cloudAudioApproved } = {}) => s.voice.start({ conversationId, cloudAudioApproved }),
     'voice.stop': () => s.voice.stop(),
     'voice.state': () => ({ state: s.voice.state, model: s.voice.model }),

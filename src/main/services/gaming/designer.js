@@ -71,8 +71,8 @@ class GameDesigner {
   /** Automatisch beim ersten aktiven Spielen/Besprechen – höchstens 1 Versuch pro Spiel und Tag, nicht bei Kostenbremse. */
   maybeAuto(gid) {
     const p = this.g.context.profile(gid);
-    if (!this.needsDesign(p) || !this.s.gemini.hasKey() || this.s.costGuard?.braking()) return null;
-    if (this.s.settings.get('gaming')?.autoDesign === false) return null;
+    if (!this.needsDesign(p) || !this.s.gemini.cloudAllowed('games') || this.s.costGuard?.braking()) return null;
+    if (this.s.settings.get('gaming')?.autoDesign !== true) return null;
     const day = new Date().toISOString().slice(0, 10);
     if (this.tried.get(gid) === day) return null;
     this.tried.set(gid, day);
