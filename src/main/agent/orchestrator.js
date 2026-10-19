@@ -131,7 +131,7 @@ class Orchestrator {
     if (!msg || msg.role !== 'assistant' || !msg.meta?.error) throw new Error('Diese Antwort kann nicht wiederholt werden');
     const user = [...all.slice(0, i)].reverse().find((m) => m.role === 'user');
     if (!user) throw new Error('Keine Frage zum Wiederholen gefunden');
-    if (this.s.conversations.get(conversationId)?.privacy !== 'private' && !this.s.gemini.hasKey()) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
+    if (this.s.conversations.get(conversationId)?.privacy !== 'private' && !this.s.gemini.hasKey() && !this.s.localLLM?.cfg().model) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
     const fresh = conversations.update(msg.id, { content: '', meta: { streaming: true, error: false, cards: [], sources: [] } });
     bus.emit('chat:retry', { conversationId, messageId });
     return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id });

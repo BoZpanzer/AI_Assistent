@@ -328,7 +328,7 @@ app.whenReady().then(async () => {
     if (!(await js(`[...document.querySelectorAll('.panel')].some(p=>p.textContent.includes('Campus Dual') && p.textContent.includes('Prüfungsergebnisse'))`))) throw new Error('Campus-Dual-Karte fehlt');
     await js(`[...document.querySelectorAll('.panel')].find(p=>p.textContent.includes('Prüfungsergebnisse melden')).scrollIntoView()`); await shot('80b-settings-campusdual');
     await js(`[...document.querySelectorAll('.panel')].find(p=>p.textContent.includes('Monatsbudget')).scrollIntoView()`); await shot('80c-settings-budget');
-    if (!(await js(`document.body.textContent.includes('Monatsbudget Gemini')`))) throw new Error('Budget fehlt');
+    if (!(await js(`document.body.textContent.includes('Tagesbudget') && document.body.textContent.includes('Monatsbudget') && document.body.textContent.includes('Sparsam hybrid')`))) throw new Error('Budget fehlt');
   });
   await step('Systemcheck: Probleme mit Lösungs-Knopf', async () => {
     core.updater.check = async () => ({});

@@ -239,7 +239,7 @@ class GameStats {
       if (!s.games) return { text: `${P[0].toUpperCase() + P.slice(1)} sind keine LoL-Spiele gespeichert.`, deterministic: 'stats' };
       return { text: `LoL ${P}: ${s.wins} Siege, ${s.losses} Niederlagen – Winrate ${num(s.winrate)} % aus ${s.games} ${s.games === 1 ? 'Spiel' : 'Spielen'}. KDA ${num(s.kda)}.`, deterministic: 'stats' };
     }
-    if (game === 'eft' || asksRate || asksRaids || (asksKd && game !== 'league')) {
+    if (game === 'eft' || asksRate || asksRaids || ((asksKd || asksKills) && game !== 'league')) {
       if (!(asksRate || asksKd || asksKills || asksRaids || (asksWin && game === 'eft'))) return null;
       const s = this.tarkov(period);
       if (!s.raids) return { text: `${P[0].toUpperCase() + P.slice(1)} sind keine Tarkov-Raids erfasst.`, deterministic: 'stats' };

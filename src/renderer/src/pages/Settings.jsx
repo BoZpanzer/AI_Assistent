@@ -188,7 +188,7 @@ function CloudControl({ s }) {
         <Select value={c.mode || 'hybrid'} onChange={(mode) => guard(() => rpc('cloud.setMode', { mode })).then(reload)} options={[{ value: 'hybrid', label: 'Sparsam hybrid (Gemini nur wo nötig)' }, { value: 'local', label: 'Strikt lokal (keine Cloud-KI)' }]} />
       </Field>
       {!local && <details class="mt">
-        <summary class="small">Cloud-Funktionen einzeln ({Object.keys(labels).filter((k) => c.features?.[k] !== false && !(k === 'voice' && c.features?.voice !== true)).length} von {Object.keys(labels).length} an)</summary>
+        <summary class="small">Cloud-Funktionen einzeln ({Object.keys(labels).filter((k) => !['meta', 'diagnostics'].includes(k) && (k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false)).length} von {Object.keys(labels).length - 2} an)</summary>
         {Object.entries(labels).filter(([k]) => !['meta', 'diagnostics'].includes(k)).map(([k, label]) => (
           <Field label={label} hint={k === 'voice' ? 'Echtzeit-Audio an Google, teuer (Audio-Eingabe 3 $/1 Mio. Token). Standard: lokale Spracheingabe.' : undefined}><Toggle checked={k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false} onChange={(v) => upd({ cloud: { features: { [k]: v } } }).then(reload)} /></Field>
         ))}
