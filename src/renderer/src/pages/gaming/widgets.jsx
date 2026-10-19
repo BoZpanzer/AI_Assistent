@@ -10,7 +10,7 @@ import { createMapAutoRetry } from '../../lib/map-auto-retry.mjs';
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
   'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12', 'tarkov-economy': 'w-6', 'lol-progress': 'w-6', 'tarkov-ammo': 'w-6',
-  ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
+  ask: 'w-12', links: 'w-6', 'game-stats': 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
 // ---------------------------------------------------------------- Map
@@ -491,6 +491,67 @@ function TarkovRaid({ game, params }) {
         {tab === 'bosses' && m.bosses.map((b) => <div class="small"><Skull size={13} /> <b>{b.boss?.name}</b> – {Math.round(b.spawnChance * 100)}% · {b.spawnLocations.map((s) => s.name).join(', ')}</div>)}
       </div>}
       <div class="mt"><SourceTag source={data?.source} fetchedAt={data?.fetchedAt} offline={data?.offline} /></div>
+    </Panel>
+  );
+}
+
+/** Statistiken: deterministisch im Hauptprozess berechnet (ohne KI). Tarkov-Ergebnisse werden manuell erfasst. */
+const PERIODS = [['session', 'Sitzung'], ['today', 'Heute'], ['total', 'Gesamt']];
+const OUTCOME_LABEL = { survived: 'Überlebt', runthrough: 'Run-Through', died: 'Gestorben', mia: 'MIA', left: 'Verlassen' };
+function GameStats({ game, params }) {
+  const isEft = game.id === 'eft';
+  const [period, setPeriod] = useState(params.period || 'session');
+  const [st, reload] = useRpc('stats.get', { game: isEft ? 'eft' : 'league', period }, { deps: [period], events: ['game:stats', 'game:data'] });
+  const [pmc, setPmc] = useState(''); const [ai, setAi] = useState('');
+  const [vs, setVs] = useState('');
+  const [ctr] = useRpc('stats.counters', { vs: vs || undefined }, { enabled: !isEft, deps: [vs], events: ['game:data'], debounce: 400 });
+  const pctTxt = (v) => (v == null ? '–' : String(v).replace('.', ',') + ' %');
+  const record = async (outcome) => {
+    const r = await guard(() => rpc('stats.recordRaid', { outcome, pmcKills: pmc === '' ? null : Number(pmc), aiKills: ai === '' ? null : Number(ai) }), `Raid eingetragen: ${OUTCOME_LABEL[outcome]}`);
+    if (r) { setPmc(''); setAi(''); reload(); }
+  };
+  const tile = (label, value, title) => <div class="stat-tile" title={title} style={{ minWidth: 90 }}><div class="tiny muted">{label}</div><b style={{ fontSize: 18 }}>{value}</b></div>;
+  return (
+    <Panel icon={BarChart3} title="Statistiken" sub={isEft ? 'Raids, Überlebensrate, Kills – ohne KI berechnet' : 'Siege, Winrate, Konter – aus deinen Spielen'}
+      right={<div class="tabs sm">{PERIODS.map(([k, l]) => <button class={period === k ? 'active' : ''} onClick={() => setPeriod(k)}>{l}</button>)}</div>}>
+      {!st && <Spinner />}
+      {st && isEft && <>
+        <div class="row wrap gap-s">
+          {tile('Raids', st.raids, `${st.byType.pmc} PMC · ${st.byType.scav} Scav`)}
+          {tile('Überlebensrate', pctTxt(st.survivalRate), '(überlebt + Run-Through) / Raids mit eingetragenem Ergebnis – keine Winrate')}
+          {tile('Tode (KIA)', st.withOutcome ? st.deaths : '–')}
+          {tile('PMC-Kills', st.pmcKills ?? '–', `in ${st.pmcKillsRaids} Raids erfasst`)}
+          {tile('KI-Kills', st.aiKills ?? '–', `in ${st.aiKillsRaids} Raids erfasst`)}
+          {tile('K/D (PMC)', st.kd == null ? '–' : String(st.kd).replace('.', ','), st.kdNote || 'PMC-Kills / Tode in Raids mit erfassten Kills')}
+        </div>
+        {st.unknownOutcome > 0 && <div class="tiny muted mt">{st.unknownOutcome} Raid(s) ohne Ergebnis – zählen nicht zur Überlebensrate.</div>}
+        <div class="hr" />
+        <div class="small">Letzten Raid eintragen <span class="tiny muted">(das Spiel-Log enthält kein Ergebnis – manuell, auch per Sprache: „Raid überlebt, 2 Kills“)</span></div>
+        <div class="row wrap gap-s mt">
+          <input class="inp" style={{ width: 90 }} inputMode="numeric" placeholder="PMC-Kills" value={pmc} onInput={(e) => setPmc(e.currentTarget.value.replace(/\D/g, ''))} />
+          <input class="inp" style={{ width: 90 }} inputMode="numeric" placeholder="KI-Kills" value={ai} onInput={(e) => setAi(e.currentTarget.value.replace(/\D/g, ''))} />
+          {Object.entries(OUTCOME_LABEL).map(([k, l]) => <button class="btn xs" onClick={() => record(k)}>{l}</button>)}
+        </div>
+        {st.recent.length > 0 && <details class="mt"><summary class="small">Letzte Raids ({st.recent.length})</summary>
+          <div class="col" style={{ gap: 3, maxHeight: 200, overflow: 'auto' }}>{st.recent.map((r) => (
+            <div class="row small sub-row"><span class="grow">{fmtDateTime(r.at)} · {r.map || 'Karte ?'}{r.type ? ' · ' + r.type.toUpperCase() : ''}</span>
+              <span class="muted">{r.outcome ? OUTCOME_LABEL[r.outcome] : 'kein Ergebnis'}{Number.isInteger(r.pmcKills) ? ` · ${r.pmcKills} PMC` : ''}{Number.isInteger(r.aiKills) ? ` · ${r.aiKills} KI` : ''}{r.source === 'manual' ? ' · manuell' : r.manualResult ? ' · Log + manuell' : ' · Log'}</span>
+              <button class="btn icon xs ghost" title="Entfernen" onClick={async () => { if (await ask('Diesen Raid aus der Statistik entfernen?', '', { confirmOnly: true, okLabel: 'Entfernen' })) { await guard(() => rpc('stats.remove', { id: r.id })); reload(); } }}><Trash2 size={12} /></button>
+            </div>))}</div></details>}
+        <div class="tiny muted mt">Quelle: {st.source}. Tageswechsel 00:00 (Zeitzone des PCs).</div>
+      </>}
+      {st && !isEft && <>
+        <div class="row wrap gap-s">
+          {tile('Spiele', st.games)}{tile('Siege', st.games ? st.wins : '–')}{tile('Niederlagen', st.games ? st.losses : '–')}
+          {tile('Winrate', pctTxt(st.winrate))}{tile('KDA', st.kda == null ? '–' : String(st.kda).replace('.', ','))}
+        </div>
+        <div class="hr" />
+        <div class="row gap-s"><span class="small grow">Konter aus deinen Spielen</span><input class="inp" style={{ width: 160 }} placeholder="Gegner-Champion…" value={vs} onInput={(e) => setVs(e.currentTarget.value)} /></div>
+        {ctr && !ctr.analyzedGames && <div class="tiny muted mt">Noch keine analysierten Spiele mit Lane-Gegner (Spielanalyse auf dieser Seite).</div>}
+        {ctr?.analyzedGames > 0 && !vs && <div class="col mt" style={{ gap: 2 }}>{(ctr.hardest || []).map((x) => <div class="row small"><span class="grow">{x.champion}</span><span class="muted">{pctTxt(x.winrate)} · {x.games} Spiele{x.reliable ? '' : ' · wenig Daten'}</span></div>)}{!ctr.hardest?.length && <div class="tiny muted">Noch kein Gegner mit mind. 2 Lane-Duellen.</div>}</div>}
+        {ctr?.analyzedGames > 0 && vs && <div class="col mt" style={{ gap: 2 }}>{ctr.overall ? <><div class="small">Gegen {ctr.vs}: {ctr.overall.wins}/{ctr.overall.games} ({pctTxt(ctr.overall.winrate)})</div>{ctr.bestPicks.map((x) => <div class="row small"><span class="grow">{x.champion}</span><span class="muted">{pctTxt(x.winrate)} · {x.games} Spiele{x.reliable ? '' : ' · wenig Daten'}</span></div>)}</> : <div class="tiny muted">Keine Lane-Duelle gegen {vs} gefunden.</div>}</div>}
+        <div class="tiny muted mt">Quelle: {st.source}{ctr?.source ? '; Konter: ' + ctr.source : ''}. Allgemeine Konter-Tipps in der Matchup-Karte sind KI-Einschätzung, nicht statistisch belegt.</div>
+      </>}
     </Panel>
   );
 }
@@ -1648,7 +1709,7 @@ function RokSpeedups() {
 
 export const WIDGETS = {
   map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-companion': TarkovCompanion, 'tarkov-needed': TarkovNeeded, 'tarkov-hideout': TarkovHideout, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
-  timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
+  timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki, 'game-stats': GameStats,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
