@@ -65,10 +65,13 @@ jobs:
           Start-Sleep -Seconds 5
           if (Test-Path "$dir\JARVIS.exe") { throw "Deinstallation unvollständig" }
           Write-Host "Installation, Start und Deinstallation erfolgreich"
-      - uses: actions/upload-artifact@v5
+      # Nur bei manuellem Start hochladen: jeder PR-/Push-Build legte ~155 MB ab und füllte das
+      # Artefakt-Kontingent (Uploads schlugen dann fehl). Releases liegen ohnehin im GitHub-Release.
+      - if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v5
         with:
           name: JARVIS-Windows
           path: |
             release/JARVIS_Setup.exe
             release/SHA256SUMS.txt
-          retention-days: 7
+          retention-days: 2

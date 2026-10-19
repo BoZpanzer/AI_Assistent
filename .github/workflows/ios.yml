@@ -10,7 +10,10 @@ jobs:
       - run: brew install xcodegen
       - run: cd ios && xcodegen generate
       - run: xcodebuild -project ios/JarvisCompanion.xcodeproj -scheme JarvisCompanion -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
-      - uses: actions/upload-artifact@v4
+      # Build wird bei jedem PR geprüft; das App-Paket nur bei manuellem Start hochladen (Artefakt-Kontingent).
+      - if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
         with:
           name: JARVIS-iOS-Simulator
           path: ios/build/Build/Products/Debug-iphonesimulator/JarvisCompanion.app
+          retention-days: 3
