@@ -86,6 +86,7 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Öffentliche Spieldaten (tarkov.dev, Data Dragon, Steam-News) | Abruf | Drittanbieter (kein Personenbezug außer IP) | Cache (Ablaufzeit) | Einstellungen → Sicherheit → Spieldaten-Cache löschen |
 | Goon-Meldung | nur per Knopf | tarkov.dev (mit Tarkov-Account-ID) | – | Knopf nicht nutzen |
 | Diagnose-Protokolle | laufend | lokal, Schlüssel/Token geschwärzt, max. 8 MB | `logs/` | Einstellungen → Sicherheit → Protokolle leeren |
+| JARVIS-Kalender (Termine, Geburtstage, Uni, Aufgaben mit Fälligkeit, Erinnerungen) | nur wenn „Alles aus JARVIS nach Google übertragen“ an ist; letzte 30 bis nächste 180 Tage | Google Kalender (eigene Kalender „JARVIS · …“ je Art) | bei Google | Schalter aus bzw. Art abwählen (entfernt unveränderte Kopien) |
 | Kosten-Protokoll | je Gemini-Aufruf | lokal, nur Metadaten | Datenbank | ältere Einträge löschen |
 
 Sichtbarkeit: Die Kopfzeile zeigt den Cloud-Zustand (aus / an mit laufenden Aufrufen und Tagesstand / gesperrt), ein aktives Mikrofon (lokal oder Gemini Live) und jede Bildschirmaufnahme.

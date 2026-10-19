@@ -2,6 +2,10 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## Unveröffentlicht
+
+- **Google Kalender – alles aus JARVIS, getrennt nach Art:** Mit eingeschalteter Übertragung (Kalender → Google Kalender) legt JARVIS eigene Google-Kalender an – *JARVIS · Termine*, *Geburtstage*, *Todos*, *Erinnerungen* und *Uni* – und hält sie automatisch aktuell. Neu dabei: offene Aufgaben mit Fälligkeit (Todos) und Erinnerungen (Google meldet sich zur eingestellten Zeit). Jede Art lässt sich einzeln abschalten. Erledigte Aufgaben verschwinden aus Google, in Google geänderte Kopien werden nie überschrieben, normale Google-Termine nie angefasst. Kopien aus der bisherigen Übertragung im Hauptkalender werden einmalig dorthin umgezogen.
+
 ## 4.4.0 – Kostenkontrolle, lokale Verarbeitung, Statistiken
 
 - **Wichtig nach dem Update:** Gemini Live (Echtzeit-Audio) ist jetzt standardmäßig aus – das Mikrofon nutzt in allen Chats die lokale Spracherkennung. Automatische Hintergrund-KI (LoL-Team-Tipps, KI-Nachbesprechung, Patch-Notes-Kurzfassungen, Spielseiten gestalten) ist opt-in; per Knopf bleibt alles verfügbar. Budgets: 0,25 € pro Tag, 0,15 € pro Sitzung, 5 € pro Monat (Einstellungen → Gemini / KI).

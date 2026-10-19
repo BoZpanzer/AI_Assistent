@@ -146,11 +146,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'calendar.calendars': () => s.calendar.calendars(),
     'calendar.select': ({ id, selected }) => s.calendar.selectCalendar(id, selected),
     'calendar.sync': () => s.calendar.sync(),
-    'calendar.exportToGoogle': async ({ calendarId }) => {
-      const { exportToGoogle } = require('./services/calendar-google-export');
-      const from = new Date(Date.now() - 30 * 86400000).toISOString();
-      const to = new Date(Date.now() + 180 * 86400000).toISOString();
-      return exportToGoogle({ db: s.db, google: s.google, calendarId, from, to });
+    // Alles aus JARVIS in eigene Google-Kalender je Art (Termine, Geburtstage, Todos, Erinnerungen, Uni)
+    'calendar.exportToGoogle': async () => {
+      if (!s.settings.get('google').exportLocalToGoogle) throw new Error('Zuerst die Übertragung nach Google einschalten');
+      const r = await s.calendar.sync();
+      return r.mirror || r;
     },
     'calendar.status': () => s.calendar.status(),
     'calendar.resolveConflict': ({ id, keep }) => s.calendar.resolveConflict(id, keep),
