@@ -2,37 +2,34 @@ name: tmp tarkov json probe
 on:
   push:
     branches: [tmp/tarkov-json-probe]
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: probe
         run: |
+          mkdir -p probe
           cat > p.mjs <<'JS'
-          const shape = (v, d = 0) => {
-            if (d > 6) return '…';
-            if (Array.isArray(v)) return v.length ? [shape(v.find((x) => x !== null) ?? v[0], d + 1)] : [];
-            if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v).slice(0, 60)) o[k] = shape(x, d + 1); return o; }
-            return typeof v === 'string' ? 's:' + v.slice(0, 40) : v;
-          };
+          import fs from 'node:fs';
+          const out = [];
           const g = await fetch('https://api.tarkov.dev/graphql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: '{ maps(lang: de) { name } }' }) });
-          console.log('GRAPHQL', g.status, (await g.text()).slice(0, 200));
-          for (const mode of ['regular', 'pve']) for (const f of ['maps', 'tasks', 'hideout', 'traders', 'items', 'barters', 'crafts', 'ammo', 'goons', 'status', 'quests']) {
-            const r = await fetch(`https://json.tarkov.dev/${mode}/${f}`);
-            const t = await r.text();
-            console.log('\n=====', mode, f, r.status, t.length, r.headers.get('last-modified'));
-            if (!r.ok || mode === 'pve') continue;
-            const j = JSON.parse(t);
-            console.log('TOP', Object.keys(j), 'translations:', JSON.stringify(j.translations?.slice?.(0, 12)));
-            const d = j.data || j;
-            for (const [k, v] of Object.entries(d)) {
-              if (v && typeof v === 'object' && !Array.isArray(v)) { const vals = Object.values(v); console.log('KEY', k, 'count', vals.length); console.log(JSON.stringify(shape(vals[0])).slice(0, 6000)); if (f === 'maps') console.log('MAPSAMPLE', JSON.stringify(vals.find((m) => /customs|bigmap/i.test(JSON.stringify(m.normalizedName || m.nameId || ''))) || vals[0]).slice(0, 3000)); }
-              else console.log('KEY', k, JSON.stringify(shape(v)).slice(0, 1500));
-            }
-            if (f === 'tasks') { const t1 = Object.values(d.tasks || d)[5]; console.log('TASKSAMPLE', JSON.stringify(t1).slice(0, 4000)); }
-          }
-          for (const f of ['maps_de', 'tasks_de']) { const r = await fetch('https://json.tarkov.dev/regular/' + f); const t = await r.text(); console.log('\n=====', f, r.status, t.length); try { const j = JSON.parse(t); console.log(JSON.stringify(Object.entries(j.data || j).slice(0, 8))); } catch { console.log(t.slice(0, 300)); } }
+          out.push('GRAPHQL ' + g.status + ' ' + (await g.text()).slice(0, 200));
+          const get = async (p) => { const r = await fetch('https://json.tarkov.dev/' + p); const t = await r.text(); out.push(p + ' ' + r.status + ' ' + t.length + ' ' + r.headers.get('last-modified')); try { return JSON.parse(t); } catch { return null; } };
+          const pick = (obj, n) => Object.fromEntries(Object.entries(obj).slice(0, n));
+          for (const f of ['maps', 'hideout', 'traders']) { const j = await get('regular/' + f); if (j) fs.writeFileSync('probe/' + f + '.json', JSON.stringify(j)); }
+          const tasks = await get('regular/tasks'); if (tasks) { const d = tasks.data; const t = d.tasks || d; fs.writeFileSync('probe/tasks.json', JSON.stringify({ ...tasks, data: { ...d, tasks: pick(t, 40) }, count: Object.keys(t).length, otherKeys: Object.keys(d) })); }
+          const items = await get('regular/items'); if (items) { const d = items.data; const it = d.items || d; const ids = Object.keys(it); const ammo = ids.filter((k) => (it[k].types || []).includes('ammo')).slice(0, 3); const keys = ids.filter((k) => (it[k].types || []).includes('keys')).slice(0, 2); fs.writeFileSync('probe/items.json', JSON.stringify({ translations: items.translations, otherKeys: Object.keys(d), count: ids.length, sample: Object.fromEntries([...ids.slice(0, 3), ...ammo, ...keys].map((k) => [k, it[k]])), restData: Object.fromEntries(Object.entries(d).filter(([k]) => k !== 'items').map(([k, v]) => [k, JSON.stringify(v).slice(0, 3000)])) })); }
+          for (const f of ['barters', 'crafts', 'ammo', 'goons', 'status', 'quests', 'items_de', 'archived_items']) await get('regular/' + f);
+          for (const f of ['maps', 'tasks', 'hideout', 'traders', 'items']) { const j = await get('regular/' + f + '_de'); if (j) { const e = Object.entries(j.data || j); fs.writeFileSync('probe/' + f + '_de.json', JSON.stringify({ count: e.length, sample: Object.fromEntries(f === 'items' ? e.slice(0, 200) : e) })); } }
+          await get('pve/maps'); await get('pve/tasks');
+          fs.writeFileSync('probe/log.txt', out.join('\n'));
           JS
           node p.mjs
+          ls -la probe
+          git config user.name probe; git config user.email probe@users.noreply.github.com
+          git add probe; git commit -qm "probe results"; git push
