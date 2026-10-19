@@ -2,6 +2,15 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 4.5.0 – Natürliche Stimme, Tarkov-Daten wieder da, Google Kalender je Art
+
+- **Natürliche Stimme statt Computerstimme:** JARVIS liest jetzt mit Piper vor – einer lokalen, neuronalen Stimme (nur CPU, offline, keine Kosten). „Thorsten“ ist im Installer enthalten; weitere Stimmen (Thorsten HD, Thorsten mit Stimmungen wie Flüstern/Belustigt, Kerstin, viele Sprecher) per Klick in Einstellungen → Sprachausgabe. Tempo, Tonhöhe und Lautstärke einstellbar, mit Hörprobe. Die Windows-Stimme bleibt als Alternative (jetzt automatisch die beste installierte).
+- **Vorlesen klingt natürlich:** Formatierung, Aufzählungen und Tabellen werden nicht mehr mitgelesen; „1/10/9“, „4.7 CS/min“, „25%“, „-695“ werden ausgesprochen. Lange Antworten werden kurz vorgelesen („Den Rest findest du im Chat“) – abschaltbar. Die Ausgabe beginnt nach dem ersten Satz.
+- **Tarkov: „tarkov.dev antwortet mit 422“ behoben.** Ursache war eine Störung der GraphQL-Schnittstelle von tarkov.dev („GraphQL server unavailable“, seit Wochen). JARVIS lädt Karten, Exits, Quests, Items, Hideout, Händler, Crafts und Tauschgeschäfte jetzt wie das offizielle TarkovMonitor aus den Datendateien von json.tarkov.dev.
+- **TarkovTracker funktioniert wieder:** Der Abgleich scheiterte, weil er die Questliste von tarkov.dev brauchte. Quests aus dem Tarkov-Log werden wieder automatisch hochgeladen (Token mit Schreibrecht „WP“).
+- **Spielseiten:** Felder oben („Mein Spielplan“, „Spielgedächtnis“) überlappten sich nicht mehr; der Kopfbereich bricht bei schmalem Fenster sauber um.
+- **Google Kalender – alles aus JARVIS, getrennt nach Art:** Mit eingeschalteter Übertragung (Kalender → Google Kalender) legt JARVIS eigene Google-Kalender an – *JARVIS · Termine*, *Geburtstage*, *Todos*, *Erinnerungen* und *Uni* – und hält sie automatisch aktuell. Neu dabei: offene Aufgaben mit Fälligkeit (Todos) und Erinnerungen (Google meldet sich zur eingestellten Zeit). Jede Art lässt sich einzeln abschalten. Erledigte Aufgaben verschwinden aus Google, in Google geänderte Kopien werden nie überschrieben, normale Google-Termine nie angefasst. Kopien aus der bisherigen Übertragung im Hauptkalender werden einmalig dorthin umgezogen.
+
 ## 4.4.0 – Kostenkontrolle, lokale Verarbeitung, Statistiken
 
 - **Wichtig nach dem Update:** Gemini Live (Echtzeit-Audio) ist jetzt standardmäßig aus – das Mikrofon nutzt in allen Chats die lokale Spracherkennung. Automatische Hintergrund-KI (LoL-Team-Tipps, KI-Nachbesprechung, Patch-Notes-Kurzfassungen, Spielseiten gestalten) ist opt-in; per Knopf bleibt alles verfügbar. Budgets: 0,25 € pro Tag, 0,15 € pro Sitzung, 5 € pro Monat (Einstellungen → Gemini / KI).

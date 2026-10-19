@@ -58,6 +58,21 @@ class Calendar {
     this.syncing = false;
     this.lastSync = null; this.lastError = null;
     this.ensureLocal();
+    // Änderungen an Terminen/Aufgaben → kurz danach nach Google übertragen (nicht während eines Abgleichs)
+    const soon = () => { if (!this.syncing) this.exportSoon(); };
+    this.bus?.on?.('tasks:changed', soon);
+    this.bus?.on?.('calendar:changed', soon);
+  }
+
+  /** Google-Kalender, die JARVIS für die Übertragung je Art angelegt hat. */
+  exportTargets() { return Object.values(this.settings.get('google').exportCalendars || {}).filter(Boolean); }
+
+  exportSoon(ms = 20000) {
+    const g = this.settings.get('google');
+    if (!g.exportLocalToGoogle || !this.connected()) return;
+    clearTimeout(this._export);
+    this._export = setTimeout(() => this.sync().catch(() => {}), ms);
+    this._export.unref?.();
   }
 
   ensureLocal() {
@@ -113,7 +128,8 @@ class Calendar {
   today() { return this.list(startOfDay(), endOfDay()); }
   get(eventId) { const r = this.db.get('SELECT * FROM events WHERE id=?', eventId); return r ? this.toPublic(r) : null; }
   calendars() {
-    return this.db.all('SELECT * FROM calendars ORDER BY id<>\'local\', is_primary DESC, name').map((c) => ({
+    const own = new Set(this.exportTargets());
+    return this.db.all('SELECT * FROM calendars ORDER BY id<>\'local\', is_primary DESC, name').filter((c) => !own.has(c.id)).map((c) => ({
       id: c.id, name: c.name, color: c.color, primary: !!c.is_primary, selected: !!c.selected, writable: !!c.writable, syncedAt: c.synced_at,
     }));
   }
@@ -325,7 +341,9 @@ class Calendar {
       // Pull window
       const timeMin = new Date(Date.now() - 30 * 86400000).toISOString();
       const timeMax = new Date(Date.now() + 180 * 86400000).toISOString();
+      const exportCals = new Set(this.exportTargets());
       for (const c of this.db.all("SELECT id FROM calendars WHERE id<>'local' AND id NOT LIKE 'feed:%' AND selected=1")) {
+        if (exportCals.has(c.id)) continue; // enthält nur JARVIS-Kopien
         const items = await this.google.listEvents(c.id, { timeMin, timeMax });
         const seen = new Set();
         this.db.tx(() => {
@@ -346,15 +364,7 @@ class Calendar {
           this.db.run('UPDATE calendars SET synced_at=? WHERE id=?', nowIso(), c.id);
         });
       }
-      if (this.settings.get('google').exportLocalToGoogle) {
-        const { exportToGoogle } = require('./calendar-google-export');
-        const target = this.defaultCalendarId();
-        if (target !== 'local') {
-          const exported = await exportToGoogle({ db: this.db, google: this.google, calendarId: target, from: timeMin, to: timeMax });
-          if (exported.failed) throw new Error('Google-Kalender-Export: ' + exported.failed + ' Termin(e) nicht übertragen');
-          this.lastMirror = exported;
-        }
-      }
+      if (this.settings.get('google').exportLocalToGoogle) this.lastMirror = await this.exportAll({ from: timeMin, to: timeMax });
       this.lastSync = nowIso(); this.lastError = null;
       this.bus.emit('calendar:changed', {});
       return { ok: true, at: this.lastSync, mirror: this.lastMirror || null };
@@ -366,6 +376,34 @@ class Calendar {
       this.syncing = false;
       this.bus.emit('calendar:sync', { state: 'idle', at: this.lastSync, error: this.lastError });
     }
+  }
+
+  /**
+   * Alles aus dem JARVIS-Kalender in eigene Google-Kalender je Art übertragen
+   * (Termine, Geburtstage, Todos, Erinnerungen, Uni). Legt fehlende Kalender an.
+   */
+  async exportAll({ from, to } = {}) {
+    const ex = require('./calendar-google-export');
+    const g = this.settings.get('google');
+    from = from || new Date(Date.now() - 30 * 86400000).toISOString();
+    to = to || new Date(Date.now() + 180 * 86400000).toISOString();
+    const kinds = ex.KIND_IDS.filter((k) => (g.exportKinds || {})[k] !== false);
+    const { targets, created } = await ex.ensureCalendars({ google: this.google, saved: g.exportCalendars || {}, kinds, timeZone: tz() });
+    if (JSON.stringify(targets) !== JSON.stringify(g.exportCalendars || {})) this.settings.update({ google: { exportCalendars: targets } });
+    const result = await ex.exportByKind({ db: this.db, google: this.google, targets, kinds, from, to });
+    // Einmalig: Kopien der früheren Übertragung (alles in einem Kalender) dort entfernen
+    if (!result.failed && !this.db.get("SELECT value FROM meta WHERE key='gcal:legacy-cleaned'")) {
+      const own = new Set(Object.values(targets));
+      const legacy = this.db.all("SELECT id FROM calendars WHERE writable=1 AND id<>'local' AND id NOT LIKE 'feed:%'").map((c) => c.id).filter((id) => !own.has(id));
+      try {
+        result.legacy = await ex.cleanupLegacy({ db: this.db, google: this.google, calendarIds: legacy });
+        if (!result.legacy.failed) this.db.run("INSERT OR REPLACE INTO meta(key,value) VALUES('gcal:legacy-cleaned',?)", nowIso());
+      } catch (e) { log.warn('Alte Google-Kopien nicht aufgeräumt', e); }
+    }
+    result.createdCalendars = created;
+    result.at = nowIso();
+    if (result.failed) throw Object.assign(new Error('Google-Kalender-Übertragung: ' + result.failed + ' Eintrag/Einträge nicht übertragen'), { result });
+    return result;
   }
 
   status() {

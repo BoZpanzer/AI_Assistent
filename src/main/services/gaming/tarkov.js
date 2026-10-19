@@ -5,7 +5,8 @@
  * No live raid state is available from any API — the UI says so.
  */
 const API = 'https://api.tarkov.dev/graphql';
-const SOURCE = 'tarkov.dev (Community-API)';
+const SOURCE = 'tarkov.dev (Community-Daten)';
+const { TarkovJson } = require('./tarkov-json');
 const log = require('../../core/logger').scope('tarkov');
 const DAY = 86400000;
 
@@ -28,7 +29,10 @@ function responseDiag(r, body) {
 }
 
 /** Error for a rejected tarkov.dev request: readable message for the UI, details stay in the log. */
-function apiError(status) {
+function apiError(status, body = '') {
+  // tarkov.dev meldet eine Störung des eigenen Servers als 4xx mit „GraphQL server unavailable“ – das ist vorübergehend
+  const outage = /unavailable|try again later/i.test(String(body));
+  if (outage) { const e = new Error('tarkov.dev hat gerade eine Störung (Server nicht verfügbar). Gespeicherte Daten werden weiter genutzt.'); e.status = status; e.permanent = false; e.outage = true; return e; }
   const e = new Error(status === 429
     ? 'tarkov.dev begrenzt gerade die Anfragen (429). JARVIS versucht es später automatisch erneut.'
     : status >= 500
@@ -39,7 +43,19 @@ function apiError(status) {
 }
 
 class Tarkov {
-  constructor(ctx) { this.fetch = ctx.fetch; this.cache = ctx.gameCache; this.rejected = new Map(); this.inflight = new Map(); }
+  constructor(ctx) { this.fetch = ctx.fetch; this.cache = ctx.gameCache; this.rejected = new Map(); this.inflight = new Map(); this.json = new TarkovJson({ fetch: ctx.fetch }); }
+
+  /**
+   * Erst die JSON-Dateien von tarkov.dev (wie TarkovMonitor), bei Fehlern die GraphQL-Schnittstelle.
+   * Scheitert beides, gilt die Meldung der GraphQL-Abfrage; der Cache liefert dann ältere Daten.
+   */
+  async viaJson(fromJson, fromGql) {
+    try { return await fromJson(); } catch (e) {
+      log.warn('json.tarkov.dev nicht nutzbar, versuche GraphQL: ' + e.message);
+      if (!fromGql) throw e;
+      return fromGql(); // dessen (verständliche) Fehlermeldung gilt, z. B. „Störung“ bei „GraphQL server unavailable“
+    }
+  }
 
   /**
    * GraphQL request. Identical concurrent queries share one request. A query that tarkov.dev rejected
@@ -55,7 +71,7 @@ class Tarkov {
       if (!r.ok) {
         const body = typeof r.text === 'function' ? await r.text().catch(() => '') : '';
         log.warn('tarkov.dev-Anfrage fehlgeschlagen', { ...responseDiag(r, body), query: query.replace(/\s+/g, ' ').slice(0, 90) });
-        const e = apiError(r.status);
+        const e = apiError(r.status, body);
         if (e.permanent || r.status === 429) this.rejected.set(key, { status: r.status, until: Date.now() + (r.status === 429 ? 2 : 15) * 60000 });
         throw e;
       }
@@ -71,12 +87,15 @@ class Tarkov {
 
   async maps(gameMode = 'regular') {
     return this.cache.wrap('eft:maps:' + gameMode, SOURCE, 3 * DAY, async () => {
+      const fromJson = async () => (await this.json.maps(gameMode)).filter((m) => m.extracts?.length);
+      return this.viaJson(fromJson, async () => {
       const d = await this.gql(`query($gm: GameMode){ maps(lang: de, gameMode: $gm) { id name normalizedName raidDuration players wiki
         extracts { id name faction position { x y z } }
         transits { id description position { x y z } }
         locks { lockType needsPower position { x y z } key { id name shortName wikiLink } }
         bosses { boss { name } spawnChance spawnLocations { name chance } } } }`, { gm: gameMode });
       return d.maps.filter((m) => m.extracts?.length);
+      });
     });
   }
 
@@ -87,11 +106,13 @@ class Tarkov {
   }
 
   async tasks(gameMode = 'regular') {
-    return this.cache.wrap('eft:tasks:' + gameMode, SOURCE, 2 * DAY, async () => {
+    return this.cache.wrap('eft:tasks:' + gameMode, SOURCE, 2 * DAY, () => this.viaJson(async () => (await this.json.tasks(gameMode)).map((t) => ({
+      id: t.id, name: t.name, normalizedName: t.normalizedName, minPlayerLevel: t.minPlayerLevel, kappaRequired: t.kappaRequired, lightkeeperRequired: t.lightkeeperRequired, wikiLink: t.wikiLink, experience: t.experience,
+      trader: t.trader, map: t.map, objectives: t.objectives.map((o) => ({ type: o.type, description: o.description, optional: o.optional, maps: o.maps })) })), async () => {
       const d = await this.gql(`query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name normalizedName minPlayerLevel kappaRequired lightkeeperRequired wikiLink experience
         trader { name } map { name normalizedName } objectives { type description optional maps { normalizedName } } } }`, { gm: gameMode });
       return d.tasks;
-    });
+    }));
   }
 
   /**
@@ -101,12 +122,12 @@ class Tarkov {
   async taskZones(gameMode = 'regular') {
     return this.cache.wrap('eft:taskzones:' + gameMode, SOURCE, 2 * DAY, async () => {
       const Z = 'zones { map { normalizedName } position { x y z } }';
-      const d = await this.gql(`query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel objectives { id description optional
+      const d = await this.viaJson(async () => ({ tasks: await this.json.tasks(gameMode) }), () => this.gql(`query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel objectives { id description optional
         ... on TaskObjectiveBasic { ${Z} }
         ... on TaskObjectiveMark { ${Z} }
         ... on TaskObjectiveUseItem { ${Z} }
         ... on TaskObjectiveShoot { ${Z} }
-        ... on TaskObjectiveQuestItem { ${Z} possibleLocations { map { normalizedName } positions { x y z } } } } } }`, { gm: gameMode });
+        ... on TaskObjectiveQuestItem { ${Z} possibleLocations { map { normalizedName } positions { x y z } } } } } }`, { gm: gameMode }));
       return d.tasks.map((t) => ({ id: t.id, name: t.name, minPlayerLevel: t.minPlayerLevel, objectives: (t.objectives || []).map((o) => ({
         description: o.description, optional: !!o.optional,
         points: [...(o.zones || []).map((z) => ({ map: z.map?.normalizedName, ...z.position })), ...(o.possibleLocations || []).flatMap((l) => (l.positions || []).map((p) => ({ map: l.map?.normalizedName, ...p, item: true })))].filter((p) => p.map && Number.isFinite(p.x) && Number.isFinite(p.z)),
@@ -128,9 +149,12 @@ class Tarkov {
           ... on TaskObjectiveQuestItem { questItem { name shortName } count }
           ... on TaskObjectiveBasic { requiredKeys { name shortName } } } } }`;
       const lite = `query($gm: GameMode){ tasks(lang: de, gameMode: $gm) { id name minPlayerLevel kappaRequired lightkeeperRequired trader { name } map { normalizedName name } taskRequirements { task { id } status } objectives { ${base} } } }`;
-      let d; let detailed = true;
-      try { d = await this.gql(full, { gm: gameMode }); } catch (e) { detailed = false; d = await this.gql(lite, { gm: gameMode }); }
-      return { detailed, tasks: d.tasks };
+      return this.viaJson(async () => ({ detailed: true, tasks: (await this.json.tasks(gameMode)).map((t) => ({ ...t, objectives: t.objectives.map((o) => ({
+        ...o, items: o.items.length ? o.items : undefined, requiredKeys: o.requiredKeys.length ? o.requiredKeys : undefined })) })) }), async () => {
+        let d; let detailed = true;
+        try { d = await this.gql(full, { gm: gameMode }); } catch (e) { detailed = false; d = await this.gql(lite, { gm: gameMode }); }
+        return { detailed, tasks: d.tasks };
+      });
     });
   }
 
@@ -180,6 +204,7 @@ class Tarkov {
   async hideoutStations(gameMode = 'regular') {
     return this.cache.wrap('eft:hideout:' + gameMode, SOURCE, 3 * DAY, async () => {
       const lv = 'id level constructionTime itemRequirements { item { id name shortName } count } stationLevelRequirements { station { id name } level }';
+      try { return await this.json.hideoutStations(gameMode); } catch (e) { log.warn('Hideout aus JSON nicht verfügbar: ' + e.message); }
       try {
         return (await this.gql(`query($gm: GameMode){ hideoutStations(lang: de, gameMode: $gm) { id name normalizedName levels { ${lv} bonuses { type value } } } }`, { gm: gameMode })).hideoutStations;
       } catch {
@@ -219,7 +244,7 @@ class Tarkov {
   /** Letzte Goon-Sichtungen der Community (tarkov.dev), neueste zuerst. */
   async goonReports(gameMode = 'regular') {
     return this.cache.wrap('eft:goons:' + gameMode, SOURCE, 5 * 60000, async () => {
-      const d = await this.gql('query($gm: GameMode){ goonReports(lang: de, gameMode: $gm, limit: 25) { map { name normalizedName nameId } timestamp } }', { gm: gameMode });
+      const d = await this.viaJson(async () => ({ goonReports: await this.json.goonReports(gameMode) }), () => this.gql('query($gm: GameMode){ goonReports(lang: de, gameMode: $gm, limit: 25) { map { name normalizedName nameId } timestamp } }', { gm: gameMode }));
       return (d.goonReports || []).map((g) => ({ map: g.map?.normalizedName, mapName: g.map?.name, at: new Date(Number(g.timestamp)).toISOString() })).sort((a, b) => b.at.localeCompare(a.at));
     });
   }
@@ -237,7 +262,7 @@ class Tarkov {
   /** Itemname zu einer Item-ID (z. B. aus Flohmarkt-Meldungen). */
   async itemNameById(id) {
     if (!/^[0-9a-f]{24}$/i.test(String(id || ''))) return null;
-    const r = await this.cache.wrap('eft:itemname:' + id, SOURCE, 30 * DAY, async () => (await this.gql('query($ids: [ID]){ items(ids: $ids, lang: de) { name } }', { ids: [id] })).items?.[0]?.name || null);
+    const r = await this.cache.wrap('eft:itemname:' + id, SOURCE, 30 * DAY, () => this.viaJson(async () => (await this.json.searchItems('regular', { ids: [id] }))[0]?.name || null, async () => (await this.gql('query($ids: [ID]){ items(ids: $ids, lang: de) { name } }', { ids: [id] })).items?.[0]?.name || null));
     return r.value;
   }
 
@@ -246,7 +271,7 @@ class Tarkov {
     const q = String(name || '').trim();
     if (q.length < 2) return null;
     const r = await this.cache.wrap(`eft:price:${gameMode}:${q.toLowerCase()}`, SOURCE, 30 * 60000, async () => {
-      const d = await this.gql(`query($n: String, $gm: GameMode){ items(name: $n, lang: de, gameMode: $gm, limit: 8) { id name shortName width height basePrice avg24hPrice lastLowPrice low24hPrice wikiLink iconLink sellFor { vendor { name } priceRUB } } }`, { n: q, gm: gameMode });
+      const d = await this.viaJson(async () => ({ items: await this.json.searchItems(gameMode, { name: q, limit: 8 }) }), () => this.gql(`query($n: String, $gm: GameMode){ items(name: $n, lang: de, gameMode: $gm, limit: 8) { id name shortName width height basePrice avg24hPrice lastLowPrice low24hPrice wikiLink iconLink sellFor { vendor { name } priceRUB } } }`, { n: q, gm: gameMode }));
       return d.items || [];
     });
     const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -262,27 +287,27 @@ class Tarkov {
 
   /** Händler mit Zeitpunkt des nächsten Restocks. */
   async traders(gameMode = 'regular') {
-    const r = await this.cache.wrap('eft:traders:' + gameMode, SOURCE, 10 * 60000, async () => (await this.gql('query($gm: GameMode){ traders(lang: de, gameMode: $gm) { id name normalizedName resetTime } }', { gm: gameMode })).traders || []);
+    const r = await this.cache.wrap('eft:traders:' + gameMode, SOURCE, 10 * 60000, () => this.viaJson(() => this.json.traders(gameMode), async () => (await this.gql('query($gm: GameMode){ traders(lang: de, gameMode: $gm) { id name normalizedName resetTime } }', { gm: gameMode })).traders || []));
     return { ...r, value: r.value.filter((t) => t.resetTime).map((t) => ({ name: t.name, id: t.normalizedName, resetTime: t.resetTime })) };
   }
 
   /** Hideout-Crafts mit Gewinn pro Stunde (Flohmarkt-Ø 24 h bzw. bester Händler; ohne Flohmarkt-Gebühr). */
   async crafts(gameMode = 'regular') {
     const it = 'item { id name shortName avg24hPrice sellFor { vendor { name } priceRUB } buyFor { vendor { name } priceRUB } }';
-    const r = await this.cache.wrap('eft:crafts:' + gameMode, SOURCE, 60 * 60000, async () => (await this.gql(`query($gm: GameMode){ crafts(lang: de, gameMode: $gm) { id station { normalizedName name } level duration rewardItems { ${it} count } requiredItems { ${it} count } } }`, { gm: gameMode })).crafts || []);
+    const r = await this.cache.wrap('eft:crafts:' + gameMode, SOURCE, 60 * 60000, () => this.viaJson(() => this.json.recipes(gameMode, 'crafts'), async () => (await this.gql(`query($gm: GameMode){ crafts(lang: de, gameMode: $gm) { id station { normalizedName name } level duration rewardItems { ${it} count } requiredItems { ${it} count } } }`, { gm: gameMode })).crafts || []));
     return { ...r, value: r.value.map((c) => profitOf(c, c.duration)) };
   }
 
   /** Tauschgeschäfte: Wert der Belohnung gegen Kosten der benötigten Items. */
   async barters(gameMode = 'regular') {
     const it = 'item { id name shortName avg24hPrice sellFor { vendor { name } priceRUB } buyFor { vendor { name } priceRUB } }';
-    const r = await this.cache.wrap('eft:barters:' + gameMode, SOURCE, 60 * 60000, async () => (await this.gql(`query($gm: GameMode){ barters(lang: de, gameMode: $gm) { id trader { name } level rewardItems { ${it} count } requiredItems { ${it} count } } }`, { gm: gameMode })).barters || []);
+    const r = await this.cache.wrap('eft:barters:' + gameMode, SOURCE, 60 * 60000, () => this.viaJson(() => this.json.recipes(gameMode, 'barters'), async () => (await this.gql(`query($gm: GameMode){ barters(lang: de, gameMode: $gm) { id trader { name } level rewardItems { ${it} count } requiredItems { ${it} count } } }`, { gm: gameMode })).barters || []));
     return { ...r, value: r.value.map((b) => ({ ...profitOf(b, null), trader: b.trader?.name, level: b.level })) };
   }
 
   /** Munition: Schaden, Durchschlag, Panzerschaden pro Kaliber. */
   async ammo(gameMode = 'regular') {
-    const r = await this.cache.wrap('eft:ammo:' + gameMode, SOURCE, 3 * DAY, async () => (await this.gql('query($gm: GameMode){ ammo(lang: de, gameMode: $gm) { item { id name shortName avg24hPrice } caliber damage penetrationPower armorDamage projectileCount fragmentationChance } }', { gm: gameMode })).ammo || []);
+    const r = await this.cache.wrap('eft:ammo:' + gameMode, SOURCE, 3 * DAY, () => this.viaJson(() => this.json.ammo(gameMode), async () => (await this.gql('query($gm: GameMode){ ammo(lang: de, gameMode: $gm) { item { id name shortName avg24hPrice } caliber damage penetrationPower armorDamage projectileCount fragmentationChance } }', { gm: gameMode })).ammo || []));
     return { ...r, value: r.value.map((a) => ({ name: a.item?.name, short: a.item?.shortName, caliber: String(a.caliber || '').replace(/^Caliber/, ''), damage: a.damage * (a.projectileCount || 1), pen: a.penetrationPower, armor: a.armorDamage, frag: Math.round((a.fragmentationChance || 0) * 100), price: a.item?.avg24hPrice || null })) };
   }
 
@@ -311,9 +336,9 @@ class Tarkov {
     if (name.length < 2 && !keysOnly) return { items: [], source: SOURCE };
     const key = `eft:items:${gameMode}:${keysOnly ? 'keys' : 'all'}:${name.toLowerCase()}`;
     const r = await this.cache.wrap(key, SOURCE, DAY, async () => {
-      const d = await this.gql(`query($n: String, $t: ItemType, $gm: GameMode){ items(name: $n, type: $t, lang: de, gameMode: $gm, limit: 30) {
+      const d = await this.viaJson(async () => ({ items: await this.json.searchItems(gameMode, { name, type: keysOnly ? 'keys' : undefined, limit: 30 }) }), () => this.gql(`query($n: String, $t: ItemType, $gm: GameMode){ items(name: $n, type: $t, lang: de, gameMode: $gm, limit: 30) {
         id name shortName description types basePrice avg24hPrice lastLowPrice wikiLink updated
-        sellFor { vendor { name } priceRUB } } }`, { n: name || undefined, t: keysOnly ? 'keys' : undefined, gm: gameMode });
+        sellFor { vendor { name } priceRUB } } }`, { n: name || undefined, t: keysOnly ? 'keys' : undefined, gm: gameMode }));
       return d.items;
     });
     return { items: r.value.slice(0, limit), source: r.source, fetchedAt: r.fetchedAt, offline: r.offline };

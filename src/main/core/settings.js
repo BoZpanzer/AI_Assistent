@@ -67,12 +67,18 @@ const SCHEMA = {
       whisperExecutable: { type: 'string', maxLength: 1000 }, whisperModel: { type: 'string', maxLength: 1000 },
       whisperThreads: { type: 'integer', minimum: 1, maximum: 16 }, speakVoiceReplies: { type: 'boolean' },
       cloudMaxMinutes: { type: 'number', minimum: 1, maximum: 60 }, cloudMaxEur: { type: 'number', minimum: 0.01, maximum: 5 }, cloudVad: { type: 'boolean' },
-      bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 } } },
+      bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 },
+      tts: { type: 'object', properties: {
+        engine: { type: 'string', enum: ['piper', 'windows'] }, voice: { type: 'string', maxLength: 80 }, style: { type: 'string', maxLength: 30 },
+        speaker: { type: 'integer', minimum: 0, maximum: 500 }, speed: { type: 'number', minimum: 0.6, maximum: 1.6 }, pitch: { type: 'number', minimum: 0.8, maximum: 1.25 },
+        volume: { type: 'number', minimum: 0, maximum: 1.5 }, short: { type: 'boolean' }, windowsVoice: { type: 'string', maxLength: 200 }, piperExecutable: { type: 'string', maxLength: 1000 } } } } },
     // Google
     google: { type: 'object', properties: {
       clientId: { type: 'string', maxLength: 200 }, calendarSync: { type: 'boolean' }, exportLocalToGoogle: { type: 'boolean' },
       syncIntervalMinutes: { type: 'number', minimum: 5, maximum: 240 },
       defaultCalendarId: { type: 'string', maxLength: 300 }, account: { type: 'string', maxLength: 200 },
+      exportCalendars: { type: 'object', properties: { termine: { type: 'string', maxLength: 300 }, geburtstage: { type: 'string', maxLength: 300 }, todos: { type: 'string', maxLength: 300 }, erinnerungen: { type: 'string', maxLength: 300 }, uni: { type: 'string', maxLength: 300 } } },
+      exportKinds: { type: 'object', properties: { termine: { type: 'boolean' }, geburtstage: { type: 'boolean' }, todos: { type: 'boolean' }, erinnerungen: { type: 'boolean' }, uni: { type: 'boolean' } } },
       scopes: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 200 } } } },
     // Study
     study: { type: 'object', properties: {
@@ -142,8 +148,9 @@ const DEFAULTS = {
   cloud: { mode: 'hybrid', features: { chat: true, voice: false, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 45,
+    tts: { engine: 'piper', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '' },
     whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true, cloudMaxMinutes: 10, cloudMaxEur: 0.1, cloudVad: true },
-  google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '' },
+  google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '', exportCalendars: {}, exportKinds: { termine: true, geburtstage: true, todos: true, erinnerungen: true, uni: true } },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
   gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: false, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, lolCloudShare: false, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: false, lolTeamAdvice: false, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: false, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },
   life: { budgetMonthly: 0, boughtToPantry: true, birthdayGifts: true },

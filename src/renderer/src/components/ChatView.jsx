@@ -6,6 +6,7 @@ import { FixText } from './ui.jsx';
 import { renderMarkdown, onMarkdownClick } from '../lib/markdown.js';
 import { fmtTime } from '../lib/format.js';
 import { BrandMark } from './Shell.jsx';
+import { audio } from '../lib/audio.js';
 
 const TOOL_LABEL = {
   quota_wait: 'Gemini-Minutenlimit erreicht – JARVIS wartet kurz und versucht es dann automatisch erneut',
@@ -91,7 +92,7 @@ export function Message({ m, tool }) {
         {!user && !streaming && m.content && (
           <div class="tools">
             <button class="btn icon xs ghost" title="Kopieren" onClick={() => { rpc('clipboard.write', { text: m.content }); toast('Kopiert'); }}><Copy size={13} /></button>
-            <button class="btn icon xs ghost" title="Vorlesen" onClick={() => window.speechSynthesis && (() => { const u = new SpeechSynthesisUtterance(m.content.replace(/[*#`|>_]/g, '')); u.lang = 'de-DE'; speechSynthesis.cancel(); speechSynthesis.speak(u); })()}><Volume2 size={13} /></button>
+            <button class="btn icon xs ghost" title="Vorlesen" onClick={() => (audio.tts.speaking || speechSynthesis.speaking ? audio.stopSpeech() : audio.speakLocal(m.content, { full: true }))}><Volume2 size={13} /></button>
           </div>
         )}
       </div>

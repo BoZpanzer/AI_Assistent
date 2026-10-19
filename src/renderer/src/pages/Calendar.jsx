@@ -10,6 +10,8 @@ const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const sod = (d) => { const z = new Date(d); z.setHours(0, 0, 0, 0); return z; };
 const startOfWeek = (d) => { const z = sod(d); z.setDate(z.getDate() - ((z.getDay() + 6) % 7)); return z; };
 
+const EXPORT_KINDS = [['termine', 'Termine'], ['geburtstage', 'Geburtstage'], ['todos', 'Todos'], ['erinnerungen', 'Erinnerungen'], ['uni', 'Uni']];
+
 export function Calendar() {
   const [view, setView] = useState('month');
   const [cursor, setCursor] = useState(new Date());
@@ -76,21 +78,31 @@ export function Calendar() {
               <button class="btn sm mt" onClick={() => guard(() => rpc('calendar.sync'), 'Synchronisiert')}>{status?.syncing ? <Spinner /> : <RefreshCw size={14} />}Jetzt synchronisieren</button>
                <label class="row gap-s mt small"><input type="checkbox" checked={!!appSettings?.google?.exportLocalToGoogle} onChange={async (e) => {
                  const enabled = e.currentTarget.checked;
-                 if (enabled && !(await ask('Eigene JARVIS-Termine und als Vorlesungsplan markierte Stundenpläne automatisch an Google übertragen? Änderungen und Löschungen der Originale können auch die Google-Kopien ändern oder entfernen.', '', { confirmOnly: true, okLabel: 'Google-Synchronisation aktivieren' }))) {
+                 if (enabled && !(await ask('Alles aus dem JARVIS-Kalender automatisch an Google übertragen? JARVIS legt dafür eigene Google-Kalender an: Termine, Geburtstage, Todos, Erinnerungen und Uni. Die Inhalte werden an Google übertragen. Änderungen und Löschungen in JARVIS ändern bzw. entfernen auch die Google-Kopien; deine übrigen Google-Termine bleiben unberührt.', '', { confirmOnly: true, okLabel: 'Übertragung einschalten' }))) {
                    e.currentTarget.checked = false; return;
                  }
                  const saved = await guard(() => rpc('settings.update', { google: { exportLocalToGoogle: enabled } }), enabled ? 'Google-Übertragung aktiviert' : 'Google-Übertragung deaktiviert');
-                 if (saved && enabled) await guard(() => rpc('calendar.sync'), 'Kalender abgeglichen');
-               }} />JARVIS-Termine & Vorlesungen regelmäßig nach Google spiegeln</label>
-               {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden separat verändert und nicht überschrieben.</div>}
-              <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst Google-Synchronisation aktivieren' : ''} onClick={async () => {
-                const target = (cals || []).find((c) => c.primary && c.writable && c.id !== 'local') || (cals || []).find((c) => c.writable && c.id !== 'local' && !c.id.startsWith('feed:'));
-                if (!target) { toast('Kein beschreibbarer Google-Kalender gefunden', 'error'); return; }
-                const ok = await ask('JARVIS-Termine und Vorlesungen der letzten 30 und nächsten 180 Tage in Google Kalender „' + target.name + '“ kopieren? Die Daten werden an Google übertragen.', '', { confirmOnly: true, okLabel: 'Zu Google kopieren' });
-                if (!ok) return;
-                const result = await guard(() => rpc('calendar.exportToGoogle', { calendarId: target.id }));
-                if (result) toast('Google: ' + result.created + ' neu, ' + result.updated + ' aktualisiert, ' + result.unchanged + ' unverändert, ' + result.deleted + ' entfernt, ' + result.conflicts + ' Konflikte, ' + result.failed + ' Fehler', result.failed ? 'error' : 'info', 10000);
-              }}><Cloud size={14} />JARVIS & Vorlesungen zu Google kopieren</button>
+                 if (saved && enabled) await guard(() => rpc('calendar.sync'), 'Nach Google übertragen');
+               }} />Alles aus JARVIS nach Google übertragen (eigene Kalender je Art)</label>
+               {appSettings?.google?.exportLocalToGoogle && <div class="col gap-s mt" style={{ paddingLeft: 22 }}>
+                 {EXPORT_KINDS.map(([k, label]) => {
+                   const on = appSettings?.google?.exportKinds?.[k] !== false;
+                   const r = status?.mirror?.byKind?.[k];
+                   return <label class="row gap-s small"><input type="checkbox" checked={on} onChange={async (e) => {
+                     const v = e.currentTarget.checked;
+                     if (!v && !(await ask('„' + label + '“ nicht mehr übertragen? Die von JARVIS angelegten Kopien werden aus dem Google-Kalender „JARVIS · ' + label + '“ entfernt (in Google geänderte bleiben).', '', { confirmOnly: true, okLabel: 'Nicht mehr übertragen' }))) { e.currentTarget.checked = true; return; }
+                     const saved = await guard(() => rpc('settings.update', { google: { exportKinds: { [k]: v } } }));
+                     if (saved) guard(() => rpc('calendar.sync'));
+                   }} /><span class="grow">{label}</span>{on && r && <span class="tiny muted">{r.entries} in Google{r.conflicts ? ' · ' + r.conflicts + ' in Google geändert' : ''}</span>}</label>;
+                 })}
+                 <div class="tiny muted">Todos = offene Aufgaben mit Fälligkeit · Erinnerungen = Aufgaben mit Erinnerungszeit (Google meldet sich zur selben Zeit) · Uni = Vorlesungen, Prüfungen, Lernen, Abgaben · Zeitraum: letzte 30 bis nächste 180 Tage, Geburtstage jährlich</div>
+               </div>}
+               {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden in Google verändert und daher nicht überschrieben.</div>}
+               {status?.mirror?.createdCalendars?.length > 0 && <div class="small muted">Neu in Google angelegt: {status.mirror.createdCalendars.join(', ')}</div>}
+              <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst die Übertragung einschalten' : ''} onClick={async () => {
+                const result = await guard(() => rpc('calendar.exportToGoogle'));
+                if (result && !result.skipped) toast('Google: ' + result.created + ' neu, ' + result.updated + ' aktualisiert, ' + result.unchanged + ' unverändert, ' + result.deleted + ' entfernt' + (result.conflicts ? ', ' + result.conflicts + ' in Google geändert' : '') + (result.failed ? ', ' + result.failed + ' Fehler' : ''), result.failed ? 'error' : 'info', 10000);
+              }}><Cloud size={14} />Jetzt nach Google übertragen</button>
             </> : <><div class="small muted">Termine bleiben lokal, bis du Google verbindest.</div><button class="btn sm mt" onClick={() => setState({ page: 'settings' })}>Verbinden…</button></>}
           </Panel>
           <Panel title="Kalender" sub="Sichtbarkeit">

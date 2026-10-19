@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { tempCore } = require('./helpers');
+const { tempCore, withoutTarkovJson } = require('./helpers');
 const { createCore } = require('../src/main/app-core');
 const { Tarkov } = require('../src/main/services/gaming/tarkov');
 const { GameCache } = require('../src/main/services/gaming/cache');
@@ -18,7 +18,7 @@ test('tarkov.dev 422: readable error, sanitized diagnostics, no request loop', a
   const { core, cleanup } = tempCore();
   try {
     let calls = 0;
-    const t = new Tarkov({ fetch: async () => { calls++; return res(422, '{"errors":["Unprocessable"]}', { 'cf-ray': 'abc' }); }, gameCache: new GameCache(core.db) });
+    const t = new Tarkov({ fetch: withoutTarkovJson(async () => { calls++; return res(422, '{"errors":["Unprocessable"]}', { 'cf-ray': 'abc' }); }), gameCache: new GameCache(core.db) });
     await assert.rejects(() => t.maps('regular'), (e) => {
       assert.equal(e.status, 422);
       assert.match(e.message, /abgelehnt \(HTTP 422\)/);
@@ -35,7 +35,7 @@ test('tarkov.dev outage after a successful fetch keeps the stored map data (offl
   const { core, cleanup } = tempCore();
   try {
     let fail = false;
-    const t = new Tarkov({ fetch: async () => (fail ? res(503, 'down') : res(200, JSON.stringify({ data: { maps: [{ normalizedName: 'customs', name: 'Zollgebiet', extracts: [{ name: 'ZB-1011', position: { x: 1, y: 0, z: 2 } }] }] } }))), gameCache: new GameCache(core.db) });
+    const t = new Tarkov({ fetch: withoutTarkovJson(async () => (fail ? res(503, 'down') : res(200, JSON.stringify({ data: { maps: [{ normalizedName: 'customs', name: 'Zollgebiet', extracts: [{ name: 'ZB-1011', position: { x: 1, y: 0, z: 2 } }] }] } })))), gameCache: new GameCache(core.db) });
     assert.equal((await t.map('customs')).value.name, 'Zollgebiet');
     core.db.run("UPDATE game_cache SET expires_at='2000-01-01T00:00:00.000Z'");
     fail = true;
@@ -49,7 +49,7 @@ test('Identical concurrent tarkov.dev queries share one request', async () => {
   const { core, cleanup } = tempCore();
   try {
     let calls = 0;
-    const t = new Tarkov({ fetch: async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return res(200, JSON.stringify({ data: { maps: [] } })); }, gameCache: new GameCache(core.db) });
+    const t = new Tarkov({ fetch: withoutTarkovJson(async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return res(200, JSON.stringify({ data: { maps: [] } })); }), gameCache: new GameCache(core.db) });
     await Promise.all([t.gql('{ maps { id } }'), t.gql('{ maps { id } }')]);
     assert.equal(calls, 1);
   } finally { cleanup(); }

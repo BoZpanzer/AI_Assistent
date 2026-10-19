@@ -12,7 +12,7 @@ So wenig Gemini wie möglich, so viel lokal wie sinnvoll – ohne das Spiel ausz
 | Raid-Ergebnis erfassen, Statistikfragen („Wie ist meine Überlebensrate heute?“) | **deterministisch**, auch per Sprache | Satzmuster lokal erkannt, 0 € |
 | Kartenkalibrierung, Einstellungen, Timer, Datenabfragen | **deterministisch** | |
 | Spracherkennung | **lokal** (whisper.cpp, in jedem Chat) | Audio verlässt den PC nicht |
-| Sprachausgabe | **lokal** (Windows-Stimme) | keine Cloud, keine GPU |
+| Sprachausgabe | **lokal** (Piper-Stimme, alternativ Windows-Stimme) | keine Cloud, keine GPU |
 | Private Chats, Finanzen, Persönliches, Geburtstage, Fristen aus Mails | **lokales Modell** (Ollama) | kein Cloud-Fallback |
 | Uni-/Gaming-Chats, Bildschirmfrage, Websuche, Matchup-Karte | **Gemini**, nur wenn erlaubt | Qualität lokal nicht erreichbar |
 | Gemini Live (Echtzeit-Audio) | **aus** (Standard), optional | teuerste Funktion |
@@ -83,15 +83,16 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Transkript / Chattext | aus Eingabe | privat: lokal; Uni/Gaming: Gemini | lokale Datenbank (Gesprächsverlauf) | Gespräch löschen; Modus „Strikt lokal“ |
 | Bildschirm | nur Hotkey/Frage, **nur während ein Spiel aktiv ist**, bevorzugt nur das Spielfenster, max. 1 600 px; Tarkov-Itemscan nur Ausschnitt um den Mauszeiger | Gemini (Gaming-Chat des Spiels) | **standardmäßig nicht gespeichert** | Einstellungen → Sicherheit; Funktion „Bildschirmanalyse“ aus |
 | Spieldaten (LoL-Matches, Tarkov-Log, Statistik) | Client/Log/Riot-API | lokal; an Gemini nur in Gaming-Chats bzw. LoL nach Freigabe „LoL-Daten für Cloud“ | lokale Datenbank | Freigabe aus; Statistik-Einträge löschen |
-| Öffentliche Spieldaten (tarkov.dev, Data Dragon, Steam-News) | Abruf | Drittanbieter (kein Personenbezug außer IP) | Cache (Ablaufzeit) | Einstellungen → Sicherheit → Spieldaten-Cache löschen |
+| Öffentliche Spieldaten (json.tarkov.dev bzw. api.tarkov.dev, Data Dragon, Steam-News) | Abruf | Drittanbieter (kein Personenbezug außer IP) | Cache (Ablaufzeit) | Einstellungen → Sicherheit → Spieldaten-Cache löschen |
 | Goon-Meldung | nur per Knopf | tarkov.dev (mit Tarkov-Account-ID) | – | Knopf nicht nutzen |
 | Diagnose-Protokolle | laufend | lokal, Schlüssel/Token geschwärzt, max. 8 MB | `logs/` | Einstellungen → Sicherheit → Protokolle leeren |
+| JARVIS-Kalender (Termine, Geburtstage, Uni, Aufgaben mit Fälligkeit, Erinnerungen) | nur wenn „Alles aus JARVIS nach Google übertragen“ an ist; letzte 30 bis nächste 180 Tage | Google Kalender (eigene Kalender „JARVIS · …“ je Art) | bei Google | Schalter aus bzw. Art abwählen (entfernt unveränderte Kopien) |
 | Kosten-Protokoll | je Gemini-Aufruf | lokal, nur Metadaten | Datenbank | ältere Einträge löschen |
 
 Sichtbarkeit: Die Kopfzeile zeigt den Cloud-Zustand (aus / an mit laufenden Aufrufen und Tagesstand / gesperrt), ein aktives Mikrofon (lokal oder Gemini Live) und jede Bildschirmaufnahme.
 
 **Lokale Modellserver:** JARVIS spricht Ollama nur über `127.0.0.1` an (kein DNS, kein Proxy, keine Weiterleitung, keine `:cloud`-Modelle). Ollama selbst lauscht standardmäßig nur auf `127.0.0.1:11434`; ist `OLLAMA_HOST` auf eine andere Adresse gesetzt (z. B. `0.0.0.0`), zeigt JARVIS eine Warnung. Empfehlung: `OLLAMA_HOST=127.0.0.1:11434`. JARVIS kann die Konfiguration des separat installierten Ollama-Dienstes nicht erzwingen.
 
-**Keine Telemetrie** in JARVIS. Netzwerkzugriffe: Gemini (nur über die Pforte), Google Kalender/Drive (nach Freigabe), Riot, tarkov.dev, Steam, DB-Fahrplan, GitHub-Updates.
+**Keine Telemetrie** in JARVIS. Netzwerkzugriffe: Gemini (nur über die Pforte), Hugging Face (nur beim Laden einer zusätzlichen Stimme per Klick), Google Kalender/Drive (nach Freigabe), Riot, tarkov.dev, Steam, DB-Fahrplan, GitHub-Updates.
 
 Grenzen: Ein Spielfenster kann selbst private Inhalte zeigen (z. B. In-Game-Chat). Fenstererkennung erfolgt über den Fenstertitel; wird kein Spielfenster gefunden, wird der Bildschirm unter dem Mauszeiger aufgenommen (in der Kopfzeile sichtbar). Was Google mit übertragenen Daten macht, regeln Googles Bedingungen.

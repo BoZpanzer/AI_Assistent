@@ -17,3 +17,5 @@ build/update-config.json
 # Verified Whisper engine/model are generated only during the Windows build.
 build/whisper-runtime/
 build/whisper-runtime-stage/
+build/piper-runtime/
+build/piper-runtime-stage/

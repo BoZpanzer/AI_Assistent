@@ -43,6 +43,22 @@ jobs:
           $hash = (Get-FileHash "$voice/ggml-base.bin" -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe') { throw "Whisper-Modell SHA-256 stimmt nicht" }
           Write-Host "Verifizierte Whisper-Engine und Modell liegen im Installer-Paket"
+      - name: Mitgelieferte Sprachausgabe (Piper) prüfen und einen Satz sprechen lassen
+        shell: pwsh
+        run: |
+          $tts = "release/win-unpacked/resources/tts"
+          if (!(Test-Path "$tts/piper.exe")) { throw "Piper fehlt" }
+          if (!(Test-Path "$tts/espeak-ng-data")) { throw "espeak-ng-data fehlt" }
+          $model = "$tts/voices/de_DE-thorsten-medium.onnx"
+          $hash = (Get-FileHash $model -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '7e64762d8e5118bb578f2eea6207e1a35a8e0c30595010b666f983fc87bb7819') { throw "Stimme SHA-256 stimmt nicht" }
+          $out = "$env:RUNNER_TEMP\tts-test.wav"
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          "Hallo, ich bin JARVIS. Deine Überlebensrate liegt bei sechzig Prozent." | & "$tts/piper.exe" --model $model --output_file $out --espeak_data "$tts/espeak-ng-data" --length_scale 1.0 --sentence_silence 0.15
+          if ($LASTEXITCODE -ne 0) { throw "Piper-Sprachausgabe fehlgeschlagen ($LASTEXITCODE)" }
+          $len = (Get-Item $out).Length
+          if ($len -lt 50000) { throw "Piper-WAV zu klein ($len Bytes)" }
+          Write-Host "Piper spricht: $len Bytes WAV in $($sw.ElapsedMilliseconds) ms"
       - name: Smoke-Test der gebauten JARVIS.exe
         shell: pwsh
         run: |
@@ -58,6 +74,7 @@ jobs:
           if (!(Test-Path "$dir\JARVIS.exe")) { throw "JARVIS.exe fehlt nach Installation" }
           if (!(Test-Path "$dir\resources\voice\whisper-cli.exe")) { throw "Whisper-Engine fehlt nach Installation" }
           if (!(Test-Path "$dir\resources\voice\ggml-base.bin")) { throw "Whisper-Modell fehlt nach Installation" }
+          if (!(Test-Path "$dir\resources\tts\piper.exe")) { throw "Piper fehlt nach Installation" }
           if (!(Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\JARVIS.lnk")) { throw "Startmenü-Eintrag fehlt" }
           $s = Start-Process -FilePath "$dir\JARVIS.exe" -ArgumentList "--smoke" -PassThru -Wait
           if ($s.ExitCode -ne 0) { throw "Installierte App: Smoke-Test fehlgeschlagen" }

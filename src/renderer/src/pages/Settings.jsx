@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info, Wallet } from 'lucide-preact';
+import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, Volume2, Trash2, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info, Wallet } from 'lucide-preact';
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar, UpdateModal } from '../components/Shell.jsx';
@@ -9,6 +9,56 @@ import { ago } from '../lib/format.js';
 
 const VOICES = ['Charon', 'Puck', 'Kore', 'Fenrir', 'Aoede', 'Orus', 'Leda', 'Zephyr', 'Enceladus', 'Iapetus', 'Algieba', 'Despina'];
 export const upd = (patch) => guard(() => rpc('settings.update', patch));
+
+const SAMPLE = 'Hallo, ich bin JARVIS. Deine Überlebensrate heute liegt bei sechzig Prozent – drei Raids, zwei davon überlebt.';
+
+/** Lokale Sprachausgabe: Piper-Stimmen (mitgeliefert/auf Klick), Stil, Tempo, Tonhöhe, Lautstärke, Hörprobe. */
+function SpeechOutput({ s }) {
+  const t = s.voice?.tts || {};
+  const [st, reload] = useRpc('tts.status', {}, { initial: null });
+  const [busy, setBusy] = useState('');
+  const [winVoices, setWinVoices] = useState([]);
+  useEffect(() => {
+    const load = () => setWinVoices(speechSynthesis.getVoices().filter((x) => x.localService && x.lang?.startsWith('de')).map((x) => x.name));
+    load(); speechSynthesis.addEventListener?.('voiceschanged', load);
+    return () => speechSynthesis.removeEventListener?.('voiceschanged', load);
+  }, []);
+  useEffect(() => { if (!st?.voices?.some((v) => v.downloading)) return; const id = setInterval(reload, 1000); return () => clearInterval(id); }, [st]);
+  const set = (patch) => upd({ voice: { tts: patch } });
+  const engine = t.engine || 'piper';
+  const cur = st?.voices?.find((v) => v.id === (t.voice || st?.voice)) || st?.voices?.[0];
+  const preview = (override = {}) => audio.speakLocal(SAMPLE, { full: true, override });
+  const install = async (id) => { setBusy(id); try { const p = rpc('tts.install', { id }); setTimeout(reload, 300); await guard(() => p, 'Stimme installiert'); await set({ voice: id }); } finally { setBusy(''); reload(); } };
+  return (
+    <Panel icon={Volume2} title="Sprachausgabe" sub="Lokal auf dem PC – keine Cloud, keine Kosten">
+      <Field label="Stimme">
+        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'piper', label: 'Natürliche Stimme (Piper, empfohlen)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
+      </Field>
+      {engine === 'piper' && !st?.available && <div class="notice tiny">Die natürliche Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion). JARVIS nutzt so lange die Windows-Stimme.</div>}
+      {engine === 'piper' && st?.voices && <>
+        {st.voices.map((v) => (
+          <div class="row gap-s" style={{ padding: '4px 0', alignItems: 'center' }}>
+            <input type="radio" name="tts-voice" disabled={!v.installed} checked={cur?.id === v.id} onChange={() => set({ voice: v.id })} />
+            <span class="grow small">{v.label}<span class="tiny muted"> · {v.quality} · {v.license}{v.bundled ? ' · mitgeliefert' : ` · ${v.sizeMB} MB`}</span></span>
+            {v.installed
+              ? <><button class="btn xs" title="Hörprobe" onClick={() => preview({ voice: v.id })}><Play size={12} /></button>
+                {v.removable && <button class="btn xs ghost" title="Stimme entfernen" onClick={() => guard(() => rpc('tts.remove', { id: v.id })).then(reload)}><Trash2 size={12} /></button>}</>
+              : v.downloading ? <span class="tiny">{Math.round((v.downloading.progress || 0) * 100)} %</span>
+                : <button class="btn xs" disabled={!!busy} onClick={() => install(v.id)}><Download size={12} />Laden</button>}
+          </div>
+        ))}
+        {cur?.styles && <Field label="Stimmung"><Select value={t.style || 'neutral'} onChange={(x) => set({ style: x })} options={cur.styles.map((x) => ({ value: x.id, label: x.label }))} /></Field>}
+        {cur?.speakers && <Field label={`Sprecher · ${(t.speaker ?? 0) + 1} von ${cur.speakers}`}><input class="range" type="range" min="0" max={cur.speakers - 1} step="1" value={t.speaker ?? 0} onChange={(e) => set({ speaker: Number(e.currentTarget.value) })} /></Field>}
+      </>}
+      {engine === 'windows' && <Field label="Windows-Stimme" hint="Stimmen hinzufügen: Windows-Einstellungen → Zeit und Sprache → Sprache → Deutsch → Sprachoptionen"><Select value={t.windowsVoice || ''} onChange={(x) => set({ windowsVoice: x })} options={[{ value: '', label: 'Automatisch (beste installierte)' }, ...winVoices.map((n) => ({ value: n, label: n }))]} /></Field>}
+      <Field label={`Tempo · ${Math.round((t.speed ?? 1) * 100)} %`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={t.speed ?? 1} onChange={(e) => set({ speed: Number(e.currentTarget.value) })} /></Field>
+      <Field label={`Tonhöhe · ${(t.pitch ?? 1) > 1 ? 'höher' : (t.pitch ?? 1) < 1 ? 'tiefer' : 'normal'}`}><input class="range" type="range" min="0.85" max="1.2" step="0.05" value={t.pitch ?? 1} onChange={(e) => set({ pitch: Number(e.currentTarget.value) })} /></Field>
+      <Field label={`Lautstärke · ${Math.round((t.volume ?? 1) * 100)} %`}><input class="range" type="range" min="0.2" max="1.5" step="0.05" value={t.volume ?? 1} onChange={(e) => set({ volume: Number(e.currentTarget.value) })} /></Field>
+      <Field label="Lange Antworten kurz vorlesen" hint="liest die ersten Sätze, Rest steht im Chat · „Vorlesen“ am Chat liest immer alles"><Toggle checked={t.short !== false} onChange={(x) => set({ short: x })} /></Field>
+      <div class="row gap-s mt"><button class="btn sm" onClick={() => preview()}><Play size={14} />Hörprobe</button><button class="btn sm ghost" onClick={() => audio.stopSpeech()}>Stopp</button></div>
+    </Panel>
+  );
+}
 
 export function Settings() {
   const s = useStore((x) => x.settings);
@@ -22,6 +72,7 @@ export function Settings() {
         <div class="settings-grid">
           <General s={s} />
           <Speech s={s} />
+          <SpeechOutput s={s} />
           <LocalAI s={s} />
           <Ai s={s} secrets={secrets} />
           <Google s={s} />
@@ -101,8 +152,8 @@ function Speech({ s }) {
       {v.wakeWord && <Field label="Empfindlichkeit"><input class="range" type="range" min="0.2" max="0.9" step="0.05" value={v.wakeSensitivity} onChange={(e) => upd({ voice: { wakeSensitivity: Number(e.currentTarget.value) } })} /></Field>}
       <Field label="Push-to-Talk-Taste (global)"><input class="inp" value={v.pushToTalkKey} onChange={(e) => upd({ voice: { pushToTalkKey: e.currentTarget.value } })} /></Field>
       <Field label="Unterbrechen erlauben (Barge-in)"><Toggle checked={v.bargeIn} onChange={(x) => upd({ voice: { bargeIn: x } })} /></Field>
-      <Field label="Textantworten vorlesen (Windows-Stimme)"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
-      <Field label="Antworten auf Spracheingaben vorlesen" hint="lokale Windows-Stimme, keine Cloud"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
+      <Field label="Textantworten vorlesen" hint="lokale Stimme (siehe „Sprachausgabe“)"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
+      <Field label="Antworten auf Spracheingaben vorlesen" hint="lokale Stimme, keine Cloud"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
       <Field label="CPU-Threads für Spracherkennung" hint="beim Spielen automatisch höchstens 2, mit niedriger Priorität"><Select value={String(v.whisperThreads || 4)} onChange={(x) => upd({ voice: { whisperThreads: Number(x) } })} options={['2', '4', '6', '8'].map((n) => ({ value: n, label: n }))} /></Field>
       <div class="tiny muted">Gemini Live (Echtzeit-Audio an Google) nur, wenn unter „Gemini / KI → Cloud-Funktionen“ eingeschaltet:</div>
       <Field label="Live: höchstens Minuten je Sitzung"><input class="inp" type="number" min="1" max="60" style={{ width: 80 }} value={v.cloudMaxMinutes ?? 10} onChange={(e) => upd({ voice: { cloudMaxMinutes: Number(e.currentTarget.value) || 10 } })} /></Field>

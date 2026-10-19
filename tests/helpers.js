@@ -38,10 +38,22 @@ function fakeSdk(script = [], { models = ['gemini-3.8-flash', 'gemini-3.1-pro-pr
   return { sdk: { GoogleGenAI }, requests, script };
 }
 
+/**
+ * Ältere Tests liefern GraphQL-Antworten für jede Adresse. JARVIS fragt aber zuerst json.tarkov.dev –
+ * dort antwortet der Test-Fetch deshalb mit 503 (GraphQL-Rückfall wird geprüft), außer ein Test liefert eigene JSON-Dateien.
+ */
+function withoutTarkovJson(fetch, own = false) {
+  if (own) return fetch;
+  return async (url, init) => (String(url).startsWith('https://json.tarkov.dev/')
+    ? { ok: false, status: 503, headers: { get: () => null }, text: async () => 'test', json: async () => ({}) }
+    : fetch(url, init));
+}
+
 function tempCore(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-test-'));
   const fake = fakeSdk(opts.script || []);
-  const core = createCore({ dataDir: dir, version: '3.0.0', genaiSdk: opts.genaiSdk || fake.sdk, fetch: opts.fetch || (async () => { throw new Error('offline'); }), platform: { toast: opts.toast } });
+  const fetch = opts.fetch ? withoutTarkovJson(opts.fetch, opts.tarkovJson) : (async () => { throw new Error('offline'); });
+  const core = createCore({ dataDir: dir, version: '3.0.0', genaiSdk: opts.genaiSdk || fake.sdk, fetch, platform: { toast: opts.toast } });
   if (opts.local) {
     // Scripted local provider; the separate loopback integration test exercises Ollama's wire protocol.
     core.localLLM.stepStream = async (o) => {
@@ -55,5 +67,5 @@ function tempCore(opts = {}) {
   return { core, dir, fake, cleanup: () => { core.stop(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 
-module.exports = { fakeSdk, tempCore };
+module.exports = { withoutTarkovJson, fakeSdk, tempCore };
 

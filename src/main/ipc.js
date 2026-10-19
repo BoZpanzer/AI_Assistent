@@ -105,6 +105,16 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.private': ({ id }) => { if (s.voice.conversationId === id) s.voice.stop(); s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
+    // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
+    'tts.status': () => s.tts.status(),
+    'tts.prepare': ({ text, full } = {}) => require('./voice/speakable').speakable(String(text || '').slice(0, 20000), { full: !!full || s.settings.get('voice').tts?.short === false }),
+    'tts.synthesize': async ({ text, override } = {}) => {
+      const o = override && typeof override === 'object' ? { voice: override.voice, style: override.style, speaker: override.speaker, speed: override.speed, pitch: override.pitch } : {};
+      const r = await s.tts.synthesize(String(text || ''), Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)));
+      return { audio: r.wav.toString('base64'), pitch: r.pitch };
+    },
+    'tts.install': ({ id }) => s.tts.install(String(id || '')),
+    'tts.remove': ({ id }) => s.tts.remove(String(id || '')),
     'local.installOllama': () => s.localLLM.installOllama(),
     'local.installTier': ({ model }) => s.localLLM.installTier(model),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),
@@ -146,11 +156,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'calendar.calendars': () => s.calendar.calendars(),
     'calendar.select': ({ id, selected }) => s.calendar.selectCalendar(id, selected),
     'calendar.sync': () => s.calendar.sync(),
-    'calendar.exportToGoogle': async ({ calendarId }) => {
-      const { exportToGoogle } = require('./services/calendar-google-export');
-      const from = new Date(Date.now() - 30 * 86400000).toISOString();
-      const to = new Date(Date.now() + 180 * 86400000).toISOString();
-      return exportToGoogle({ db: s.db, google: s.google, calendarId, from, to });
+    // Alles aus JARVIS in eigene Google-Kalender je Art (Termine, Geburtstage, Todos, Erinnerungen, Uni)
+    'calendar.exportToGoogle': async () => {
+      if (!s.settings.get('google').exportLocalToGoogle) throw new Error('Zuerst die Übertragung nach Google einschalten');
+      const r = await s.calendar.sync();
+      return r.mirror || r;
     },
     'calendar.status': () => s.calendar.status(),
     'calendar.resolveConflict': ({ id, keep }) => s.calendar.resolveConflict(id, keep),

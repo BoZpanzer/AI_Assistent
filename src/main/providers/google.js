@@ -153,6 +153,12 @@ class GoogleClient {
   }
 
   listCalendars() { return this.api('GET', '/users/me/calendarList', { query: { minAccessRole: 'reader', maxResults: 250 } }); }
+  /** Eigenen (sekundären) Google-Kalender anlegen – nur für die JARVIS-Übertragung je Art. */
+  createCalendar({ summary, description, timeZone }) { return this.api('POST', '/calendars', { body: { summary, description, timeZone } }); }
+  /** Farbe eines Kalenders in der eigenen Kalenderliste setzen (rein kosmetisch). */
+  setCalendarColor(calendarId, backgroundColor, foregroundColor = '#000000') {
+    return this.api('PATCH', `/users/me/calendarList/${encodeURIComponent(calendarId)}`, { query: { colorRgbFormat: true }, body: { backgroundColor, foregroundColor } });
+  }
 
   async listEvents(calendarId, { timeMin, timeMax }) {
     const items = [];

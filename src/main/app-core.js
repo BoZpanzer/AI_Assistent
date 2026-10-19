@@ -136,6 +136,7 @@ function createCore(opts) {
   s.voice = new LiveVoice(s);
   s.scheduler = new Scheduler(s);
   s.localLLM.isGaming = () => !!s.gaming?.context?.state?.().gaming;
+  s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
   // Lokaler Modus / Gemini Live aus: laufende Cloud-Sitzungen und -Aufrufe sofort beenden (Backend, nicht nur UI)
   bus.on('settings:changed', ({ keys }) => {
     if (!keys.includes('cloud')) return;

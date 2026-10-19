@@ -218,7 +218,7 @@ class Orchestrator {
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       const vs = this.s.settings.get('voice');
       // Sprachausgabe lokal (Windows-Stimmen, keine Cloud): Sprach-Eingaben werden standardmäßig beantwortet.
-      if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: stripMd(final.content).slice(0, 1200) });
+      if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: String(final.content || '').slice(0, 8000) }); // Sprechfassung + Kürzung macht die Sprachausgabe
       return final;
     } catch (e) {
       // Lösungs-Marker → Markdown-Link (Chat rendert Markdown)
@@ -252,7 +252,6 @@ function sanitizeResponse(r, max = 30000) {
   const json = JSON.stringify(r ?? {}, (k, v) => (typeof v === 'string' ? truncate(v, 8000) : v));
   return JSON.parse(json.length > max ? JSON.stringify({ truncated: true, data: json.slice(0, max) }) : json);
 }
-function stripMd(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/[*_#>`|]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); }
 
 module.exports = { Orchestrator };
 

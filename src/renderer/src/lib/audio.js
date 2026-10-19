@@ -29,6 +29,7 @@ class AudioEngine {
     on('voice:interrupted', () => this.flush());
     on('voice:state', ({ state }) => this.onVoiceState(state));
     on('tts:speak', ({ text }) => this.speakLocal(text));
+    this.tts = { gen: 0, ctx: null, src: null, speaking: false, warned: false };
   }
 
   async ensureMic() {
@@ -193,7 +194,7 @@ class AudioEngine {
     this.player?.port.postMessage({ type: 'clear' });
     this.playing = false;
     setState({ outLevel: 0 });
-    try { speechSynthesis.cancel(); } catch { /* ignore */ }
+    this.stopSpeech();
   }
 
   setMuted(m) { this.muted = !!m; setState({ micMuted: this.muted }); }
@@ -251,7 +252,7 @@ class AudioEngine {
     this.localHeard = 0; this.localSilentMs = 0;
     this.localConversationId = conversationId;
     this.mode.local = true;
-    try { speechSynthesis.cancel(); } catch { /* ignore */ } // eigene Sprachausgabe nicht mit aufnehmen
+    this.stopSpeech(); // eigene Sprachausgabe nicht mit aufnehmen
     setState({ voice: 'recording-local' });
     toast('Ich höre zu (lokal). Nach einer Sprechpause wird automatisch erkannt – oder Mikrofon erneut drücken.');
   }
@@ -328,7 +329,7 @@ class AudioEngine {
         if (m.type === 'ready') this.wakeReady = true;
         if (m.type === 'error') { toast('Wake-Word: ' + m.error, 'error'); this.setWakeWord(false); }
         // Eigene Sprachausgabe/Wiedergabe darf das Wake-Word nicht auslösen (Rückkopplung)
-        if (m.type === 'wake' && !this.mode.stream && !this.mode.local && !this.localWorking && !this.playing && !speechSynthesis.speaking) { chime(); this.startVoice(); }
+        if (m.type === 'wake' && !this.mode.stream && !this.mode.local && !this.localWorking && !this.playing && !this.tts.speaking && !speechSynthesis.speaking) { chime(); this.startVoice(); }
         if (m.type === 'score') setState({ wakeScore: m.score });
       };
       this.wakeWorker.postMessage({ type: 'init', threshold: sens });
@@ -338,16 +339,80 @@ class AudioEngine {
     } catch (e) { await this.setWakeWord(false); toast('Mikrofon für Wake-Word nicht verfügbar: ' + e.message, 'error'); }
   }
 
-  /** Local Windows TTS (offline, no API cost) for read-aloud & coach tips. */
-  speakLocal(text) {
+  /**
+   * Lokale Sprachausgabe (offline, keine Kosten). Standard: Piper (natürliche Stimme, Satz für Satz,
+   * nächster Satz wird schon berechnet, während der vorige läuft). Rückfall: Windows-Stimme.
+   * full: ganzer Text (Knopf „Vorlesen“), sonst Kurzfassung. override: Stimme/Tempo/Tonhöhe für die Hörprobe.
+   */
+  async speakLocal(text, { full = false, override = null } = {}) {
     if (!text || this.mode.stream || this.mode.local) return;
+    this.stopSpeech();
+    const gen = this.tts.gen;
+    const st = { ...(getState().settings?.voice?.tts || {}), ...(override || {}) };
+    let prep;
+    try { prep = await rpc('tts.prepare', { text, full }); } catch { prep = { text: String(text), parts: [String(text)] }; }
+    if (gen !== this.tts.gen || !prep.parts.length) return;
+    if (st.engine === 'windows') return this.windowsSpeak(prep.text, st);
+    this.tts.speaking = true;
+    try {
+      const synth = (t) => rpc('tts.synthesize', { text: t, override });
+      let next = synth(prep.parts[0]);
+      for (let i = 0; i < prep.parts.length; i++) {
+        const cur = await next;
+        if (gen !== this.tts.gen) return;
+        next = i + 1 < prep.parts.length ? synth(prep.parts[i + 1]) : null;
+        next?.catch(() => {});
+        await this.playWav(cur.audio, cur.pitch, st.volume ?? 1, gen);
+        if (gen !== this.tts.gen) return;
+      }
+    } catch (e) {
+      if (gen !== this.tts.gen) return;
+      if (!this.tts.warned) { this.tts.warned = true; toast('Natürliche Stimme nicht verfügbar (' + (e.message || e) + ') – Windows-Stimme wird genutzt.', 'error'); }
+      this.windowsSpeak(prep.text, st);
+    } finally { if (gen === this.tts.gen) { this.tts.speaking = false; setState({ outLevel: 0 }); } }
+  }
+
+  async playWav(b64, pitch = 1, volume = 1, gen) {
+    if (!this.tts.ctx || this.tts.ctx.state === 'closed') {
+      this.tts.ctx = new AudioContext({ latencyHint: 'playback' });
+      const dev = getState().settings?.voice?.outputDeviceId;
+      if (dev && dev !== 'default' && this.tts.ctx.setSinkId) { try { await this.tts.ctx.setSinkId(dev); } catch { /* device gone */ } }
+    }
+    const ctx = this.tts.ctx;
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    const bin = atob(b64); const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    const audio = await ctx.decodeAudioData(buf.buffer);
+    if (gen !== this.tts.gen) return;
+    const src = ctx.createBufferSource(); src.buffer = audio; src.playbackRate.value = Math.max(0.8, Math.min(1.25, pitch || 1));
+    const gain = ctx.createGain(); gain.gain.value = Math.max(0, Math.min(1.5, volume));
+    const an = ctx.createAnalyser(); an.fftSize = 256;
+    src.connect(gain); gain.connect(an); an.connect(ctx.destination);
+    this.tts.src = src; this.playing = true;
+    const data = new Float32Array(an.fftSize);
+    const meter = setInterval(() => { an.getFloatTimeDomainData(data); let sum = 0; for (const v of data) sum += v * v; const rms = Math.sqrt(sum / data.length); this.outRms = rms; setState({ outLevel: Math.min(1, rms * 6) }); }, 80);
+    try { await new Promise((res) => { src.onended = res; src.start(); }); }
+    finally { clearInterval(meter); if (this.tts.src === src) this.tts.src = null; this.playing = false; }
+  }
+
+  stopSpeech() {
+    this.tts.gen++;
+    try { this.tts.src?.stop(); } catch { /* ignore */ }
+    this.tts.src = null; this.tts.speaking = false;
+    try { speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+
+  /** Windows-Stimme: gewählte, sonst beste installierte deutsche Stimme (nie Online-Stimmen). */
+  windowsSpeak(text, st = {}) {
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'de-DE'; u.rate = 1.05;
-      const v = speechSynthesis.getVoices().find((x) => x.localService && x.lang?.startsWith('de'));
+      const voices = speechSynthesis.getVoices().filter((x) => x.localService && x.lang?.startsWith('de'));
+      const rank = (v) => (/natural|neural/i.test(v.name) ? 0 : /katja/i.test(v.name) ? 1 : /conrad|amala|killian|seraphina|florian/i.test(v.name) ? 2 : /stefan/i.test(v.name) ? 3 : /hedda/i.test(v.name) ? 5 : 4);
+      const v = voices.find((x) => x.name === st.windowsVoice) || voices.sort((a, b) => rank(a) - rank(b))[0];
       if (!v) return; // Never fall back to a remote system voice.
-      if (v) u.voice = v;
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = v; u.lang = v.lang || 'de-DE';
+      u.rate = Math.max(0.6, Math.min(1.6, st.speed || 1)) * 1.05; u.pitch = Math.max(0.5, Math.min(1.5, (st.pitch || 1) ** 2)); u.volume = Math.max(0, Math.min(1, st.volume ?? 1));
       speechSynthesis.speak(u);
     } catch { /* ignore */ }
   }
