@@ -10,9 +10,8 @@ const log = require('../core/logger').scope('vectors');
  */
 class VectorIndex {
   constructor(ctx) {
-    this.db = ctx.db; this.gemini = ctx.gemini;
+    this.db = ctx.db; // nur noch lokale Vektoren aus älteren Versionen (Duplikat-Pflege); keine Cloud-Embeddings
     this.indexes = new Map(); // owner -> { ids:[], mat:Float32Array, dim }
-    this.qcache = new Map(); // query text -> vec (LRU 64)
     this.busy = false;
   }
 
@@ -64,20 +63,6 @@ class VectorIndex {
     return out;
   }
 
-  async queryVector(text) {
-    if (this.qcache.has(text)) { const v = this.qcache.get(text); this.qcache.delete(text); this.qcache.set(text, v); return v; }
-    const { vectors } = await this.gemini.embed([text], { taskType: 'RETRIEVAL_QUERY' });
-    const v = vectors[0];
-    this.qcache.set(text, v);
-    if (this.qcache.size > 64) this.qcache.delete(this.qcache.keys().next().value);
-    return v;
-  }
-
-  /**
-   * Background: embed rows lacking (current) embeddings. Bounded per run.
-   * Returns number embedded.
-   */
-  async backfill() { return 0; } // Private knowledge and documents use local full-text search.
 }
 
 module.exports = { VectorIndex };

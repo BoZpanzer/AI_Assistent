@@ -75,7 +75,7 @@ test('Calendar, backup, embeddings and voice fail closed; private recipes use lo
     const rows = s.db.all('SELECT calendar_id FROM events'); assert.ok(rows.length); assert.equal(rows[0].calendar_id, 'local');
     await assert.rejects(s.google.api('POST', '/calendars/primary/events', { body: { summary: 'SECRET' } }), /lokal/);
     await assert.rejects(s.gemini.embed(['SECRET']), /gesperrt/);
-    assert.equal(await s.vectors.backfill(), 0);
+    assert.equal(typeof s.vectors.backfill, 'undefined', 'kein Embedding-Hintergrundjob mehr');
     assert.equal((await s.driveBackup.run({ force: true })).skipped, 'private-data');
     await assert.rejects(s.driveBackup.upload('/none'), /Private/);
     await assert.rejects(s.voice.start(), /Datenschutz/);
