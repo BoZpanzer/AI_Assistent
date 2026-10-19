@@ -34,7 +34,7 @@ export function Gaming() {
                 {p.integration === 'generic' && (p.kit ? <div class="tiny muted" title={p.design?.summary || ''}>{p.designed ? 'Von JARVIS gestaltet · ' : ''}{GENRE_LABEL[p.genre] || 'Spiel'}-Oberfläche{p.wiki ? ` · Wiki: ${p.wiki.label}` : ''}</div> : <div class="tiny muted">Universelle Oberfläche: Recherche, {p.wiki ? 'Wiki, ' : ''}Notizen, Timer, Quellen</div>)}
                 {p.playtimeMin > 0 && <div class="tiny" style={{ color: 'var(--text-2)' }}>Steam: {fmtHours(p.playtimeMin)}{p.lastPlayed ? ` · zuletzt ${new Date(p.lastPlayed).toLocaleDateString('de-DE')}` : ''}</div>}
               </div>
-              <h2 class="ellipsis" style={{ marginLeft: 18, minWidth: 0, flex: '0 1 auto' }} title={p.name}>{p.name}</h2>
+              <h2 class="ellipsis" style={{ marginLeft: 18, minWidth: 0, flex: '1 1 220px' }} title={p.name}>{p.name}</h2>
               <span class="grow" />
               {p.integration === 'generic' && <DesignButton p={p} onDone={reloadLayout} />}
               {discussed && discussed.id !== p.id && <span class="chip" title="Wird gerade besprochen – ersetzt nicht das aktive Spiel" onClick={() => setViewId(discussed.id)}>Besprochen: {discussed.profile.name}</span>}
