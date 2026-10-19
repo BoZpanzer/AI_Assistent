@@ -87,12 +87,14 @@ class EftRaid {
       st.type = st.startingAt && (Date.parse(st.startedAt) - Date.parse(st.startingAt)) / 1000 > 3 ? 'pmc' : 'scav';
       st.phase = 'inraid'; st.runthroughNotified = false;
       if (!initial && st.map) { const x = this.stats(); x.plays[st.map] = (x.plays[st.map] || 0) + 1; this.saveStats(x); }
+      try { this.s.gaming.stats?.raidStarted({ raidId: st.raidId, map: st.map, type: st.type, at: st.startedAt }); } catch (err) { log.debug('stats', err); }
       this.save();
       return;
     }
     if (/application\|Network game matching (aborted|cancelled)/.test(L)) { Object.assign(st, { phase: 'idle' }); this.save(); return; }
     if (/Got notification \| UserMatchOver/.test(L)) {
       st.endedAt = e.at.toISOString(); st.phase = 'ended';
+      try { this.s.gaming.stats?.raidEnded({ raidId: st.raidId, at: st.endedAt }); } catch (err) { log.debug('stats', err); }
       if (st.type === 'scav') this.startScavCooldown(e.at, initial);
       this.save();
       return;

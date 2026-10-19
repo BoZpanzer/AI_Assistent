@@ -9,7 +9,7 @@ test('five distinct local tiers, no remote/cloud model', () => {
 });
 test('16 GB laptop and 32 GB desktop receive conservative recommendations', () => {
   assert.equal(recommendedTier(16), 'balanced');
-  assert.equal(recommendedTier(32), 'strong');
+  assert.equal(recommendedTier(32), 'balanced', 'Gaming-PC: lokales Modell darf dem Spiel nicht den Grafikspeicher nehmen');
   assert.equal(recommendedTier(4), 'ultra');
 });
 test('download refuses unknown model without network call', async () => {

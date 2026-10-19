@@ -121,7 +121,8 @@ class LolFlow {
         this.champ = { ...this.champ, matchup: { key: `${myChampion}|${laneGuess}`, ...mu } }; this.remember(); this.s.bus.emit('lol:champselect', this.champ);
       }).catch((e) => log.debug('matchup', e));
     }
-    if (myChampion && enemies.length && this.s.gemini.hasKey()) this.advise(key, myChampion, role, enemies).catch((e) => log.debug('advice', e));
+    // Team-Tipps: ein Gemini-Aufruf pro Gegner-Zusammenstellung (fast nie im Cache) → im Sparmodus aus.
+    if (myChampion && enemies.length && this.cfg().lolTeamAdvice === true && this.s.gemini.cloudAllowed('lol')) this.advise(key, myChampion, role, enemies).catch((e) => log.debug('advice', e));
   }
 
   async advise(key, myChampion, role, enemies) {
@@ -131,8 +132,8 @@ class LolFlow {
     if (!advice) {
       const goals = this.s.gaming.league.goals().map((g) => g.text).slice(0, 3);
       const st = this.s.gaming.league.stats(20).current;
-      advice = await this.s.gemini.generate({ feature: 'lol',
-        model: this.s.gemini.requireModel('fast'), temperature: 0.4,
+      advice = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true,
+        model: this.s.gemini.requireModel('fast'), temperature: 0.4, maxOut: 600,
         system: 'Du bist ein knapper League-of-Legends-Coach. Antworte auf Deutsch in max. 4 kurzen Stichpunkten (Markdown-Liste). Nur Champion-Matchup-Wissen, keine erfundenen Zahlen oder Patch-Details. Keine Aussagen über andere Spieler.',
         contents: [{ role: 'user', parts: [{ text: `Ich spiele ${myChampion}${role ? ' auf ' + role : ''}. Gegnerische Champions: ${enemies.join(', ')}.${st ? ` Meine Ø-Werte: ${st.csPerMin} CS/min, ${st.avgD} Tode.` : ''}${goals.length ? ' Meine Trainingsziele: ' + goals.join('; ') + '.' : ''} Worauf muss ich in diesem Spiel achten (Lane-Phase, gefährlichste Fähigkeiten, Item-Hinweis)?` }] }],
       });
@@ -159,9 +160,9 @@ class LolFlow {
       const K = await L.keyer();
       const ck = `lol:matchup:${patch || 'x'}:${K(mine)}:${K(vs)}:${role || ''}`;
       card = this.s.gaming.cache.get(ck)?.value || null;
-      if (!card && this.s.gemini.hasKey()) {
+      if (!card && this.s.gemini.cloudAllowed('lol')) {
         try {
-          card = await this.s.gemini.generate({ feature: 'lol', model: this.s.gemini.requireModel('fast'), temperature: 0.3, json: true, schema: MATCHUP_SCHEMA,
+          card = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true, model: this.s.gemini.requireModel('fast'), temperature: 0.3, json: true, schema: MATCHUP_SCHEMA, maxOut: 1500,
             system: 'Du bist ein erfahrener League-of-Legends-Coach. Deutsch, knapp, konkret. Nur allgemein bekanntes Champion- und Matchup-Wissen (Stärken je Spielphase, Fähigkeiten, typische Spielweise). Keine erfundenen Zahlen, Winrates oder Patch-Details. Bist du dir bei einem Punkt unsicher, lass ihn weg und setze confidence entsprechend.',
             contents: [{ role: 'user', parts: [{ text: `Matchup: Ich spiele ${mine}${role ? ' (' + role + ')' : ''} gegen ${vs}${patch ? ` (Patch ${patch})` : ''}. Beschreibe für jede Phase (Level 1–3, Level 6, Midgame, Lategame), wer im Vorteil ist (du/gegner/ausgeglichen) und was das für mich heißt – z. B. ob es okay ist, früh zu verlieren, oder ob ich früh Druck machen muss. Dazu Win-Condition, was ich vermeiden sollte, gefährlichste Fähigkeiten des Gegners und ein kurzer Item-/Runen-Hinweis.` }] }],
           });
@@ -255,9 +256,9 @@ class LolFlow {
       if (Math.abs(d6) >= 0.3) summary += `\n- Level 6: ${deep.levels.me[6]}. Min., ${deep.opponent?.champion || 'dein Gegner'} ${deep.levels.opp[6]}. Min. (${d6 > 0 ? d6 + ' Min. später' : Math.abs(d6) + ' Min. früher'})`;
     }
     let questions = [];
-    if (this.cfg().lolReviewAi !== false && this.s.gemini.hasKey()) {
+    if (this.cfg().lolReviewAi === true && this.s.gemini.cloudAllowed('lol')) {
       try {
-        const res = await this.s.gemini.generate({ feature: 'lol', json: true, schema: REVIEW_SCHEMA,
+        const res = await this.s.gemini.generate({ feature: 'lol', json: true, schema: REVIEW_SCHEMA, background: true, dedupe: true, maxOut: 1200,
           model: this.s.gemini.requireModel('fast'), temperature: 0.4,
           system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 4 Sätze. Nutze NUR die gelieferten Zahlen und Notizen, erfinde nichts. Wenn Notizen da sind, verknüpfe sie mit den Zahlen (z. B. Notiz „Jungler kam bot“ + Tod mit Jungler-Beteiligung).',
           contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort/beteiligten Gegnern/Gold in der Tasche, Lane-Differenzen, Objectives, gegnerischer Jungler, eigenes Jungling): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives, enemyJungle: deep.enemyJungle, jungle: deep.jungle, wardsBefore14: deep.wardsBefore14, firstBackMin: deep.firstBackMin })}\n` : ''}${notes.length ? `Notizen, die ich mir im Spiel gemacht habe (meine eigene Wahrnehmung): ${JSON.stringify(notes.map((n) => ({ min: n.gameSec != null ? Math.round(n.gameSec / 60) : null, text: n.text })))}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel (review). Stelle außerdem 2–3 kurze, konkrete Reflexionsfragen zu Momenten aus den Daten (z. B. zu einem bestimmten Tod mit Minute), die ich in einem Satz beantworten kann (questions).` }] }],

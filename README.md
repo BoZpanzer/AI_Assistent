@@ -39,8 +39,8 @@ src/
     preload.js             minimale Brücke (rpc, Events, Audio-Kanal) – kein Node im Renderer
     app-core.js            Composition Root (ohne Electron → vollständig testbar)
     core/                  DB + Migrationen, Einstellungen, Secrets (DPAPI), Validierung, Bestätigungen, Wiederholungsregeln, Logger
-    providers/             Gemini (Modellerkennung, Streaming, Embeddings, Recherche, PDF-Seitenanalyse), Google OAuth + Kalender-REST
-    agent/                 EIN Orchestrator + Werkzeugregister + gemeinsamer Systemprompt
+    providers/             Gemini (einzige Pforte `cloud()`: Modus, Budget, Zeitlimit, Wiederholungen), Ollama (lokal), Google OAuth + Kalender-REST
+    agent/                 EIN Orchestrator (+ zentrale Entscheidung: deterministisch / lokal / Gemini) + Werkzeugregister + Systemprompt
     voice/live.js          Gemini-Live-Sitzung (gleiche Werkzeuge & Historie wie der Chat)
     services/              tasks, calendar, brain, vectors, study (+ extract-Worker), web, conversations, notifications, system, gaming/*
     jobs/scheduler.js      ein kooperativer Scheduler statt vieler Hintergrundschleifen
@@ -95,7 +95,8 @@ scripts/                   Renderer-Build, Icon-Generator, Windows-Build (exe + 
 - **Renderer gehärtet:** Sandbox, contextIsolation, strikte CSP, Navigations- und Fenstersperre, nur Mikrofon-Berechtigung, IPC prüft den Absender.
 - **Werkzeuge:** Schema-Validierung, Bestätigung für kritische Aktionen, keine Systembefehle, keine Ausführung von Modell-Code.
 - **Dokumente** werden in einem isolierten Worker mit Zeitlimit geparst (pdf.js ohne eval/Fonts/XFA).
-- **Mikrofon:** Private Chats verwenden lokale Spracherkennung über ein installiertes whisper.cpp samt Modell. Uni-/Gaming-Chats können Gemini Live nach ausdrücklicher Zustimmung pro Sitzung nutzen. Das Wake-Word läuft lokal. Ein nicht mehr vorhandenes ausgewähltes Mikrofon wird automatisch durch das Standardgerät ersetzt.
+- **Mikrofon:** Alle Chats verwenden standardmäßig die lokale Spracherkennung (whisper.cpp, im Installer enthalten); das Audio verlässt den PC nicht. Gemini Live ist optional (Einstellungen → Gemini / KI → Cloud-Funktionen), fragt pro Sitzung um Zustimmung und hat Zeit- und Kostengrenzen. Das Wake-Word läuft lokal. Ein nicht mehr vorhandenes ausgewähltes Mikrofon wird automatisch durch das Standardgerät ersetzt.
+- **Cloud-KI, Kosten und Datenflüsse:** Modi „sparsam hybrid“ / „strikt lokal“, Tages-/Sitzungs-/Monatsbudget mit lokaler Sperre, Datenflusstabelle: **[docs/KOSTEN_UND_DATENSCHUTZ.md](docs/KOSTEN_UND_DATENSCHUTZ.md)**. Lokale Modelle beim Gaming: [docs/LOKALE_KI.md](docs/LOKALE_KI.md). Statistik-Definitionen: [docs/STATISTIKEN.md](docs/STATISTIKEN.md).
 
 ## Entwickeln, Testen, Bauen
 

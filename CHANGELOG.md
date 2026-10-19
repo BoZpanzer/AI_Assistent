@@ -2,7 +2,20 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 4.4.0 – Kostenkontrolle, lokale Verarbeitung, Statistiken
+
+- **Wichtig nach dem Update:** Gemini Live (Echtzeit-Audio) ist jetzt standardmäßig aus – das Mikrofon nutzt in allen Chats die lokale Spracherkennung. Automatische Hintergrund-KI (LoL-Team-Tipps, KI-Nachbesprechung, Patch-Notes-Kurzfassungen, Spielseiten gestalten) ist opt-in; per Knopf bleibt alles verfügbar. Budgets: 0,25 € pro Tag, 0,15 € pro Sitzung, 5 € pro Monat (Einstellungen → Gemini / KI).
+- **Gemini nur noch über eine zentrale Pforte:** Modus „sparsam hybrid“ oder „strikt lokal“, einzelne Cloud-Funktionen abschaltbar, Tages-, Sitzungs- und Monatsbudget mit lokaler Sperre (auch nach Neustart), max. 2 parallele Aufrufe, Zeitlimit, kein automatisches Durchprobieren anderer (teurerer) Modelle, abgelehnte Anfragen werden nicht wiederholt. Kosten pro Funktion und Modell in den Einstellungen (Schätzung, Preise vom 19.10.2026).
+- **Sprache lokal:** Spracherkennung mit dem mitgelieferten Whisper in allen Chats, Antworten mit der Windows-Stimme. Gemini Live ist aus (optional, mit Zeit- und Kostengrenze, sendet Audio nur bei Sprache).
+- **Statistiken:** Tarkov-Raids, Überlebensrate, Kills, K/D; LoL-Siege, Winrate und Konter aus eigenen Spielen – ohne KI berechnet, auch per Sprache.
+- **Datenschutz:** Bildschirmanalyse nur bei aktivem Spiel und bevorzugt nur das Spielfenster; Screenshots werden nicht mehr gespeichert; Daten verwalten und löschen; Anzeige von Cloud, Mikrofon und Aufnahme in der Kopfzeile.
+- **Gaming-PC schonen:** lokales Modell beim Spielen nur auf der CPU, mit wenigen Threads, sofort entladen; Whisper mit niedriger Priorität.
+- **Behoben:** Tarkov-Raid-Widget stürzte ab; „tarkov.dev antwortet mit 422“ jetzt verständlich, ohne Wiederholungsschleife und mit Diagnose; Bildschirmfragen landeten beim lokalen Modell (ohne Bildunterstützung).
+- **Außerdem enthalten (aus dem nie veröffentlichten 4.3.0):** automatische Mikrofon-Wiederherstellung, sauberes Stoppen der Sprachsitzung, verständlichere LoL-Analyse mit widerrufbarer Cloud-Freigabe, sichtbarer Tarkov-Kartenstatus mit „Erneut versuchen“.
+
 ## 4.3.0 – Zuverlässigere Sprache, klarere LoL-Analyse und Tarkov-Karten
+
+_Nicht einzeln veröffentlicht – vollständig in 4.4.0 enthalten._
 
 - **Mikrofon automatisch wiederherstellen:** Wenn das ausgewählte Mikrofon während Cloud-, Offline- oder Wake-Word-Aufnahme getrennt wird, versucht JARVIS eine erneute Verbindung; bei verschwundenem Gerät wird das Standardmikrofon verwendet. Verspätete Berechtigungen oder alte Audio-Nachrichten werden nach einem Stopp nicht weiterverarbeitet. Gelingt die Wiederherstellung nicht, zeigt JARVIS den Fehler, statt lautlos weiterzuwarten.
 - **Sprachsitzung sauber stoppen:** Ausstehende Audio-Wiedergabe wird bei Stopp oder Fehler verworfen. Die bereits eingeführten Datenschutzgrenzen bleiben erhalten: privates Audio bleibt lokal, Cloud-Audio erfordert ausdrückliche Zustimmung.

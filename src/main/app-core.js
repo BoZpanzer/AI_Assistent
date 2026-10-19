@@ -111,6 +111,7 @@ function createCore(opts) {
   s.gaming.designer = new GameDesigner(s);
   s.gaming.eftLogs = new EftLogs(s);
   s.gaming.eftRaid = new EftRaid(s);
+  s.gaming.stats = new (require('./services/gaming/stats').GameStats)(s);
   // Tarkov gestartet → TarkovTracker sofort abgleichen und Quest-Meldungen aus dem Spiel-Log mitlesen
   bus.on('game:running', ({ started = [], stopped = [] }) => {
     if (started.includes('eft')) { s.gaming.eftLogs.start().catch(() => {}); setTimeout(() => !s.stopped && s.scheduler?.runNow('tarkovtracker'), 8000); }
@@ -134,6 +135,14 @@ function createCore(opts) {
   s.orchestrator = new Orchestrator(s);
   s.voice = new LiveVoice(s);
   s.scheduler = new Scheduler(s);
+  s.localLLM.isGaming = () => !!s.gaming?.context?.state?.().gaming;
+  // Lokaler Modus / Gemini Live aus: laufende Cloud-Sitzungen und -Aufrufe sofort beenden (Backend, nicht nur UI)
+  bus.on('settings:changed', ({ keys }) => {
+    if (!keys.includes('cloud')) return;
+    const c = s.gemini.cloudCfg();
+    if (c.mode === 'local' || c.features?.voice !== true) { if (s.voice.isOpen()) s.voice.stop(); }
+    if (c.mode === 'local') s.gemini.abortAll();
+  });
 
   s.start = () => {
     s.gaming.context.restore();

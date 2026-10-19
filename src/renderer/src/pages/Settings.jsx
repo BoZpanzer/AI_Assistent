@@ -102,6 +102,12 @@ function Speech({ s }) {
       <Field label="Push-to-Talk-Taste (global)"><input class="inp" value={v.pushToTalkKey} onChange={(e) => upd({ voice: { pushToTalkKey: e.currentTarget.value } })} /></Field>
       <Field label="Unterbrechen erlauben (Barge-in)"><Toggle checked={v.bargeIn} onChange={(x) => upd({ voice: { bargeIn: x } })} /></Field>
       <Field label="Textantworten vorlesen (Windows-Stimme)"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
+      <Field label="Antworten auf Spracheingaben vorlesen" hint="lokale Windows-Stimme, keine Cloud"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
+      <Field label="CPU-Threads für Spracherkennung" hint="beim Spielen automatisch höchstens 2, mit niedriger Priorität"><Select value={String(v.whisperThreads || 4)} onChange={(x) => upd({ voice: { whisperThreads: Number(x) } })} options={['2', '4', '6', '8'].map((n) => ({ value: n, label: n }))} /></Field>
+      <div class="tiny muted">Gemini Live (Echtzeit-Audio an Google) nur, wenn unter „Gemini / KI → Cloud-Funktionen“ eingeschaltet:</div>
+      <Field label="Live: höchstens Minuten je Sitzung"><input class="inp" type="number" min="1" max="60" style={{ width: 80 }} value={v.cloudMaxMinutes ?? 10} onChange={(e) => upd({ voice: { cloudMaxMinutes: Number(e.currentTarget.value) || 10 } })} /></Field>
+      <Field label="Live: höchstens € je Sitzung (Schätzung)"><input class="inp" type="number" min="0.01" max="5" step="0.05" style={{ width: 80 }} value={v.cloudMaxEur ?? 0.1} onChange={(e) => upd({ voice: { cloudMaxEur: Number(e.currentTarget.value) || 0.1 } })} /></Field>
+      <Field label="Live: Audio nur bei Sprache senden" hint="Stille und leise Hintergrundgeräusche gehen nicht an Google"><Toggle checked={v.cloudVad !== false} onChange={(x) => upd({ voice: { cloudVad: x } })} /></Field>
       <Field label="Extended Thinking (falls verfügbar)" hint="gemini-3.8-live-extended-thinking: länger nachdenken, Werkzeuge asynchron"><Toggle checked={v.extendedThinking} onChange={(x) => upd({ voice: { extendedThinking: x } })} /></Field>
       <Field label="Verbindung trennen nach Stille"><Select value={String(v.idleDisconnectSeconds)} onChange={(x) => upd({ voice: { idleDisconnectSeconds: Number(x) } })} options={[['30', '30 Sekunden'], ['90', '90 Sekunden'], ['180', '3 Minuten'], ['600', '10 Minuten']].map(([value, label]) => ({ value, label }))} /></Field>
     </Panel>
@@ -123,6 +129,7 @@ function Ai({ s, secrets }) {
   const opt = (role) => [{ value: '', label: 'Automatisch' }, ...models.filter((m) => role === 'embedding' ? /embed/.test(m) : role === 'live' ? /live|native-audio/.test(m) : !/embed|tts|image|live|veo|lyria|imagen|aqa/.test(m)).map((m) => ({ value: m, label: m }))];
   return (
     <Panel icon={Sparkles} title="Gemini / KI" sub="KI-Modelle und Analyse-Tools">
+      <CloudControl s={s} />
       <Field label={<span><KeyRound size={12} /> API-Schlüssel</span>} hint={secrets['gemini.api_key'] ? 'gespeichert (verschlüsselt mit Windows-DPAPI)' : 'aistudio.google.com → API-Schlüssel'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['gemini.api_key'] ? '••••••••••••' : 'AIza…'} value={key} onInput={(e) => setKey(e.currentTarget.value)} /><button class="btn xs" disabled={busy} onClick={() => test(key)}>{busy ? <Spinner size={12} /> : 'Prüfen'}</button></div>
       </Field>
@@ -144,25 +151,69 @@ function Ai({ s, secrets }) {
 }
 
 function BudgetField({ s }) {
-  const [st, reload] = useRpc('ai.budget', {}, {});
+  const [st, reload] = useRpc('ai.budget', {}, { events: ['cloud:usage'] });
   const [cal, setCal] = useState('');
   const b = s.aiBudget || {};
   const eur = (v) => (v == null ? '–' : v.toFixed(2).replace('.', ',') + ' €');
-  const color = st?.level === 'brake' ? 'var(--red)' : st?.level === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--text-2)';
+  const color = st?.level === 'blocked' || st?.level === 'brake' ? 'var(--red)' : st?.level === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--text-2)';
+  const num = (key, label, hint, step = 0.05) => <Field label={label} hint={hint}><input class="inp" type="number" min="0" step={step} style={{ width: 90 }} value={b[key] ?? ''} onChange={(e) => upd({ aiBudget: { [key]: Math.max(0, Number(e.currentTarget.value) || 0) } }).then(reload)} /></Field>;
   return (
     <>
       <div class="hr" />
-      <Field label="Monatsbudget Gemini (€)" hint="Warnung ab 80 %, ab 95 % Sparstufe: Analysen übers schnelle Modell, Hintergrund-KI pausiert"><input class="inp" type="number" min="0" step="0.5" style={{ width: 90 }} value={b.monthlyEur ?? 5} onChange={(e) => upd({ aiBudget: { monthlyEur: Math.max(0, Number(e.currentTarget.value) || 0) } }).then(reload)} /></Field>
-      {st && <Field label="Diesen Monat (Schätzung)"><span class="small" style={{ color, textAlign: 'right' }}>{eur(st.eur)} von {eur(st.budget)} ({st.pct} %){st.projected != null ? ` · Hochrechnung ${eur(st.projected)}` : ''}{st.braking ? ' · Sparstufe aktiv' : ''}</span></Field>}
-      <Field label="Echten Stand aus AI Studio eintragen" hint={st?.calibrated ? `geeicht ${ago(st.calibratedAt)} – danach wird geschätzt` : 'macht die Schätzung genauer (AI Studio → Abrechnung)'}>
+      {num('dailyEur', 'Tagesbudget (€)', 'lokaler Kalendertag; danach sperrt JARVIS weitere Gemini-Aufrufe bis Mitternacht (0 = aus)')}
+      {num('sessionEur', 'Sitzungsbudget (€)', 'seit dem Start von JARVIS (0 = aus)')}
+      {num('monthlyEur', 'Monatsbudget (€)', 'Warnung ab 80 %, ab 95 % Sparstufe, bei 100 % Sperre', 0.5)}
+      <Field label="Bei Erreichen sperren" hint="lokale Sperre – keine garantierte Abrechnungsgrenze bei Google"><Toggle checked={b.hardStop !== false} onChange={(v) => upd({ aiBudget: { hardStop: v } }).then(reload)} /></Field>
+      {st && <Field label="Verbrauch (Schätzung)"><span class="small" style={{ color, textAlign: 'right' }}>heute {eur(st.today)} / {eur(st.dailyBudget)} · Sitzung {eur(st.session)} / {eur(st.sessionBudget)} · Monat {eur(st.eur)} / {eur(st.budget)}{st.projected != null ? ` · Hochrechnung ${eur(st.projected)}` : ''}{st.blocked ? ' · GESPERRT' : st.braking ? ' · Sparstufe' : ''}{st.inflight ? ` · ${st.inflight} laufend` : ''}</span></Field>}
+      {st && <div class="tiny muted">Geschätzt aus gemeldeten Token × offiziellen Listenpreisen (Stand {st.pricesAsOf}, USD) × Kurs {String(st.usdToEur).replace('.', ',')} €/$. Googles Abrechnung kann abweichen (Zeitzone, Rundung, Preisänderungen, Suche).</div>}
+      <Field label="Umrechnungskurs (€ pro $)" hint="Annahme – bitte gelegentlich anpassen"><input class="inp" type="number" min="0.5" max="1.5" step="0.01" style={{ width: 90 }} value={b.usdToEur ?? 0.86} onChange={(e) => upd({ aiBudget: { usdToEur: Number(e.currentTarget.value) || 0.86 } }).then(reload)} /></Field>
+      <Field label="Echten Stand aus AI Studio eintragen" hint={st?.calibrated ? `geeicht ${ago(st.calibratedAt)} – danach wird geschätzt` : 'macht die Monatsschätzung genauer (AI Studio → Abrechnung)'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" inputMode="decimal" placeholder="z. B. 0,69" value={cal} onInput={(e) => setCal(e.currentTarget.value)} /><button class="btn xs" disabled={!cal.trim()} onClick={async () => { const r = await guard(() => rpc('ai.calibrate', { eur: cal }), 'Stand übernommen'); if (r) { setCal(''); reload(); } }}>Übernehmen</button></div>
       </Field>
       <Field label="Sparstufe bei 95 % automatisch"><Toggle checked={b.brake !== false} onChange={(v) => upd({ aiBudget: { brake: v } }).then(reload)} /></Field>
+      <CostReport />
     </>
   );
 }
 
-const FEATURE_LABEL = { chat: 'Chat', voice: 'Sprache', research: 'Webrecherche', vision: 'Bildschirm', study: 'Seiten lesen', lol: 'LoL-Tipps', embeddings: 'Suche (Embeddings)', other: 'Sonstiges' };
+/** Modus lokal/hybrid und einzelne Cloud-Funktionen – durchgesetzt im Hauptprozess (Gemini-Provider). */
+function CloudControl({ s }) {
+  const [st, reload] = useRpc('cloud.status', {}, { events: ['settings:changed', 'cloud:state', 'cloud:usage'] });
+  const c = s.cloud || {};
+  const labels = st?.labels || {};
+  const local = c.mode === 'local';
+  return (
+    <>
+      <Field label="Modus" hint={local ? 'Keine externen KI-Aufrufe. Uni-/Gaming-Chats nutzen das lokale Modell (falls eingerichtet).' : 'Gemini nur in Uni-/Gaming-Chats und für eingeschaltete Funktionen – private Chats bleiben lokal.'}>
+        <Select value={c.mode || 'hybrid'} onChange={(mode) => guard(() => rpc('cloud.setMode', { mode })).then(reload)} options={[{ value: 'hybrid', label: 'Sparsam hybrid (Gemini nur wo nötig)' }, { value: 'local', label: 'Strikt lokal (keine Cloud-KI)' }]} />
+      </Field>
+      {!local && <details class="mt">
+        <summary class="small">Cloud-Funktionen einzeln ({Object.keys(labels).filter((k) => !['meta', 'diagnostics'].includes(k) && (k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false)).length} von {Object.keys(labels).length - 2} an)</summary>
+        {Object.entries(labels).filter(([k]) => !['meta', 'diagnostics'].includes(k)).map(([k, label]) => (
+          <Field label={label} hint={k === 'voice' ? 'Echtzeit-Audio an Google, teuer (Audio-Eingabe 3 $/1 Mio. Token). Standard: lokale Spracheingabe.' : undefined}><Toggle checked={k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false} onChange={(v) => upd({ cloud: { features: { [k]: v } } }).then(reload)} /></Field>
+        ))}
+      </details>}
+      {st && <div class="tiny muted mt">{local ? 'Cloud-KI aus.' : `Cloud-KI an · ${st.active || 0} Aufruf(e) laufen gerade`}</div>}
+    </>
+  );
+}
+
+function CostReport() {
+  const [rows] = useRpc('ai.report', { days: 7 }, { events: ['cloud:usage'] });
+  if (!rows?.length) return null;
+  const eur = (v) => v.toFixed(3).replace('.', ',') + ' €';
+  return (
+    <details class="mt">
+      <summary class="small">Kosten letzte 7 Tage pro Funktion und Modell (Schätzung)</summary>
+      <table class="small" style={{ width: '100%', marginTop: 6, borderCollapse: 'collapse' }}>
+        <thead><tr class="muted tiny"><th style={{ textAlign: 'left' }}>Funktion</th><th style={{ textAlign: 'left' }}>Modell</th><th style={{ textAlign: 'right' }}>Aufrufe</th><th style={{ textAlign: 'right' }}>€</th></tr></thead>
+        <tbody>{rows.map((r) => <tr><td>{FEATURE_LABEL[r.feature] || r.feature}</td><td class="tiny">{r.model}</td><td style={{ textAlign: 'right' }}>{r.requests}{r.failed ? ` (${r.failed} abgelehnt)` : ''}</td><td style={{ textAlign: 'right' }}>{eur(r.eur)}</td></tr>)}</tbody>
+      </table>
+    </details>
+  );
+}
+
+const FEATURE_LABEL = { chat: 'Chat', voice: 'Gemini Live', research: 'Webrecherche', vision: 'Bildschirm', study: 'Seiten lesen', lol: 'LoL-Analysen', news: 'Patch-Notes', games: 'Spielseiten', wikilist: 'Checklisten', diagnostics: 'Verbindungstest', embeddings: 'Suche (Embeddings)', other: 'Sonstiges' };
 const kTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + ' Mio' : Math.round(n / 1000) + 'k');
 function UsageTable() {
   const [rep] = useRpc('gemini.usageReport', { days: 7 }, {});
@@ -494,6 +545,23 @@ function Desktop({ s }) {
   );
 }
 
+function PrivacyData() {
+  const [d, reload] = useRpc('privacy.summary', {}, {});
+  const kb = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round((b || 0) / 1024) + ' KB');
+  const clear = async (what, label) => { if (await ask(`${label} wirklich löschen?`, '', { confirmOnly: true, okLabel: 'Löschen' })) { await guard(() => rpc('privacy.clear', { what }), label + ' gelöscht'); reload(); } };
+  if (!d) return null;
+  return (
+    <details class="mt">
+      <summary class="small">Gespeicherte Daten verwalten</summary>
+      <div class="conn-row"><span>Screenshots ({d.screenshots.files} Dateien, {kb(d.screenshots.bytes)})</span><button class="btn xs" onClick={() => clear('screenshots', 'Screenshots')}>Löschen</button></div>
+      <div class="conn-row"><span>Diagnose-Protokolle ({kb(d.logs.bytes)}, ohne Schlüssel)</span><button class="btn xs" onClick={() => clear('logs', 'Protokolle')}>Leeren</button></div>
+      <div class="conn-row"><span>Spieldaten-Cache ({d.gameCache.entries} Einträge, öffentliche Daten)</span><button class="btn xs" onClick={() => clear('gameCache', 'Spieldaten-Cache')}>Löschen</button></div>
+      <div class="conn-row"><span>Cloud-Verbrauchsprotokoll ({d.aiLedger.entries}; {d.aiLedger.note})</span><button class="btn xs" onClick={() => clear('aiLedger', 'Ältere Verbrauchseinträge')}>Ältere löschen</button></div>
+      <div class="tiny muted">Gespräche ({d.conversations.count}) löschst du im Chat einzeln. Audio wird nie gespeichert.</div>
+    </details>
+  );
+}
+
 function Security({ s }) {
   const [status] = useRpc('system.status', {}, {});
   return (
@@ -506,6 +574,9 @@ function Security({ s }) {
       <div class="conn-row"><span>Dateizugriff nur auf von dir gewählte Dateien/Ordner</span><span class="st"><StatusDot state="ok" />immer</span></div>
       <Field label="Ruhezeiten (keine Pop-ups)"><Toggle checked={s.quietHours.enabled} onChange={(v) => upd({ quietHours: { enabled: v } })} /></Field>
       {s.quietHours.enabled && <Field label="Von – bis"><div class="row gap-s"><input class="inp" type="time" value={s.quietHours.from} onChange={(e) => upd({ quietHours: { from: e.currentTarget.value } })} /><input class="inp" type="time" value={s.quietHours.to} onChange={(e) => upd({ quietHours: { to: e.currentTarget.value } })} /></div></Field>}
+      <Field label="Bildschirmanalyse: nur das Spielfenster aufnehmen" hint="sonst der ganze Bildschirm unter dem Mauszeiger"><Toggle checked={s.screen?.preferGameWindow !== false} onChange={(v) => upd({ screen: { preferGameWindow: v } })} /></Field>
+      <Field label="Screenshots nach der Analyse behalten" hint="Standard aus: Bild wird nur für die eine Frage verwendet"><Toggle checked={s.screen?.keepScreenshots === true} onChange={(v) => upd({ screen: { keepScreenshots: v } })} /></Field>
+      <PrivacyData />
       <div class="row mt gap-s"><button class="btn xs" onClick={() => rpc('shell.openPath', { which: 'logs' })}>Protokolle öffnen</button></div>
     </Panel>
   );
@@ -715,6 +786,11 @@ export function LocalAI({ s }) {
       {recommended && <button class="btn sm" disabled={loading} onClick={() => upd({ localLLM: { model: recommended.model } })}>Empfehlung übernehmen</button>}
     </div>
     {error && <p class="tiny" role="alert">{error}</p>}
+    {status?.exposure && <div class="notice warn small mt" role="alert">{status.exposure}</div>}
+    <Field label="Während ein Spiel läuft" hint="Lokale KI konkurriert mit dem Spiel um CPU, RAM und Grafikspeicher">
+      <Select value={s.localLLM?.whileGaming || 'cpu'} onChange={(whileGaming) => upd({ localLLM: { whileGaming } })} options={[{ value: 'cpu', label: 'Nur CPU, 2 Threads, sofort entladen (empfohlen)' }, { value: 'pause', label: 'Hintergrundaufgaben pausieren' }, { value: 'normal', label: 'Keine Einschränkung' }]} />
+    </Field>
+    <Field label="Modell im Speicher halten" hint="danach entlädt Ollama das Modell wieder"><Select value={s.localLLM?.keepAlive || '2m'} onChange={(keepAlive) => upd({ localLLM: { keepAlive } })} options={[['30s', '30 Sekunden'], ['2m', '2 Minuten'], ['10m', '10 Minuten']].map(([value, label]) => ({ value, label }))} /></Field>
     <p class="tiny muted mt">Die 27B-Stufe benötigt viel Arbeitsspeicher und kann langsam sein. Modelle und Kontext benötigen zusätzlich RAM/VRAM. Ollama muss zunächst separat installiert sein; Downloads können mehrere GB groß sein. Private Daten bleiben lokal, sofern du keine separate externe Weitergabe erlaubst.</p>
   </Panel>;
 }

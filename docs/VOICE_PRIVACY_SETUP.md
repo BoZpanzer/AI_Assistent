@@ -1,4 +1,6 @@
-# Sprache in JARVIS: Private offline, Uni/Gaming auf Wunsch in Gemini Live
+# Sprache in JARVIS: lokal in allen Chats, Gemini Live nur auf Wunsch
+
+> **Aktueller Stand (ab Branch `fix/kalibrierung-kosten-lokal`):** Die lokale Spracherkennung gilt jetzt für **alle** Chats, nicht nur private. Nur der erkannte Text folgt dem normalen Weg des Chats (Uni/Gaming: Gemini, sofern erlaubt). Gemini Live ist standardmäßig aus, mit 10 min / 0,10 € Grenze je Sitzung, und sendet Audio nur bei lokal erkannter Sprache. Die Aufnahme endet nach einer Sprechpause automatisch. Details: [KOSTEN_UND_DATENSCHUTZ.md](KOSTEN_UND_DATENSCHUTZ.md).
 
 ## Warum das Mikrofon vorher blockiert war
 

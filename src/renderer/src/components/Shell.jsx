@@ -65,6 +65,31 @@ export function Sidebar() {
   );
 }
 
+/**
+ * Sichtbar, was gerade aktiv ist: Cloud-KI (Modus, laufende Aufrufe, heutige Schätzung), Mikrofon (lokal/Cloud)
+ * und die letzte Bildschirmaufnahme. Klick auf Cloud pausiert sie (strikt lokal) bzw. setzt sie fort.
+ */
+function PrivacyStatus() {
+  const settings = useStore((s) => s.settings);
+  const voice = useStore((s) => s.voice);
+  const [st, reload] = useRpc('cloud.status', {}, { events: ['cloud:state', 'cloud:usage', 'settings:changed'] });
+  const [shot, setShot] = useState(null);
+  useEvent('privacy:capture', (d) => { setShot(d); setTimeout(() => setShot(null), 8000); });
+  const local = (settings?.cloud?.mode || 'hybrid') === 'local';
+  const eur = (v) => (v || 0).toFixed(2).replace('.', ',') + ' €';
+  const mic = voice === 'recording-local' || voice === 'transcribing-local' ? 'Mikro lokal' : ['listening', 'speaking', 'thinking', 'connecting'].includes(voice) ? 'Mikro → Gemini Live' : null;
+  const toggle = () => guard(() => rpc('cloud.setMode', { mode: local ? 'hybrid' : 'local' }), local ? 'Cloud-KI wieder an (sparsam hybrid)' : 'Cloud-KI pausiert – alles lokal').then(reload);
+  return (
+    <div class="row gap-s tiny" style={{ marginLeft: 12, alignItems: 'center' }}>
+      <span class={`chip ${local ? '' : 'active'}`} style={{ cursor: 'pointer' }} title="Klicken: Cloud-KI pausieren / fortsetzen" onClick={toggle}>
+        {local ? 'Cloud aus' : st?.budget?.blocked ? 'Cloud gesperrt (Budget)' : `Cloud${st?.active ? ' · ' + st.active + ' läuft' : ''} · heute ${eur(st?.budget?.today)}`}
+      </span>
+      {mic && <span class="chip active" title="Mikrofon ist aktiv">{mic}</span>}
+      {shot && <span class="chip active" title="Bildschirmaufnahme für eine Frage">{shot.scope === 'window' ? 'Spielfenster aufgenommen' : 'Bildschirm aufgenommen'}</span>}
+    </div>
+  );
+}
+
 export function Header() {
   const secrets = useStore((s) => s.secrets);
   const settings = useStore((s) => s.settings);
@@ -96,6 +121,7 @@ export function Header() {
         <span class={`dot ${online ? '' : 'off'}`} />
         <div><div class="t1">{online ? 'ONLINE' : 'EINRICHTUNG'}</div><div class="t2">{online ? 'System aktiv' : 'Gemini nicht verbunden'}</div></div>
       </div>
+      <PrivacyStatus />
       <div class="search">
         <Search size={18} />
         <input placeholder="Suche…" value={q} onInput={(e) => setQ(e.currentTarget.value)}

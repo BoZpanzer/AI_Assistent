@@ -90,6 +90,7 @@ test('Patch-Notes-Wächter: Steam-News, erster Abgleich still, neuer Patch → M
   const { core, cleanup, fake } = tempCore({ fetch, script: [{ text: summary }] });
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
+    core.settings.update({ gaming: { patchSummaries: true } }); // automatische KI-Kurzfassungen sind im Sparmodus opt-in
     const N = core.gaming.news;
     // Rust zuletzt gespielt → beobachtet; Spiele ohne Steam-ID und The Isle nicht
     core.db.run("INSERT INTO game_sessions(id,game,start_at,end_at,last_seen) VALUES('s1','rust',?,?,?)", iso(86400000 + 3600000), iso(86400000), iso(86400000));

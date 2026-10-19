@@ -275,7 +275,7 @@ test('Performance: Vektorsuche über 20.000 Einträge < 100 ms, FTS-Suche < 30 m
   cleanup();
 });
 
-test('Gemini-Kontingent: Ausweichmodell bei 429, Recherche notfalls ohne Live-Suche, Wiki-Fallback', async () => {
+test('Gemini-Kontingent 429 (Tag): kein Ausweichen auf andere Modelle, keine stille Recherche ohne Suche, Wiki-Fallback', async () => {
   const { fakeSdk } = require('./helpers');
   const fk = fakeSdk([]);
   const calls = [];
@@ -283,25 +283,19 @@ test('Gemini-Kontingent: Ausweichmodell bei 429, Recherche notfalls ohne Live-Su
   class G extends fk.sdk.GoogleGenAI {
     constructor(o) {
       super(o);
-      this.models.generateContent = async (req) => {
-        calls.push({ model: req.model, search: !!req.config?.tools?.some((t) => t.googleSearch) });
-        if (req.model === 'gemini-3.8-flash') throw quota();
-        if (req.config?.tools?.some((t) => t.googleSearch)) throw quota(); // Suche überall erschöpft
-        return { text: 'Antwort aus Modellwissen', candidates: [{}] };
-      };
+      this.models.generateContent = async (req) => { calls.push({ model: req.model, search: !!req.config?.tools?.some((t) => t.googleSearch) }); throw quota(); };
     }
   }
   const { core, cleanup } = tempCore({ genaiSdk: { GoogleGenAI: G } });
   core.secrets.set('gemini.api_key', 'x');
   core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.8-flash-lite', 'gemini-3.8-flash-image'] });
-  const t = await core.gemini.generate({ feature: 'games', contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
-  assert.equal(t, 'Antwort aus Modellwissen');
-  assert.deepEqual(calls.map((c) => c.model).slice(0, 2), ['gemini-3.8-flash', 'gemini-3.5-flash'], 'nächstes Flash-Modell, kein Bild-Modell');
+  await assert.rejects(core.gemini.generate({ feature: 'games', contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }), /429|quota/);
+  assert.deepEqual(calls.map((c) => c.model), ['gemini-3.8-flash'], 'genau ein Aufruf, kein anderes (teureres) Modell');
   calls.length = 0;
-  const r = await core.gemini.research('Beste Strategie für Diamanten');
-  assert.equal(r.grounded, false);
-  assert.match(r.text, /Ohne Live-Websuche/);
-  assert.ok(!calls.some((c) => /image/.test(c.model)));
+  await assert.rejects(core.gemini.research('Beste Strategie für Diamanten'), /429|quota/);
+  assert.equal(calls.length, 1); assert.equal(calls[0].search, true, 'keine automatische zweite Anfrage ohne Suche');
+  // abgelehnte Aufrufe kosten nichts
+  assert.equal(core.costGuard.status().today, 0);
   const { friendlyError } = require('../src/main/providers/gemini');
   assert.match(friendlyError(quota()), /Tageskontingent/);
   // Wiki: deutscher Begriff → deutsches Wiki leer → Fallback-Wiki
@@ -572,7 +566,7 @@ test('Spiel-Kits: jedes gespielte Steam-Spiel hat passende Fragen, Layout aus fe
   cleanup();
 });
 
-test('Gemini überlastet (503): erneut versuchen, dann anderes Gemini-Modell; lesbare Meldung; „Nochmal versuchen“', async () => {
+test('Gemini überlastet (503): genau eine Wiederholung mit demselben Modell, kein Modellwechsel; lesbare Meldung; „Nochmal versuchen“', async () => {
   const { friendlyError, isOverloaded } = require('../src/main/providers/gemini');
   const raw = new Error(JSON.stringify({ error: { message: JSON.stringify({ error: { code: 503, message: 'This model is currently experiencing high demand.', status: 'UNAVAILABLE' } }), code: 503, status: 'Service Unavailable' } }));
   assert.equal(isOverloaded(raw), true);
@@ -580,18 +574,18 @@ test('Gemini überlastet (503): erneut versuchen, dann anderes Gemini-Modell; le
   const { core, cleanup } = tempCore();
   core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.1-pro-preview', 'gemini-embedding-2'] });
   const g = core.gemini; const sleep = async () => {};
-  // 2× überlastet, dann klappt es mit demselben Modell
   let calls = [];
   let n = 0;
-  assert.equal(await g.withFallback('gemini-3.8-flash', async (m) => { calls.push(m); if (n++ < 2) throw raw; return 'ok'; }, { sleep }), 'ok');
-  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash']);
-  // dauerhaft überlastet → anderes Cloud-Modell (kein lokales Modell)
+  // 1× überlastet → eine Wiederholung mit demselben Modell
+  assert.equal(await g.withRetry('gemini-3.8-flash', async (m) => { calls.push(m); if (n++ < 1) throw raw; return 'ok'; }, { sleep }), 'ok');
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+  // dauerhaft überlastet → Fehler nach 2 Versuchen, kein anderes Modell
   calls = [];
-  const r = await g.withFallback('gemini-3.8-flash', async (m) => { calls.push(m); if (m === 'gemini-3.8-flash') throw raw; return m; }, { sleep });
-  assert.equal(r, 'gemini-3.8-flash-lite');
+  await assert.rejects(g.withRetry('gemini-3.8-flash', async (m) => { calls.push(m); throw raw; }, { sleep }));
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
   // Schlüssel ungültig → sofort Fehler, keine Wiederholung
   calls = [];
-  await assert.rejects(g.withFallback('gemini-3.8-flash', async (m) => { calls.push(m); throw new Error('API key not valid'); }, { sleep }));
+  await assert.rejects(g.withRetry('gemini-3.8-flash', async (m) => { calls.push(m); throw new Error('API key not valid'); }, { sleep }));
   assert.equal(calls.length, 1);
   // Chat: Fehler → Blase mit Hinweis, „Nochmal versuchen“ erzeugt die Antwort in derselben Blase
   core.secrets.set('gemini.api_key', 'AIzaTEST'); core.settings.update({ models: { fast: 'gemini-3.8-flash' } });
@@ -610,30 +604,37 @@ test('Gemini überlastet (503): erneut versuchen, dann anderes Gemini-Modell; le
   cleanup();
 });
 
-test('Gemini 429: „limit 0“-Modell wird übersprungen, Minutenlimit → abwarten statt Fehler, Meldung nennt das Limit', async () => {
+test('Gemini 429: „limit 0“ und Tageslimit sofort melden, kurzes Minutenlimit einmal abwarten, langes nicht', async () => {
   const { quotaInfo, friendlyError } = require('../src/main/providers/gemini');
   const err = (txt) => Object.assign(new Error(txt), { status: 429 });
   const zero = () => err('{"error":{"code":429,"message":"You exceeded your current quota. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro","status":"RESOURCE_EXHAUSTED"}}');
-  const minute = () => err('{"error":{"code":429,"message":"Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10, model: gemini-3.8-flash. Please retry in 21.5s.","status":"RESOURCE_EXHAUSTED","details":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}}');
+  const minute = (s = '21.5') => err(`{"error":{"code":429,"message":"Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10, model: gemini-3.8-flash. Please retry in ${s}s.","status":"RESOURCE_EXHAUSTED","details":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}}`);
   assert.equal(quotaInfo(zero()).limit, 0);
   assert.equal(quotaInfo(minute()).perDay, false); assert.equal(quotaInfo(minute()).limit, 10);
   assert.match(friendlyError(minute()), /Anfragen pro Minute \(Limit 10\)/);
+  assert.match(friendlyError(minute()), /nicht automatisch auf andere/);
   const { core, cleanup } = tempCore();
   const g = core.gemini; const waits = [];
   g.sleep = async (ms) => { waits.push(ms); };
   core.settings.update({ availableModels: ['gemini-3.1-pro', 'gemini-3.8-flash', 'gemini-3.8-flash-lite'], models: { reasoning: '', fast: '' } });
+  assert.equal(g.model('reasoning'), g.model('fast'), 'Sparmodus: kein automatisches Pro');
+  core.settings.update({ aiCostMode: 'max' });
   assert.equal(g.model('reasoning'), 'gemini-3.1-pro');
-  const r = await g.withFallback('gemini-3.1-pro', async (m) => { if (m === 'gemini-3.1-pro') throw zero(); return m; });
-  assert.equal(r, 'gemini-3.8-flash');
-  assert.notEqual(g.model('reasoning'), 'gemini-3.1-pro', 'Pro wird danach direkt übersprungen');
-  // Minutenlimit überall → einmal warten (mit Hinweis), dann klappt es
-  let round = 0; const notices = [];
-  const out = await g.withFallback('gemini-3.8-flash', async (m) => { if (round < 2) { round++; throw minute(); } return 'ok:' + m; }, { onWait: (ms) => notices.push(ms) });
-  assert.match(out, /^ok:/); assert.equal(notices.length, 1); assert.ok(notices[0] >= 20000 && notices[0] <= 65000);
+  let tried = [];
+  await assert.rejects(g.withRetry('gemini-3.1-pro', async (m) => { tried.push(m); throw zero(); }), /limit: 0/);
+  assert.deepEqual(tried, ['gemini-3.1-pro'], 'kein Durchprobieren anderer Modelle');
+  // kurzes Minutenlimit (≤ 10 s) → einmal warten, dann klappt es
+  const notices = []; let round = 0;
+  const out = await g.withRetry('gemini-3.8-flash', async (m) => { if (round++ < 1) throw minute('4'); return 'ok:' + m; }, { onWait: (ms) => notices.push(ms) });
+  assert.equal(out, 'ok:gemini-3.8-flash'); assert.equal(notices.length, 1); assert.ok(notices[0] <= 10000);
+  // langes Minutenlimit (21 s) → kein Warten, sofort Fehler
+  round = 0;
+  await assert.rejects(g.withRetry('gemini-3.8-flash', async () => { round++; throw minute(); }));
+  assert.equal(round, 1);
   cleanup();
 });
 
-test('Gemini 402 (Guthaben leer): sofort klare Meldung, keine Wiederholungen; Omni-Modelle nie als Ausweichmodell', async () => {
+test('Gemini 402 (Guthaben leer): sofort klare Meldung, keine Wiederholungen, keine anderen Modelle', async () => {
   const { friendlyError, isQuota, isPayment } = require('../src/main/providers/gemini');
   const e402 = Object.assign(new Error('{"error":{"code":402,"message":"Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.","status":"PAYMENT_REQUIRED"}}'), { status: 402 });
   assert.equal(isPayment(e402), true); assert.equal(isQuota(e402), false);
@@ -641,13 +642,9 @@ test('Gemini 402 (Guthaben leer): sofort klare Meldung, keine Wiederholungen; Om
   const { core, cleanup } = tempCore();
   core.gemini.sleep = async () => {};
   core.settings.update({ availableModels: ['gemini-3.8-flash', 'gemini-omni-flash', 'gemini-omni-1.1-flash', 'gemini-3.7-flash'] });
-  let calls = 0;
-  await assert.rejects(core.gemini.withFallback('gemini-3.8-flash', async () => { calls++; throw e402; }), /402/);
-  assert.equal(calls, 1);
   const tried = [];
-  const quota = Object.assign(new Error('{"error":{"code":429,"message":"Quota exceeded, limit: 5, model: x. Please retry in 30s.","status":"RESOURCE_EXHAUSTED"}}'), { status: 429 });
-  await core.gemini.withFallback('gemini-3.8-flash', async (m) => { tried.push(m); if (m === 'gemini-3.8-flash') throw quota; return m; });
-  assert.ok(!tried.some((m) => /omni/.test(m)), 'kein Omni-Modell: ' + tried.join(','));
+  await assert.rejects(core.gemini.withRetry('gemini-3.8-flash', async (m) => { tried.push(m); throw e402; }), /402/);
+  assert.deepEqual(tried, ['gemini-3.8-flash']);
   cleanup();
 });
 
@@ -1254,29 +1251,37 @@ test('Tarkov Item-Scanner: Ausschnitt → lokale KI erkennt Item → Preise, Wer
   } finally { cleanup(); }
 });
 
-test('„Was ist das?“ in Tarkov: lokale Bilder, Hinweis nicht im Verlauf, externe Werkzeuge gesperrt', async () => {
+test('„Was ist das?" in Tarkov: nur der Mauszeiger-Ausschnitt geht an Gemini, im Gaming-Chat; ohne aktives Spiel keine Aufnahme', async () => {
   const items = { data: { items: [{ id: 'gpu', name: 'Graphikkarte', shortName: 'GPU', width: 2, height: 1, avg24hPrice: 400000, lastLowPrice: 390000, sellFor: [{ vendor: { name: 'Therapeut' }, priceRUB: 250000 }] }] } };
   const script = [{ calls: [{ name: 'tarkov_item_value', args: { item: 'Graphikkarte' } }] }, { text: 'Graphikkarte: Flohmarkt 400.000 ₽, behalten für Gunsmith.' }];
-  const { core, fake, cleanup } = tempCore({ local: true, script, fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : { data: { tasks: [], hideoutStations: [] } }), { headers: { 'Content-Type': 'application/json' } }) });
+  const { core, fake, cleanup } = tempCore({ script, fetch: async (_u, init) => new Response(JSON.stringify(/items\(name/.test(String(init?.body)) ? items : { data: { tasks: [], hideoutStations: [] } }), { headers: { 'Content-Type': 'application/json' } }) });
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
     await core.gemini.discover();
-    core.platform.captureScreen = async () => ({ data: Buffer.from('FULL'), width: 1920, height: 1080 });
+    let fullShots = 0;
+    core.platform.captureScreen = async () => { fullShots++; return { data: Buffer.from('FULL'), width: 1920, height: 1080, scope: 'screen' }; };
     core.platform.captureAroundCursor = async () => ({ data: Buffer.from('CROP'), width: 640, height: 420 });
+    // ohne aktives Spiel: keine Aufnahme, keine Cloud
+    await assert.rejects(core.screen.hotkeyQuestion(), /aktiv/);
+    assert.equal(fullShots, 0); assert.equal(fake.requests.length, 0);
     core.gaming.context.running = ['eft'];
-    const scans = []; core.bus.on('eft:scan', (d) => scans.push(d));
+    core.gaming.context.setActive('eft');
+    const priv = core.conversations.create('Privat', 'private');
     const msg = await core.screen.hotkeyQuestion();
     assert.match(msg.content, /Graphikkarte/);
     const parts = fake.requests[0].contents.find((c) => c.role === 'user' && c.parts.some((p) => p.inlineData)).parts;
     const imgs = parts.filter((p) => p.inlineData).map((p) => Buffer.from(p.inlineData.data, 'base64').toString());
-    assert.deepEqual(imgs, ['CROP', 'FULL'], 'Ausschnitt zuerst');
+    assert.deepEqual(imgs, ['CROP'], 'nur der Ausschnitt, kein ganzer Bildschirm');
+    assert.equal(fullShots, 0);
     assert.ok(parts.some((p) => /tarkov_item_value/.test(p.text || '')), 'Hinweis in der Anfrage');
-    const stored = core.conversations.messages(msg.conversationId || core.conversations.current().id, { limit: 10 }).find((m) => m.role === 'user');
+    const conv = core.conversations.list().find((c) => c.privacy === 'gaming');
+    assert.ok(conv, 'eigener Gaming-Chat');
+    assert.equal(core.conversations.get(priv.id).privacy, 'private');
+    const stored = core.conversations.messages(conv.id, { limit: 10 }).find((m) => m.role === 'user');
     assert.doesNotMatch(stored.content, /tarkov_item_value/, 'Hinweis nicht im gespeicherten Verlauf');
-    assert.equal(scans.length, 0, 'privater Screenshot darf keine externen Tools starten');
-    assert.ok(fake.requests.every(r => r.local));
-    const denied = fake.requests[1].contents.flatMap(c => c.parts).find(p => p.functionResponse);
-    assert.match(denied.functionResponse.response.error, /Private/);
+    const tool = fake.requests[1].contents.flatMap(c => c.parts).find(p => p.functionResponse);
+    assert.equal(tool.functionResponse.name, 'tarkov_item_value'); assert.ok(!tool.functionResponse.response.error);
+    // Screenshots werden standardmäßig nicht gespeichert
+    assert.equal(core.db.get('SELECT COUNT(*) AS n FROM screenshots').n, 0);
   } finally { core.gaming.context.running = []; cleanup(); }
 });
-

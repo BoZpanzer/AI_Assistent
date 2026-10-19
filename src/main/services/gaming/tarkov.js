@@ -6,6 +6,7 @@
  */
 const API = 'https://api.tarkov.dev/graphql';
 const SOURCE = 'tarkov.dev (Community-API)';
+const log = require('../../core/logger').scope('tarkov');
 const DAY = 86400000;
 
 /** Wert eines Items: Flohmarkt-Ø 24 h, sonst bester Händler-Ankauf; Kosten: günstigster Einkauf (Flohmarkt/Händler). */
@@ -20,15 +21,52 @@ function profitOf(c, durationSec) {
   return { id: c.id, station: c.station?.name || null, stationId: c.station?.normalizedName || null, level: c.level, duration: durationSec, reward: (c.rewardItems || []).map((x) => `${x.count}× ${x.item?.name}`).join(', '), rewardValue: Math.round(reward), cost: Math.round(cost), inputs: costs, profit, perHour: profit != null && durationSec ? Math.round(profit / (durationSec / 3600)) : null };
 }
 
-class Tarkov {
-  constructor(ctx) { this.fetch = ctx.fetch; this.cache = ctx.gameCache; }
+/** Short, secret-free description of a failed tarkov.dev response for the diagnostic log. */
+function responseDiag(r, body) {
+  const h = (k) => { try { return r.headers?.get?.(k) || null; } catch { return null; } };
+  return { status: r.status, type: h('content-type'), ray: h('cf-ray'), server: h('server'), body: String(body || '').replace(/\s+/g, ' ').slice(0, 300) };
+}
 
+/** Error for a rejected tarkov.dev request: readable message for the UI, details stay in the log. */
+function apiError(status) {
+  const e = new Error(status === 429
+    ? 'tarkov.dev begrenzt gerade die Anfragen (429). JARVIS versucht es später automatisch erneut.'
+    : status >= 500
+      ? `tarkov.dev ist gerade nicht erreichbar (HTTP ${status}). Gespeicherte Daten werden weiter genutzt.`
+      : `tarkov.dev hat die Anfrage abgelehnt (HTTP ${status}). Kartenbild, Kalibrierung und eigene Marker funktionieren weiter; Exits und Questpunkte fehlen, bis tarkov.dev wieder antwortet. Details: Einstellungen → Diagnose → Protokoll.`);
+  e.status = status; e.permanent = status >= 400 && status < 500 && status !== 429;
+  return e;
+}
+
+class Tarkov {
+  constructor(ctx) { this.fetch = ctx.fetch; this.cache = ctx.gameCache; this.rejected = new Map(); this.inflight = new Map(); }
+
+  /**
+   * GraphQL request. Identical concurrent queries share one request. A query that tarkov.dev rejected
+   * with a 4xx status is not re-sent for 15 minutes (no request loop on permanent errors).
+   */
   async gql(query, variables = {}) {
-    const r = await this.fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query, variables }) });
-    if (!r.ok) throw new Error('tarkov.dev antwortet mit ' + r.status);
-    const j = await r.json();
-    if (j.errors?.length && !j.data) throw new Error('tarkov.dev: ' + j.errors[0].message);
-    return j.data;
+    const key = query + '\n' + JSON.stringify(variables);
+    const blocked = this.rejected.get(key);
+    if (blocked && blocked.until > Date.now()) throw apiError(blocked.status);
+    if (this.inflight.has(key)) return this.inflight.get(key);
+    const job = (async () => {
+      const r = await this.fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(20000) });
+      if (!r.ok) {
+        const body = typeof r.text === 'function' ? await r.text().catch(() => '') : '';
+        log.warn('tarkov.dev-Anfrage fehlgeschlagen', { ...responseDiag(r, body), query: query.replace(/\s+/g, ' ').slice(0, 90) });
+        const e = apiError(r.status);
+        if (e.permanent || r.status === 429) this.rejected.set(key, { status: r.status, until: Date.now() + (r.status === 429 ? 2 : 15) * 60000 });
+        throw e;
+      }
+      const j = await r.json();
+      if (j.errors?.length) log.info('tarkov.dev meldet Teilfehler: ' + String(j.errors[0]?.message || j.errors[0]).slice(0, 200));
+      if (j.errors?.length && !j.data) throw new Error('tarkov.dev: ' + String(j.errors[0]?.message || j.errors[0]).slice(0, 200));
+      this.rejected.delete(key);
+      return j.data;
+    })();
+    this.inflight.set(key, job);
+    try { return await job; } finally { this.inflight.delete(key); }
   }
 
   async maps(gameMode = 'regular') {
@@ -303,4 +341,4 @@ function exitKind(name) {
   return 'normal';
 }
 
-module.exports = { profitOf, Tarkov, TARKOV_SOURCE: SOURCE, exitKind };
+module.exports = { profitOf, Tarkov, TARKOV_SOURCE: SOURCE, exitKind, apiError };

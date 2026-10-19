@@ -84,7 +84,11 @@ function resolveWhisperPaths(settings = {}, { resourcesPath = process.resourcesP
   throw new Error('Lokales Whisper fehlt. Bitte die JARVIS-Version mit mitgelieferter Spracheingabe installieren.');
 }
 
-async function transcribeLocal({ audio, executable, model }, { run = spawn, timeoutMs = TIMEOUT_MS } = {}) {
+/**
+ * threads: CPU-Threads für whisper.cpp (beim Gaming von der IPC-Schicht auf 2 begrenzt).
+ * lowPriority: Prozess auf „niedriger als normal“ setzen, damit das Spiel Vorrang behält.
+ */
+async function transcribeLocal({ audio, executable, model, threads = 4, lowPriority = false }, { run = spawn, timeoutMs = TIMEOUT_MS } = {}) {
   checkInstallation(executable, model);
   const wav = decodePcm(audio);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-voice-'));
@@ -92,11 +96,13 @@ async function transcribeLocal({ audio, executable, model }, { run = spawn, time
   const output = path.join(dir, 'transcription');
   try {
     fs.writeFileSync(input, wav, { mode: 0o600, flag: 'wx' });
-    const args = ['-m', model, '-f', input, '-l', 'de', '-nt', '-otxt', '-of', output];
+    const t = Math.max(1, Math.min(16, Number.isInteger(threads) ? threads : 4));
+    const args = ['-m', model, '-f', input, '-l', 'de', '-t', String(t), '-nt', '-otxt', '-of', output];
     await new Promise((resolve, reject) => {
       let child;
       try { child = run(executable, args, { shell: false, windowsHide: true, stdio: 'ignore' }); }
       catch { return reject(new Error('Whisper konnte nicht gestartet werden.')); }
+      if (lowPriority && child?.pid) { try { os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* not permitted: keep default */ } }
       let settled = false;
       const finish = (e) => {
         if (settled) return;

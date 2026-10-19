@@ -46,9 +46,10 @@ async function runDiagnostics(s, { live = true } = {}) {
     if (!s.gemini.hasKey()) return { status: 'error', detail: 'Kein Gemini-API-Schlüssel hinterlegt.', fix: { label: 'Schlüssel eintragen', action: 'settings' } };
     const model = s.gemini.model('fast');
     if (!model) return { status: 'error', detail: 'Kein passendes Modell gefunden – Modellprüfung ausführen.', fix: { label: 'Einstellungen', action: 'settings' } };
+    if (s.gemini.cloudCfg().mode === 'local') return { status: 'info', detail: 'Lokaler Modus – Gemini ist ausgeschaltet.' };
     if (!live) return { detail: model };
     try {
-      await withTimeout(s.gemini.client().models.generateContent({ model, contents: [{ role: 'user', parts: [{ text: 'Antworte nur mit OK.' }] }], config: { maxOutputTokens: 5, temperature: 0 } }), 20000, 'Gemini');
+      await s.gemini.ping();
       return { detail: `${model} antwortet` };
     } catch (e) {
       const { detail, fix } = splitFix(friendlyError(e));
@@ -60,8 +61,8 @@ async function runDiagnostics(s, { live = true } = {}) {
     await check('budget', 'Gemini-Budget', () => {
       const b = s.costGuard.status();
       const eur = (v) => v.toFixed(2).replace('.', ',') + ' €';
-      const txt = `geschätzt ${eur(b.eur)} von ${eur(b.budget)}${b.projected != null ? `, Hochrechnung ${eur(b.projected)}` : ''}${b.calibrated ? '' : ' (nicht geeicht)'}`;
-      return b.level === 'ok' ? { detail: txt } : { status: 'warn', detail: txt + (b.braking ? ' – Sparstufe aktiv' : ''), fix: { label: 'Verbrauch ansehen', action: 'settings' } };
+      const txt = `heute geschätzt ${eur(b.today)} von ${eur(b.dailyBudget)}, Monat ${eur(b.eur)} von ${eur(b.budget)}${b.projected != null ? `, Hochrechnung ${eur(b.projected)}` : ''}${b.calibrated ? '' : ' (Schätzung, nicht geeicht)'}`;
+      return b.level === 'ok' ? { detail: txt } : { status: 'warn', detail: txt + (b.blocked ? ' – Cloud-KI gesperrt' : b.braking ? ' – Sparstufe aktiv' : ''), fix: { label: 'Verbrauch ansehen', action: 'settings' } };
     });
   }
 

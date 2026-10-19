@@ -373,7 +373,7 @@ test('LoL-Nachbesprechung mit Debrief-Fragen, Wochenbericht einmal pro Woche, Re
   const { core, cleanup } = tempCore({ script: [{ text: JSON.stringify({ review: 'Fokus: Wellen vor dem Recall pushen.', questions: ['Warum warst du in Minute 6 im Fluss?', 'Was hättest du mit 1500 Gold kaufen können?'] }) }] });
   try {
     core.secrets.set('gemini.api_key', 'AIza-test-key-123456789'); await core.gemini.discover();
-    core.settings.update({ gaming: { leagueDir: dir } });
+    core.settings.update({ gaming: { leagueDir: dir, lolReviewAi: true } }); // KI-Nachbesprechung ist im Sparmodus opt-in
     const L = core.gaming.league;
     const played = new Date(Date.now() - 40 * 60000).toISOString();
     const m = { matchId: 'EUW1_77', playedAt: played, duration: 1800, champion: 'Jinx', win: false, kills: 2, deaths: 6, assists: 3, csPerMin: 6.1, vision: 18 };

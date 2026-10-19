@@ -254,7 +254,6 @@ function Detail({ id, onEdit, onDeleted }) {
 function BrainRight({ ov, onDomain, onSel }) {
   const [projects] = useRpc('brain.list', { domain: 'projects', limit: 5 }, { events: ['brain:changed'], initial: [] });
   const [conflicts] = useRpc('brain.conflicts', {}, { events: ['brain:changed'], initial: [] });
-  const [embedding, setEmbedding] = useState(false);
   const Box = ({ icon: Icon, title, sub, children }) => (
     <div class="panel rcard" style={{ cursor: 'default' }}>
       <div class="rcard-head"><div class="ico"><Icon size={22} /></div><div><div class="t">{title}</div><div class="s">{sub}</div></div></div>
@@ -267,8 +266,7 @@ function BrainRight({ ov, onDomain, onSel }) {
         <div class="kv">
           {[[ov?.memories, 'Erinnerungen'], [ov?.sources, 'Quellen'], [ov?.links, 'Verknüpfungen'], [ov?.projects, 'Projekte']].map(([n, l]) => <><span class="hud-title" style={{ fontSize: 16, color: 'white' }}>{n ?? '–'}</span><span class="n">{l}</span><span /></>)}
         </div>
-        <div class="tiny muted mt">{ov?.embedded || 0} Einträge semantisch indexiert</div>
-        <button class="btn xs mt" onClick={async () => { setEmbedding(true); await guard(() => rpc('brain.embed'), 'Semantischer Index aktualisiert'); setEmbedding(false); }}>{embedding ? <Spinner size={12} /> : <Sparkles size={12} />}Index aktualisieren</button>
+        <div class="tiny muted mt">Suche: lokale Volltextsuche (keine Cloud-Embeddings)</div>
       </Box>
       <Box icon={CalendarDays} title="KATEGORIEN" sub="Wissen strukturieren">
         <ul class="bullets">{DOMAIN_OPTS.map(([k, l]) => <li style={{ cursor: 'pointer' }} onClick={() => onDomain(k)}><span class="grow">{l}</span><span class="v">{ov?.byDomain?.[k] ?? 0}</span></li>)}</ul>

@@ -296,6 +296,15 @@ function buildTools(s) {
   def({ name: 'tarkov_needed_items', mode: 'read', description: 'Escape from Tarkov: Liste der Items, die der Nutzer noch für offene Quests (mit Found in Raid) und nicht gebaute Hideout-Stufen braucht, plus Kappa-/Lightkeeper-Fortschritt.',
     schema: { type: 'object', properties: { kappaOnly: { type: 'boolean' }, limit: { type: 'integer' } } },
     run: async ({ kappaOnly, limit = 40 }) => { const c = s.gaming.eftProgress(); const r = await s.gaming.tarkov.neededItems({ done: c.done, built: s.gaming.eftHideoutBuilt(), gameMode: c.gameMode, kappaOnly }); return { ...r, items: r.items.slice(0, Math.min(100, limit)) }; } });
+  def({ name: 'game_stats', mode: 'read', description: 'Eigene Spielstatistik, lokal berechnet: Tarkov (Raids, Überlebensrate = (überlebt+Run-Through)/Raids mit Ergebnis, Tode, PMC-/KI-Kills, K/D) oder LoL (Siege, Niederlagen, Winrate, KDA). Zeitraum: session, today, total. Werte nicht selbst berechnen oder schätzen.',
+    schema: { type: 'object', required: ['game'], properties: { game: { type: 'string', enum: ['eft', 'league'] }, period: { type: 'string', enum: ['session', 'today', 'total'] } } },
+    run: async ({ game, period = 'today' }) => { const r = game === 'league' ? s.gaming.stats.lol(period) : s.gaming.stats.tarkov(period); delete r.recent; return r; } }),
+  def({ name: 'record_raid', mode: 'write', description: 'Ergebnis des letzten Tarkov-Raids eintragen (nur wenn der Nutzer es ausdrücklich sagt): outcome survived|runthrough|died|mia|left, optional pmcKills, aiKills.',
+    schema: { type: 'object', required: ['outcome'], properties: { outcome: { type: 'string', enum: ['survived', 'runthrough', 'died', 'mia', 'left'] }, pmcKills: { type: 'integer' }, aiKills: { type: 'integer' } } },
+    run: async (a) => s.gaming.stats.recordRaid(a) }),
+  def({ name: 'lol_counters', mode: 'read', description: 'Konter aus den eigenen analysierten LoL-Spielen: ohne vs die schwierigsten Lane-Gegner, mit vs die eigenen Champions mit der besten Bilanz gegen diesen Gegner. Eigene Daten, keine Community-Statistik – kleine Stichproben so benennen.',
+    schema: { type: 'object', properties: { vs: { type: 'string' } } },
+    run: async ({ vs }) => s.gaming.stats.counters({ vs: vs || null }) }),
   def({ name: 'tarkov_lookup', mode: 'read', description: 'Escape-from-Tarkov-Daten (tarkov.dev): quests, item, keys, extracts, bosses. Keine Live-Raid-Daten verfügbar.',
     schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['quests', 'item', 'keys', 'extracts', 'bosses'] }, query: { type: 'string' }, map: { type: 'string', description: 'normalizedName z. B. customs, woods, shoreline, interchange, reserve, lighthouse, streets-of-tarkov, factory, the-lab, ground-zero' } } },
     run: async ({ kind, query, map }) => {

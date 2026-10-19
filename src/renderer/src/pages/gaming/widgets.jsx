@@ -10,7 +10,7 @@ import { createMapAutoRetry } from '../../lib/map-auto-retry.mjs';
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
   'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12', 'tarkov-economy': 'w-6', 'lol-progress': 'w-6', 'tarkov-ammo': 'w-6',
-  ask: 'w-12', links: 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
+  ask: 'w-12', links: 'w-6', 'game-stats': 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
 // ---------------------------------------------------------------- Map
@@ -40,7 +40,7 @@ function MapWidget({ game, params }) {
   const [markers, reloadMarkers] = useRpc('game.markers', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const [routes] = useRpc('game.routes', { game: game.id, map }, { events: ['game:markers'], initial: [], deps: [map] });
   const baseMap = (userMaps || []).find((m) => m.name === map)?.source?.baseMap || map;
-  const [apiMap] = useRpc('tarkov.map', { map: baseMap }, { enabled: isEft, deps: [baseMap] });
+  const [apiMap, , apiState] = useRpc('tarkov.map', { map: baseMap }, { enabled: isEft, deps: [baseMap] });
   const meta = (userMaps || []).find((m) => m.name === map);
   const [pos, setPos] = useState(null);
   const [follow, setFollow] = useState(true);
@@ -151,12 +151,14 @@ function MapWidget({ game, params }) {
   const references = (apiMap?.map?.extracts || []).filter(e => Number.isFinite(e.position?.x) && Number.isFinite(e.position?.z));
   const [calib, setCalib] = useState(null); // {step, points:[]}
   const [imgSize, setImgSize] = useState({ w: 1600, h: 1000 });
+  // Clicks are converted to 0..1 image coordinates – only valid once the real image size is known.
+  const [imgReady, setImgReady] = useState(false);
   const box = useRef(); const drag = useRef(null);
   const floors = Array.isArray(meta?.source?.floors) ? meta.source.floors : [];
   const [floor, setFloor] = useState(null);
   const [showQuests, setShowQuests] = useState(true);
   const imgUrl = meta?.hasImage ? `app://jarvis/map-image/${encodeURIComponent(game.id)}/${encodeURIComponent(map)}${floor ? '?layer=' + encodeURIComponent(floor) + '&v=' + encodeURIComponent(meta.source?.at || '') : ''}` : null;
-  useEffect(() => { setView({ z: 1, x: 0, y: 0 }); setFloor(null); }, [map]);
+  useEffect(() => { setView({ z: 1, x: 0, y: 0 }); setFloor(null); setImgReady(false); }, [map]);
   const fit = () => { const el = box.current; if (!el) return; const z = Math.min(el.clientWidth / imgSize.w, el.clientHeight / imgSize.h); setView({ z, x: (el.clientWidth - imgSize.w * z) / 2, y: (el.clientHeight - imgSize.h * z) / 2 }); };
   useEffect(() => { const t = setTimeout(fit, 50); return () => clearTimeout(t); }, [imgSize.w, imgSize.h, full, map]);
   const toNorm = (e) => { const r = box.current.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / (imgSize.w * view.z), y: (e.clientY - r.top - view.y) / (imgSize.h * view.z) }; };
@@ -187,6 +189,7 @@ function MapWidget({ game, params }) {
     const p = toNorm(e);
     if (p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1) return;
     if (calib) {
+      if (imgUrl && !imgReady) return toast('Kartenbild lädt noch – bitte gleich erneut klicken.', 'error');
       const known = landmark === 'manual' ? null : references[Number(landmark)];
       const ref = known ? `${known.position.x}, ${known.position.z}` : await ask(`Referenzpunkt ${calib.points.length + 1}/3: Spielkoordinaten „x, z“ (drei weit auseinanderliegende Punkte auf der Hauptkarte, keine Stockwerk-Inserts)`, '');
       if (!ref) return;
@@ -237,6 +240,8 @@ function MapWidget({ game, params }) {
         {isEft && <div class="notice small mb" role="status">
           {transform ? 'Karte bereit · Spielkoordinaten sind zugeordnet.' : autoAligning || loadingMaps || retryStatus === 'running' ? 'Karte wird automatisch vorbereitet …' : retryStatus === 'waiting' ? 'Vorbereitung noch nicht möglich – JARVIS versucht es automatisch erneut.' : retryStatus === 'failed' ? 'Keine sichere Kartenzuordnung verfügbar. Eigene Marker und Routen bleiben nutzbar; Spielposition und Questpunkte bleiben ausgeblendet.' : 'Spielkoordinaten noch nicht zugeordnet.'}
           {!transform && retryStatus === 'failed' && <button class="btn xs" onClick={retryMap}>Erneut versuchen</button>}
+          {apiState?.error && <div class="tiny mt" role="alert">{apiState.error}</div>}
+          {!apiState?.error && apiMap?.offline && <div class="tiny muted mt">tarkov.dev gerade nicht erreichbar – gespeicherter Stand vom {fmtDateTime(apiMap.fetchedAt)}.</div>}
           {!transform && calibratedAlternative && map !== baseMap && <button class="btn xs" onClick={() => setMap(baseMap)}>Kalibrierte Karte öffnen</button>}
           <div class="tiny muted">Positionen stammen aus deinem letzten Tarkov-Screenshot, nicht aus einer Live-Ortung.</div>
         </div>}
@@ -264,7 +269,7 @@ function MapWidget({ game, params }) {
           </div>
           <div class={`map-box ${imgUrl ? '' : 'grid-fallback'}`} ref={box} onWheel={wheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onClick={click}>
             <div class="map-inner" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`, width: imgSize.w, height: imgSize.h }}>
-              {imgUrl ? <img src={imgUrl} onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} /> : <div style={{ width: imgSize.w, height: imgSize.h }} />}
+              {imgUrl ? <img src={imgUrl} onLoad={(e) => { const w = e.currentTarget.naturalWidth, h = e.currentTarget.naturalHeight; if (w > 0 && h > 0) { setImgSize({ w, h }); setImgReady(true); } }} onError={() => setImgReady(false)} /> : <div style={{ width: imgSize.w, height: imgSize.h }} />}
               <svg width={imgSize.w} height={imgSize.h} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {[...routes, ...(routeDraft ? [{ id: 'draft', points: routeDraft }] : [])].map((r) => <polyline points={r.points.map((p) => `${p.x * imgSize.w},${p.y * imgSize.h}`).join(' ')} fill="none" stroke={r.id === 'draft' ? '#facc15' : '#22d3ee'} stroke-width={4 / view.z} stroke-dasharray={`${12 / view.z} ${8 / view.z}`} />)}
                 {routes.map((r) => { const end = r.points.at(-1); return end && <g><circle cx={end.x * imgSize.w} cy={end.y * imgSize.h} r={7 / view.z} fill="#22d3ee" /><text x={end.x * imgSize.w} y={end.y * imgSize.h - 12 / view.z} fill="#22d3ee" font-size={13 / view.z}>{end.label || r.name}</text></g>; })}
@@ -472,7 +477,6 @@ function TarkovRaid({ game, params }) {
   return (
     <Panel title="Raid-Status & Intelligente Hilfe" sub="Kartenwissen (keine Live-Raid-Daten verfügbar)" right={<Select style={{ width: 150 }} value={map} onChange={setMap} options={(maps?.maps || [{ id: map, name: map }]).map((x) => ({ value: x.id, label: x.name }))} />}>
       <div class="tabs sm">{[['overview', 'Übersicht'], ['exits', 'Exits'], ['keys', 'Schlüssel'], ['bosses', 'Bosse']].map(([k, l]) => <button class={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
-      <div class="tiny muted mt">{cloudShare ? 'LoL-Daten für Gaming-Cloud-Analysen freigegeben.' : 'Diese Statistiken werden lokal ausgewertet. Cloud-Analyse erst nach deiner Freigabe.'}{cloudShare && <button class="btn xs ghost" onClick={() => guard(() => rpc('settings.update', { gaming: { lolCloudShare: false } }), 'LoL-Cloud-Freigabe ausgeschaltet')}>Freigabe ausschalten</button>}</div>
       {st.error && <div class="notice warn mt">{st.error}</div>}
       {!m && !st.error && <div class="mt"><Spinner /></div>}
       {m && <div class="col mt" style={{ gap: 6, maxHeight: 260, overflow: 'auto' }}>
@@ -487,6 +491,67 @@ function TarkovRaid({ game, params }) {
         {tab === 'bosses' && m.bosses.map((b) => <div class="small"><Skull size={13} /> <b>{b.boss?.name}</b> – {Math.round(b.spawnChance * 100)}% · {b.spawnLocations.map((s) => s.name).join(', ')}</div>)}
       </div>}
       <div class="mt"><SourceTag source={data?.source} fetchedAt={data?.fetchedAt} offline={data?.offline} /></div>
+    </Panel>
+  );
+}
+
+/** Statistiken: deterministisch im Hauptprozess berechnet (ohne KI). Tarkov-Ergebnisse werden manuell erfasst. */
+const PERIODS = [['session', 'Sitzung'], ['today', 'Heute'], ['total', 'Gesamt']];
+const OUTCOME_LABEL = { survived: 'Überlebt', runthrough: 'Run-Through', died: 'Gestorben', mia: 'MIA', left: 'Verlassen' };
+function GameStats({ game, params }) {
+  const isEft = game.id === 'eft';
+  const [period, setPeriod] = useState(params.period || 'session');
+  const [st, reload] = useRpc('stats.get', { game: isEft ? 'eft' : 'league', period }, { deps: [period], events: ['game:stats', 'game:data'] });
+  const [pmc, setPmc] = useState(''); const [ai, setAi] = useState('');
+  const [vs, setVs] = useState('');
+  const [ctr] = useRpc('stats.counters', { vs: vs || undefined }, { enabled: !isEft, deps: [vs], events: ['game:data'], debounce: 400 });
+  const pctTxt = (v) => (v == null ? '–' : String(v).replace('.', ',') + ' %');
+  const record = async (outcome) => {
+    const r = await guard(() => rpc('stats.recordRaid', { outcome, pmcKills: pmc === '' ? null : Number(pmc), aiKills: ai === '' ? null : Number(ai) }), `Raid eingetragen: ${OUTCOME_LABEL[outcome]}`);
+    if (r) { setPmc(''); setAi(''); reload(); }
+  };
+  const tile = (label, value, title) => <div class="stat-tile" title={title} style={{ minWidth: 90 }}><div class="tiny muted">{label}</div><b style={{ fontSize: 18 }}>{value}</b></div>;
+  return (
+    <Panel icon={BarChart3} title="Statistiken" sub={isEft ? 'Raids, Überlebensrate, Kills – ohne KI berechnet' : 'Siege, Winrate, Konter – aus deinen Spielen'}
+      right={<div class="tabs sm">{PERIODS.map(([k, l]) => <button class={period === k ? 'active' : ''} onClick={() => setPeriod(k)}>{l}</button>)}</div>}>
+      {!st && <Spinner />}
+      {st && isEft && <>
+        <div class="row wrap gap-s">
+          {tile('Raids', st.raids, `${st.byType.pmc} PMC · ${st.byType.scav} Scav`)}
+          {tile('Überlebensrate', pctTxt(st.survivalRate), '(überlebt + Run-Through) / Raids mit eingetragenem Ergebnis – keine Winrate')}
+          {tile('Tode (KIA)', st.withOutcome ? st.deaths : '–')}
+          {tile('PMC-Kills', st.pmcKills ?? '–', `in ${st.pmcKillsRaids} Raids erfasst`)}
+          {tile('KI-Kills', st.aiKills ?? '–', `in ${st.aiKillsRaids} Raids erfasst`)}
+          {tile('K/D (PMC)', st.kd == null ? '–' : String(st.kd).replace('.', ','), st.kdNote || 'PMC-Kills / Tode in Raids mit erfassten Kills')}
+        </div>
+        {st.unknownOutcome > 0 && <div class="tiny muted mt">{st.unknownOutcome} Raid(s) ohne Ergebnis – zählen nicht zur Überlebensrate.</div>}
+        <div class="hr" />
+        <div class="small">Letzten Raid eintragen <span class="tiny muted">(das Spiel-Log enthält kein Ergebnis – manuell, auch per Sprache: „Raid überlebt, 2 Kills“)</span></div>
+        <div class="row wrap gap-s mt">
+          <input class="inp" style={{ width: 90 }} inputMode="numeric" placeholder="PMC-Kills" value={pmc} onInput={(e) => setPmc(e.currentTarget.value.replace(/\D/g, ''))} />
+          <input class="inp" style={{ width: 90 }} inputMode="numeric" placeholder="KI-Kills" value={ai} onInput={(e) => setAi(e.currentTarget.value.replace(/\D/g, ''))} />
+          {Object.entries(OUTCOME_LABEL).map(([k, l]) => <button class="btn xs" onClick={() => record(k)}>{l}</button>)}
+        </div>
+        {st.recent.length > 0 && <details class="mt"><summary class="small">Letzte Raids ({st.recent.length})</summary>
+          <div class="col" style={{ gap: 3, maxHeight: 200, overflow: 'auto' }}>{st.recent.map((r) => (
+            <div class="row small sub-row"><span class="grow">{fmtDateTime(r.at)} · {r.map || 'Karte ?'}{r.type ? ' · ' + r.type.toUpperCase() : ''}</span>
+              <span class="muted">{r.outcome ? OUTCOME_LABEL[r.outcome] : 'kein Ergebnis'}{Number.isInteger(r.pmcKills) ? ` · ${r.pmcKills} PMC` : ''}{Number.isInteger(r.aiKills) ? ` · ${r.aiKills} KI` : ''}{r.source === 'manual' ? ' · manuell' : r.manualResult ? ' · Log + manuell' : ' · Log'}</span>
+              <button class="btn icon xs ghost" title="Entfernen" onClick={async () => { if (await ask('Diesen Raid aus der Statistik entfernen?', '', { confirmOnly: true, okLabel: 'Entfernen' })) { await guard(() => rpc('stats.remove', { id: r.id })); reload(); } }}><Trash2 size={12} /></button>
+            </div>))}</div></details>}
+        <div class="tiny muted mt">Quelle: {st.source}. Tageswechsel 00:00 (Zeitzone des PCs).</div>
+      </>}
+      {st && !isEft && <>
+        <div class="row wrap gap-s">
+          {tile('Spiele', st.games)}{tile('Siege', st.games ? st.wins : '–')}{tile('Niederlagen', st.games ? st.losses : '–')}
+          {tile('Winrate', pctTxt(st.winrate))}{tile('KDA', st.kda == null ? '–' : String(st.kda).replace('.', ','))}
+        </div>
+        <div class="hr" />
+        <div class="row gap-s"><span class="small grow">Konter aus deinen Spielen</span><input class="inp" style={{ width: 160 }} placeholder="Gegner-Champion…" value={vs} onInput={(e) => setVs(e.currentTarget.value)} /></div>
+        {ctr && !ctr.analyzedGames && <div class="tiny muted mt">Noch keine analysierten Spiele mit Lane-Gegner (Spielanalyse auf dieser Seite).</div>}
+        {ctr?.analyzedGames > 0 && !vs && <div class="col mt" style={{ gap: 2 }}>{(ctr.hardest || []).map((x) => <div class="row small"><span class="grow">{x.champion}</span><span class="muted">{pctTxt(x.winrate)} · {x.games} Spiele{x.reliable ? '' : ' · wenig Daten'}</span></div>)}{!ctr.hardest?.length && <div class="tiny muted">Noch kein Gegner mit mind. 2 Lane-Duellen.</div>}</div>}
+        {ctr?.analyzedGames > 0 && vs && <div class="col mt" style={{ gap: 2 }}>{ctr.overall ? <><div class="small">Gegen {ctr.vs}: {ctr.overall.wins}/{ctr.overall.games} ({pctTxt(ctr.overall.winrate)})</div>{ctr.bestPicks.map((x) => <div class="row small"><span class="grow">{x.champion}</span><span class="muted">{pctTxt(x.winrate)} · {x.games} Spiele{x.reliable ? '' : ' · wenig Daten'}</span></div>)}</> : <div class="tiny muted">Keine Lane-Duelle gegen {vs} gefunden.</div>}</div>}
+        <div class="tiny muted mt">Quelle: {st.source}{ctr?.source ? '; Konter: ' + ctr.source : ''}. Allgemeine Konter-Tipps in der Matchup-Karte sind KI-Einschätzung, nicht statistisch belegt.</div>
+      </>}
     </Panel>
   );
 }
@@ -1644,7 +1709,7 @@ function RokSpeedups() {
 
 export const WIDGETS = {
   map: MapWidget, 'tarkov-raidplan': TarkovRaidPlan, 'tarkov-companion': TarkovCompanion, 'tarkov-needed': TarkovNeeded, 'tarkov-hideout': TarkovHideout, 'tarkov-raid': TarkovRaid, 'tarkov-quests': TarkovQuests, 'tarkov-item': TarkovItem, checklist: Checklist, 'other-games': OtherGames,
-  timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki,
+  timers: Timers, notes: Notes, sources: Sources, 'game-research': GameResearch, wiki: Wiki, 'game-stats': GameStats,
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,

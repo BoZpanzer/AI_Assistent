@@ -29,6 +29,8 @@ class LiveVoice {
     this.model = null; this.extended = false;
     this.connectionGeneration = 0;
     this.standbyPending = false; this.standbyDeadline = 0; this.standbyTimer = null;
+    // Kostenkontrolle je Sprachsitzung: Ledger-Einträge, gestreamte Audiosekunden, harte Zeitgrenze
+    this.ledgers = []; this.audioSeconds = 0; this.sessionUsd = 0; this.maxTimer = null; this.startedAt = 0;
     // A conversation can be marked private while a cloud session is active.
     // Tear down immediately instead of waiting for the next microphone frame.
     this.s.bus.on('conversations:changed', () => {
@@ -70,7 +72,9 @@ class LiveVoice {
       if (this.conversationId !== conversation.id) throw new Error('Eine andere Sprachsitzung ist aktiv. Bitte diese zuerst beenden.');
       return { state: this.state };
     }
-    if (!gemini.hasKey()) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
+    gemini.policy('voice'); // Modus, Schalter „Gemini Live“, Schlüssel – zentral im Gemini-Provider
+    const blocked = this.s.costGuard?.exceeded();
+    if (blocked) throw new Error('Cloud-KI-Budget erreicht – Gemini Live ist gesperrt. Lokale Spracheingabe funktioniert weiter.');
     const vs = settings.get('voice');
     this.extended = !!vs.extendedThinking && !!gemini.model('liveThinking');
     this.model = this.extended ? gemini.model('liveThinking') : gemini.requireModel('live');
@@ -78,6 +82,10 @@ class LiveVoice {
     this.conversationId = conversation.id;
     this.reconnects = 0;
     this.closing = false;
+    this.ledgers = []; this.ledgerUsd = {}; this.audioSeconds = 0; this.sessionUsd = 0; this.startedAt = Date.now();
+    clearTimeout(this.maxTimer);
+    const maxMin = Math.max(1, Math.min(60, Number(vs.cloudMaxMinutes) || 10));
+    this.maxTimer = setTimeout(() => this.limitReached(`Zeitgrenze von ${maxMin} Minuten erreicht`), maxMin * 60000);
     this.setState('connecting');
     await this.connect();
     this.assertCloudConversation();
@@ -101,9 +109,9 @@ class LiveVoice {
       tools: decl,
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
       inputAudioTranscription: {}, outputAudioTranscription: {},
-      // Im Sprachmodus berechnet Google bei JEDER Antwort den ganzen Sitzungsverlauf neu → Verlauf deckeln
-      // (ab ~24k Token auf ~12k kürzen ≈ die letzten Minuten Gespräch; älteres bleibt im Chatverlauf erhalten)
-      contextWindowCompression: { triggerTokens: '24000', slidingWindow: { targetTokens: '12000' } },
+      // Im Sprachmodus berechnet Google bei JEDER Antwort den ganzen Sitzungsverlauf neu → Verlauf eng deckeln
+      // (ab ~10k Token auf ~5k kürzen; älteres bleibt im Chatverlauf erhalten)
+      contextWindowCompression: { triggerTokens: '10000', slidingWindow: { targetTokens: '5000' } },
       sessionResumption: this.handle ? { handle: this.handle } : {},
     };
     if (this.extended) cfg.thinkingConfig = { thinkingLevel: 'low' };
@@ -115,10 +123,9 @@ class LiveVoice {
     this.assertCloudConversation();
     const generation = ++this.connectionGeneration;
     let closed = false;
-    const client = this.s.gemini.client();
     const fresh = !this.handle;
     try {
-      const session = await client.live.connect({
+      const { session, ledger } = await this.s.gemini.liveConnect({
         model: this.model,
         config: this.config(),
         callbacks: {
@@ -128,6 +135,7 @@ class LiveVoice {
           onclose: (e) => { closed = true; if (generation === this.connectionGeneration) this.onClose(e); },
         },
       });
+      if (ledger) this.ledgers.push(ledger);
       if (generation !== this.connectionGeneration || this.closing) { session.close(); return; }
       if (closed) throw new Error('Sprachverbindung während des Aufbaus geschlossen');
       this.session = session;
@@ -141,7 +149,7 @@ class LiveVoice {
     this.reconnects = 0;
     if (fresh) {
       // Shared memory with the text chat: prime with recent turns of the same conversation.
-      const hist = this.s.conversations.history(this.conversationId, 8, 8000);
+      const hist = this.s.conversations.history(this.conversationId, 6, 4000);
       if (hist.length) {
         try { this.session.sendClientContent({ turns: hist, turnComplete: false }); } catch (e) { log.debug('History-Prime', e); }
       }
@@ -154,7 +162,7 @@ class LiveVoice {
   touch() {
     this.lastActivity = Date.now();
     clearTimeout(this.idleTimer);
-    const secs = this.s.settings.get('voice').idleDisconnectSeconds || 90;
+    const secs = this.s.settings.get('voice').idleDisconnectSeconds || 45;
     this.idleTimer = setTimeout(() => {
       if (this.state === 'listening' && !this.pendingTools) { log.info('Leerlauf – Live-Sitzung pausiert'); this.stop({ standby: true }); }
       else this.touch();
@@ -165,7 +173,22 @@ class LiveVoice {
   sendAudio(buf) {
     if (!this.session) return;
     if (!this.cloudConversationAllowed()) { this.stop(); return; }
-    try { this.session.sendRealtimeInput({ audio: { data: Buffer.from(buf).toString('base64'), mimeType: 'audio/pcm;rate=16000' } }); } catch (e) { log.debug('sendAudio', e); }
+    try {
+      this.session.sendRealtimeInput({ audio: { data: Buffer.from(buf).toString('base64'), mimeType: 'audio/pcm;rate=16000' } });
+      this.audioSeconds += Buffer.byteLength(Buffer.from(buf)) / 32000; // PCM16 mono 16 kHz
+    } catch (e) { log.debug('sendAudio', e); }
+  }
+  /** Lokale Sprachpause erkannt: Audio-Stream bis zum nächsten Sprechen beenden (spart Audio-Token). */
+  sendAudioEnd() {
+    if (!this.session) return;
+    try { this.session.sendRealtimeInput({ audioStreamEnd: true }); } catch (e) { log.debug('audioEnd', e); }
+  }
+  /** Budget- oder Zeitgrenze: Sitzung beenden und sichtbar melden (kein stilles Weiterlaufen). */
+  limitReached(reason) {
+    if (!this.session && this.state === 'off') return;
+    log.info('Live-Sitzung beendet: ' + reason);
+    this.stop();
+    this.setState('error', { error: `Gemini Live beendet: ${reason}. Lokale Spracheingabe bleibt verfügbar.` });
   }
   activity() { this.touch(); }
 
@@ -181,7 +204,16 @@ class LiveVoice {
   async onMessage(m) {
     if (!this.cloudConversationAllowed()) { this.stop(); return; }
     const sc = m.serverContent;
-    if (m.usageMetadata) this.s.gemini.record?.('voice', this.model, m.usageMetadata);
+    if (m.usageMetadata) {
+      this.s.gemini.record?.('voice', this.model, m.usageMetadata);
+      const id = this.ledgers.at(-1);
+      const r = this.s.gemini.liveUsage?.(id, m.usageMetadata, this.model) || {};
+      if (id && Number.isFinite(r.usd)) { (this.ledgerUsd ||= {})[id] = r.usd; this.sessionUsd = Object.values(this.ledgerUsd).reduce((a, b) => a + b, 0); }
+      const maxEur = Number(this.s.settings.get('voice').cloudMaxEur) || 0.1;
+      const eur = this.sessionUsd * (this.s.costGuard?.cfg().usdToEur || 0.86);
+      if (r.exceeded) { this.limitReached({ day: 'Tagesbudget', session: 'Sitzungsbudget', month: 'Monatsbudget' }[r.exceeded] + ' erreicht'); return; }
+      if (eur >= maxEur) { this.limitReached(`Budget je Sprachsitzung (${maxEur.toFixed(2).replace('.', ',')} €) erreicht`); return; }
+    }
     if (m.sessionResumptionUpdate?.resumable && m.sessionResumptionUpdate.newHandle) this.handle = m.sessionResumptionUpdate.newHandle;
     if (m.goAway) { log.info('GoAway – baue Verbindung mit Resumption neu auf'); this.reconnect(); return; }
     if (sc) {
@@ -349,9 +381,14 @@ class LiveVoice {
     this.closing = true;
     if (wasStandbyPending) this.s.bus.emit('voice:standby', { pending: false });
     clearTimeout(this.idleTimer);
+    clearTimeout(this.maxTimer); this.maxTimer = null;
     this.flushTurn(false);
     try { this.session?.close(); } catch { /* ignore */ }
     this.session = null;
+    // Verbrauch abschließen; ohne Verbrauchsmeldung mindestens die gestreamten Audiominuten (0,005 $/min) zählen
+    const floor = (this.audioSeconds / 60) * 0.005;
+    this.ledgers.forEach((id, i) => this.s.gemini.liveEnd?.(id, i === 0 ? floor : 0));
+    this.ledgers = []; this.audioSeconds = 0;
     if (!standby) this.handle = null;
     this.setState(standby ? 'standby' : 'off');
   }

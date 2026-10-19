@@ -60,6 +60,7 @@ const WIDGETS = {
   'tarkov-economy': { title: 'Händler, Crafts & Tausch', params: {} },
   'lol-progress': { title: 'Rang-Verlauf & Champion-Pool', params: {} },
   'tarkov-ammo': { title: 'Munition', params: { caliber: { type: 'string', maxLength: 30 } } },
+  'game-stats': { title: 'Statistiken', params: { period: { type: 'string', enum: ['session', 'today', 'total'] } } },
   'factorio-calc': { title: 'Verhältnis-Rechner', params: {} },
   'lol-coach': { title: 'Wochenbericht & Session', params: {} },
   progress: { title: 'Mein Spielstand', params: { category: { type: 'string', maxLength: 30 } } },
@@ -77,8 +78,8 @@ const GAME_EXTRAS = Object.freeze({
 });
 const SERVER_GAMES = new Set(['minecraft', 'arma3', 'rust', 'ark', 'ark_asa', 'palworld', 'cs2', 'sandstorm', 'pixark', 'hytale', 'terraria', 'theforest']);
 function extrasFor(p) {
-  if (p.integration === 'league') return ['lol-game', 'lol-coach', 'lol-progress', 'playtime', 'news'];
-  if (p.integration === 'tarkov') return ['tarkov-economy', 'tarkov-ammo', 'playtime'];
+  if (p.integration === 'league') return ['game-stats', 'lol-game', 'lol-coach', 'lol-progress', 'playtime', 'news'];
+  if (p.integration === 'tarkov') return ['game-stats', 'tarkov-economy', 'tarkov-ammo', 'playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
   return [...(GAME_EXTRAS[p.id] || []), 'wiki-lists', 'playtime',
     ...(p.steamAppId ? ['news'] : []),

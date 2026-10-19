@@ -189,19 +189,8 @@ class Brain {
       sql += ' ORDER BY s LIMIT 40';
       this.db.all(sql, ...p).forEach((r, i) => add('c:' + r.id, i, null, 'chunk'));
     }
-    let semanticUsed = false;
-    if (semantic && this.vectors && this.gemini?.hasKey() && this.gemini.model('embedding')) {
-      try {
-        const hasK = scope !== 'documents' && this.vectors.count('k') > 0;
-        const hasC = scope !== 'knowledge' && this.vectors.count('c') > 0;
-        if (hasK || hasC) {
-          const qv = await this.vectors.queryVector(query);
-          semanticUsed = true;
-          if (hasK) this.vectors.search('k', qv, 30).filter((h) => h.score > 0.35).forEach((h, i) => add('k:' + h.id, i, null, 'knowledge'));
-          if (hasC) this.vectors.search('c', qv, 30).filter((h) => h.score > 0.35).forEach((h, i) => add('c:' + h.id, i, null, 'chunk'));
-        }
-      } catch { /* offline → FTS only */ }
-    }
+    // Semantische Suche über Cloud-Embeddings ist aus Datenschutzgründen gesperrt (seit 3.33): nur lokale Volltextsuche.
+    const semanticUsed = false;
     const results = [];
     for (const c of cands.values()) {
       const [type, rid] = [c.key.slice(0, 1), c.key.slice(2)];

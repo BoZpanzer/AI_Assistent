@@ -7,17 +7,48 @@ const LOCAL_TIERS = Object.freeze([
   { id: 'strong', model: 'qwen3.5:9b', label: 'Stark', memoryGB: 16 },
   { id: 'maximum', model: 'qwen3.5:27b', label: 'Maximum', memoryGB: 32 },
 ]);
+/**
+ * Empfehlung für einen Gaming-PC: das lokale Modell konkurriert mit dem Spiel um RAM/VRAM.
+ * Darum höchstens „Ausgewogen“ (4B), auch bei viel RAM; größere Stufen bleiben wählbar.
+ */
 function recommendedTier(ramGB) {
-  if (ramGB >= 32) return 'strong';
   if (ramGB >= 16) return 'balanced';
   if (ramGB >= 8) return 'light';
   return 'ultra';
 }
+/** Ollama lauscht standardmäßig nur auf 127.0.0.1; ein gesetztes OLLAMA_HOST=0.0.0.0 macht es im Netz erreichbar. */
+function exposureWarning(env = process.env) {
+  const h = String(env.OLLAMA_HOST || '').trim();
+  if (!h) return null;
+  const host = h.replace(/^https?:\/\//, '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+  return ['127.0.0.1', 'localhost', '::1'].includes(host) ? null : `OLLAMA_HOST=${h}: Ollama ist damit im Netzwerk erreichbar. Empfohlen: OLLAMA_HOST=127.0.0.1:11434.`;
+}
 function jsonSchema(s) { if (!s || typeof s !== 'object') return s; if (Array.isArray(s)) return s.map(jsonSchema); return Object.fromEntries(Object.entries(s).map(([k,v]) => [k, k === 'type' && typeof v === 'string' ? v.toLowerCase() : jsonSchema(v)])); }
 /** Ollama on this PC only: numeric loopback, no proxy, DNS, redirect or cloud fallback. */
+/**
+ * Ressourcen: höchstens eine lokale Anfrage gleichzeitig (Warteschlange max. 3), begrenzte Threads und
+ * Kontextgröße, Modell wird nach kurzer Zeit wieder entladen (keep_alive). Während ein Spiel läuft:
+ * 'cpu' = Modell ohne GPU (VRAM bleibt fürs Spiel), 'pause' = keine lokalen Hintergrundaufgaben.
+ * Ein Fehler hier löst NIE einen Cloud-Aufruf aus.
+ */
 class LocalLLM {
-  constructor(settings) { this.settings = settings; }
-  cfg() { return { port: 11434, model: '', ...(this.settings.get('localLLM') || {}) }; }
+  constructor(settings) { this.settings = settings; this.busy = 0; this.queue = []; this.isGaming = () => false; }
+  cfg() { return { port: 11434, model: '', keepAlive: '2m', threads: 4, numCtx: 4096, whileGaming: 'cpu', ...(this.settings.get('localLLM') || {}) }; }
+  /** Ollama-Optionen je Anfrage (beim Spielen: weniger Threads, auf Wunsch nur CPU, sofort entladen). */
+  runtimeOptions() {
+    const c = this.cfg(); const gaming = this.isGaming();
+    const options = { num_ctx: c.numCtx, num_thread: gaming ? Math.min(2, c.threads) : c.threads };
+    if (gaming && c.whileGaming === 'cpu') options.num_gpu = 0;
+    return { options, keep_alive: gaming ? '0s' : c.keepAlive };
+  }
+  async slot(background) {
+    if (background && this.isGaming() && this.cfg().whileGaming === 'pause') throw new Error('Lokale KI pausiert, während ein Spiel läuft (Einstellungen → Lokale KI).');
+    if (this.busy < 1) { this.busy++; return; }
+    if (background || this.queue.length >= 3) throw new Error('Lokale KI ist gerade beschäftigt – bitte gleich erneut versuchen.');
+    await new Promise((r) => this.queue.push(r));
+    this.busy++;
+  }
+  free() { this.busy = Math.max(0, this.busy - 1); this.queue.shift()?.(); }
   request(path, payload, signal) {
     const { port } = this.cfg();
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Ungültiger lokaler Port');
@@ -56,7 +87,7 @@ class LocalLLM {
     const ramGB = Math.round(os.totalmem() / 1073741824);
     try {
       const installed = await this.models();
-      return { online: true, installed, tiers: LOCAL_TIERS, ramGB, recommended: recommendedTier(ramGB), selected: this.cfg().model };
+      return { online: true, installed, tiers: LOCAL_TIERS, ramGB, recommended: recommendedTier(ramGB), selected: this.cfg().model, exposure: exposureWarning() };
     } catch (_) {
       return { online: false, installed: [], tiers: LOCAL_TIERS, ramGB, recommended: recommendedTier(ramGB), selected: this.cfg().model };
     }
@@ -86,7 +117,11 @@ class LocalLLM {
     const r = await this.request('/api/tags', null, signal);
     return (r.models || []).filter((m) => !m.remote_host && !m.remote_model && !/cloud/i.test(m.name)).map((m) => m.name);
   }
-  async stepStream({ system, contents, tools = [], signal, onText = () => {}, json, schema }) {
+  async stepStream(opts) {
+    await this.slot(opts.background);
+    try { return await this._step(opts); } finally { this.free(); }
+  }
+  async _step({ system, contents, tools = [], signal, onText = () => {}, json, schema }) {
     const model = this.cfg().model;
     if (!model || /cloud/i.test(model)) throw new Error('Bitte ein lokal installiertes Ollama-Modell auswählen (keine Cloud-Modelle).');
     const installed = await this.models(signal);
@@ -103,7 +138,7 @@ class LocalLLM {
       for (const p of parts) if (p.functionResponse) messages.push({ role: 'tool', tool_name: p.functionResponse.name, content: JSON.stringify(p.functionResponse.response) });
     }
     const declarations = tools.flatMap((t) => t.functionDeclarations || []).map(({ name, description, parameters }) => ({ type: 'function', function: { name, description, parameters: jsonSchema(parameters) } }));
-    const r = await this.request('/api/chat', { model, messages, stream: false, ...(declarations.length ? { tools: declarations } : {}), ...(json ? { format: schema || 'json' } : {}) }, signal);
+    const r = await this.request('/api/chat', { model, messages, stream: false, ...this.runtimeOptions(), ...(declarations.length ? { tools: declarations } : {}), ...(json ? { format: schema || 'json' } : {}) }, signal);
     if (!r.message) throw new Error('Ungültige Antwort des lokalen Modells');
     const text = r.message.content || ''; onText(text);
     const functionCalls = (r.message.tool_calls || []).map((t, i) => ({ id: 'local-' + i, name: t.function.name, args: t.function.arguments }));
@@ -111,4 +146,4 @@ class LocalLLM {
   }
   async generate(opts) { const r = await this.stepStream(opts); return opts.json ? JSON.parse(r.text) : r.text; }
 }
-module.exports = { LocalLLM, LOCAL_TIERS, recommendedTier };
+module.exports = { LocalLLM, LOCAL_TIERS, recommendedTier, exposureWarning };

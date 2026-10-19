@@ -9,7 +9,9 @@ for (const privacy of ['private', 'study', 'gaming']) {
     const { core, cleanup } = tempCore(); let connections = 0;
     try {
       core.secrets.set('gemini.api_key', 'test'); await core.gemini.discover();
-      core.gemini.client().live.connect = async () => { connections++; throw Error('must not connect'); };
+      // client() is only available inside the central gate (cloudScope); patch the cached SDK client there.
+      const { cloudScope } = require('../src/main/providers/gemini');
+      cloudScope.run({ feature: 'test' }, () => core.gemini.client()).live.connect = async () => { connections++; throw Error('must not connect'); };
       const c = core.conversations.create('Test', privacy);
       core.conversations.add(c.id, { role: 'user', content: 'SECRET_FAMILY' });
       await assert.rejects(core.voice.start({ conversationId: c.id }), /Datenschutz/);
@@ -34,6 +36,7 @@ test('Gemini Live needs explicit per-session consent and a non-private conversat
   const { core, cleanup } = tempCore();
   try {
     let connects = 0;
+    core.settings.update({ cloud: { features: { voice: true } } }); // Gemini Live ist im Sparmodus aus
     core.gemini.hasKey = () => true;
     core.gemini.model = () => null;
     core.gemini.requireModel = () => 'live-test-model';
@@ -72,6 +75,7 @@ test('Gemini Live needs explicit per-session consent and a non-private conversat
 test('Audio frames and text are not forwarded after a live conversation becomes private', async () => {
   const { core, cleanup } = tempCore();
   try {
+    core.settings.update({ cloud: { features: { voice: true } } });
     core.gemini.hasKey = () => true;
     core.gemini.model = () => null;
     core.gemini.requireModel = () => 'live-test-model';
