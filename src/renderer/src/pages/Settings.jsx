@@ -10,7 +10,8 @@ import { ago } from '../lib/format.js';
 const VOICES = ['Charon', 'Puck', 'Kore', 'Fenrir', 'Aoede', 'Orus', 'Leda', 'Zephyr', 'Enceladus', 'Iapetus', 'Algieba', 'Despina'];
 export const upd = (patch) => guard(() => rpc('settings.update', patch));
 
-const SAMPLE = 'Hallo, ich bin JARVIS. Deine Überlebensrate heute liegt bei sechzig Prozent – drei Raids, zwei davon überlebt.';
+const SAMPLE = 'Hallo, ich bin JARVIS. Du warst Support mit Malphite – achte in der Lane auf Sivirs Spellshield und warde den Jungle vor dem Drachen. Deine Überlebensrate in Tarkov liegt heute bei sechzig Prozent.';
+const CLOUD_VOICES = ['Kore', 'Charon', 'Puck', 'Aoede', 'Fenrir', 'Leda', 'Orus', 'Zephyr', 'Enceladus', 'Iapetus', 'Algieba', 'Despina', 'Sulafat', 'Achird'];
 
 /** Lokale Sprachausgabe: Piper-Stimmen (mitgeliefert/auf Klick), Stil, Tempo, Tonhöhe, Lautstärke, Hörprobe. */
 function SpeechOutput({ s }) {
@@ -27,15 +28,24 @@ function SpeechOutput({ s }) {
   const set = (patch) => upd({ voice: { tts: patch } });
   const engine = t.engine || 'piper';
   const cur = st?.voices?.find((v) => v.id === (t.voice || st?.voice)) || st?.voices?.[0];
-  const preview = (override = {}) => audio.speakLocal(SAMPLE, { full: true, override });
+  const preview = (override = {}) => audio.speakLocal(SAMPLE, { full: true, override: { engine: engine === 'auto' && !override.engine ? 'piper' : undefined, ...override } });
   const install = async (id) => { setBusy(id); try { const p = rpc('tts.install', { id }); setTimeout(reload, 300); await guard(() => p, 'Stimme installiert'); await set({ voice: id }); } finally { setBusy(''); reload(); } };
   return (
-    <Panel icon={Volume2} title="Sprachausgabe" sub="Lokal auf dem PC – keine Cloud, keine Kosten">
+    <Panel icon={Volume2} title="Sprachausgabe" sub="Cloud-Stimme (günstig, gedeckelt) oder lokal – private Chats immer lokal">
       <Field label="Stimme">
-        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'piper', label: 'Natürliche Stimme (Piper, empfohlen)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
+        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'Automatisch: Cloud-Stimme, sonst lokal (empfohlen)' }, { value: 'piper', label: 'Nur lokal (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
       </Field>
-      {engine === 'piper' && !st?.available && <div class="notice tiny">Die natürliche Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion). JARVIS nutzt so lange die Windows-Stimme.</div>}
-      {engine === 'piper' && st?.voices && <>
+      {engine === 'auto' && <>
+        <div class="notice tiny">Cloud-Stimme (Gemini-TTS): spricht englische Spielbegriffe und Namen richtig, ca. 1 Cent pro Minute Sprache (ab 2027 ca. 2 Cent), mit kostenlosem Zusatz-Schlüssel gratis bis zum Tageslimit. Fertige Sätze werden gespeichert und kosten danach nichts. Private Chats werden immer lokal vorgelesen. Bei Tagesgrenze oder offline: automatisch lokale Stimme.</div>
+        <Field label="Cloud-Stimme"><Select value={t.cloudVoice || 'Kore'} onChange={(x) => set({ cloudVoice: x })} options={CLOUD_VOICES.map((v) => ({ value: v, label: v }))} /></Field>
+        <Field label="Tagesgrenze Cloud-Stimme (€)" hint="danach lokale Stimme; zählt auch zum Tagesbudget"><input class="inp" type="number" min="0" max="5" step="0.01" style={{ width: 90 }} value={s.aiBudget?.ttsDailyEur ?? 0.05} onChange={(e) => upd({ aiBudget: { ttsDailyEur: Math.max(0, Math.min(5, Number(e.currentTarget.value) || 0)) } })} /></Field>
+        <div class="row gap-s"><button class="btn xs" onClick={() => preview({ engine: 'auto' })}><Play size={12} />Cloud-Stimme anhören</button><span class="tiny muted">Lokale Stimme für den Notfall:</span></div>
+      </>}
+      <Field label="Lokale Stimme" hint="wird genutzt, wenn die Cloud-Stimme aus/aufgebraucht ist">
+        <span class="tiny muted">{cur?.label || '–'}</span>
+      </Field>
+      {engine !== 'windows' && !st?.available && <div class="notice tiny">Die natürliche Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion). JARVIS nutzt so lange die Windows-Stimme.</div>}
+      {engine !== 'windows' && st?.voices && <>
         {st.voices.map((v) => (
           <div class="row gap-s" style={{ padding: '4px 0', alignItems: 'center' }}>
             <input type="radio" name="tts-voice" disabled={!v.installed} checked={cur?.id === v.id} onChange={() => set({ voice: v.id })} />
@@ -55,7 +65,7 @@ function SpeechOutput({ s }) {
       <Field label={`Tonhöhe · ${(t.pitch ?? 1) > 1 ? 'höher' : (t.pitch ?? 1) < 1 ? 'tiefer' : 'normal'}`}><input class="range" type="range" min="0.85" max="1.2" step="0.05" value={t.pitch ?? 1} onChange={(e) => set({ pitch: Number(e.currentTarget.value) })} /></Field>
       <Field label={`Lautstärke · ${Math.round((t.volume ?? 1) * 100)} %`}><input class="range" type="range" min="0.2" max="1.5" step="0.05" value={t.volume ?? 1} onChange={(e) => set({ volume: Number(e.currentTarget.value) })} /></Field>
       <Field label="Lange Antworten kurz vorlesen" hint="liest die ersten Sätze, Rest steht im Chat · „Vorlesen“ am Chat liest immer alles"><Toggle checked={t.short !== false} onChange={(x) => set({ short: x })} /></Field>
-      <div class="row gap-s mt"><button class="btn sm" onClick={() => preview()}><Play size={14} />Hörprobe</button><button class="btn sm ghost" onClick={() => audio.stopSpeech()}>Stopp</button></div>
+      <div class="row gap-s mt"><button class="btn sm" onClick={() => preview({ engine })}><Play size={14} />Hörprobe</button><button class="btn sm ghost" onClick={() => audio.stopSpeech()}>Stopp</button></div>
     </Panel>
   );
 }
@@ -152,8 +162,8 @@ function Speech({ s }) {
       {v.wakeWord && <Field label="Empfindlichkeit"><input class="range" type="range" min="0.2" max="0.9" step="0.05" value={v.wakeSensitivity} onChange={(e) => upd({ voice: { wakeSensitivity: Number(e.currentTarget.value) } })} /></Field>}
       <Field label="Push-to-Talk-Taste (global)"><input class="inp" value={v.pushToTalkKey} onChange={(e) => upd({ voice: { pushToTalkKey: e.currentTarget.value } })} /></Field>
       <Field label="Unterbrechen erlauben (Barge-in)"><Toggle checked={v.bargeIn} onChange={(x) => upd({ voice: { bargeIn: x } })} /></Field>
-      <Field label="Textantworten vorlesen" hint="lokale Stimme (siehe „Sprachausgabe“)"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
-      <Field label="Antworten auf Spracheingaben vorlesen" hint="lokale Stimme, keine Cloud"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
+      <Field label="Textantworten vorlesen" hint="Stimme siehe „Sprachausgabe“"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
+      <Field label="Antworten auf Spracheingaben vorlesen" hint="Stimme siehe „Sprachausgabe“"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
       <Field label="CPU-Threads für Spracherkennung" hint="beim Spielen automatisch höchstens 2, mit niedriger Priorität"><Select value={String(v.whisperThreads || 4)} onChange={(x) => upd({ voice: { whisperThreads: Number(x) } })} options={['2', '4', '6', '8'].map((n) => ({ value: n, label: n }))} /></Field>
       <div class="tiny muted">Gemini Live (Echtzeit-Audio an Google) nur, wenn unter „Gemini / KI → Cloud-Funktionen“ eingeschaltet:</div>
       <Field label="Live: höchstens Minuten je Sitzung"><input class="inp" type="number" min="1" max="60" style={{ width: 80 }} value={v.cloudMaxMinutes ?? 10} onChange={(e) => upd({ voice: { cloudMaxMinutes: Number(e.currentTarget.value) || 10 } })} /></Field>
@@ -227,6 +237,24 @@ function BudgetField({ s }) {
   );
 }
 
+/**
+ * Zweiter, kostenloser Schlüssel: Google-Projekt OHNE Abrechnung (Free Tier). JARVIS nutzt ihn zuerst für das Sparmodell
+ * und die Cloud-Stimme; ist das Tageskontingent erschöpft, geht es mit dem normalen Schlüssel (Budget) weiter.
+ */
+function FreeKey() {
+  const secrets = useStore((x) => x.secrets) || {};
+  const [k, setK] = useState('');
+  const has = !!secrets['gemini.free_api_key'];
+  const save = async (v) => { await guard(() => rpc('secrets.set', { key: 'gemini.free_api_key', value: v }), v ? 'Kostenloser Schlüssel gespeichert' : 'Kostenloser Schlüssel entfernt'); setState({ secrets: await rpc('secrets.status') }); setK(''); };
+  return <>
+    <Field label={<span><KeyRound size={12} /> Kostenloser Zusatz-Schlüssel (optional)</span>} hint={has ? 'gespeichert – wird zuerst für Sparmodell und Cloud-Stimme genutzt' : 'aistudio.google.com → neues Projekt ohne Abrechnung → API-Schlüssel'}>
+      <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={has ? '••••••••••••' : 'AIza… (Projekt ohne Abrechnung)'} value={k} onInput={(e) => setK(e.currentTarget.value)} />
+        <button class="btn xs" disabled={!k} onClick={() => save(k)}>Speichern</button>{has && <button class="btn xs ghost" onClick={() => save('')}>Entfernen</button>}</div>
+    </Field>
+    <div class="tiny muted">Hinweis: Im kostenlosen Kontingent darf Google Eingaben und Antworten zur Verbesserung seiner Produkte verwenden. JARVIS schickt darüber nur Gaming-Tipps und vorzulesende Antworten aus Uni-/Gaming-Chats – nie private Inhalte.</div>
+  </>;
+}
+
 /** Modus lokal/hybrid und einzelne Cloud-Funktionen – durchgesetzt im Hauptprozess (Gemini-Provider). */
 function CloudControl({ s }) {
   const [st, reload] = useRpc('cloud.status', {}, { events: ['settings:changed', 'cloud:state', 'cloud:usage'] });
@@ -244,6 +272,11 @@ function CloudControl({ s }) {
           <Field label={label} hint={k === 'voice' ? 'Echtzeit-Audio an Google, teuer (Audio-Eingabe 3 $/1 Mio. Token). Standard: lokale Spracheingabe.' : undefined}><Toggle checked={k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false} onChange={(v) => upd({ cloud: { features: { [k]: v } } }).then(reload)} /></Field>
         ))}
       </details>}
+      {!local && <>
+        <Field label="Sparmodell für kurze Aufgaben" hint="Tipps, Matchup-Karten, Empfehlungen, Kurzfassungen mit gemini-2.5-flash-lite (ca. 8× günstiger als Flash)"><Toggle checked={c.economy !== false} onChange={(v) => upd({ cloud: { economy: v } }).then(reload)} /></Field>
+        <Field label="Gaming-Chats mit dem Sparmodell" hint="„gründlich/analysiere …“-Fragen und Bilder nutzen weiter Flash"><Toggle checked={c.liteGamingChat !== false} onChange={(v) => upd({ cloud: { liteGamingChat: v } }).then(reload)} /></Field>
+        <FreeKey />
+      </>}
       {st && <div class="tiny muted mt">{local ? 'Cloud-KI aus.' : `Cloud-KI an · ${st.active || 0} Aufruf(e) laufen gerade`}</div>}
     </>
   );
@@ -487,6 +520,8 @@ function GamingCard({ s, secrets }) {
       <Field label="Steam-Wunschliste: Angebote melden" hint="Wunschliste muss öffentlich sein"><Toggle checked={g.wishlistAlerts !== false} onChange={(v) => upd({ gaming: { wishlistAlerts: v } })} /></Field>
       <Field label="Ab Rabatt (%)"><input class="inp" type="number" min="0" max="100" step="5" style={{ width: 90 }} value={g.wishlistMinDiscount ?? 30} onChange={(e) => upd({ gaming: { wishlistMinDiscount: Math.min(100, Math.max(0, Math.round(Number(e.currentTarget.value) || 0))) } })} /></Field>
       <Field label="LoL Matchup-Karte (Championauswahl)" hint="Phasen, Win-Condition, deine Bilanz und Notizen zum Lane-Gegner – KI-Wissen einmal pro Matchup und Patch"><Toggle checked={g.lolMatchupCard !== false} onChange={(v) => upd({ gaming: { lolMatchupCard: v } })} /></Field>
+      <Field label="LoL Tipps gegen die Gegner (auch im Overlay)" hint="Gefährlichste Fähigkeit + konkrete Konter-Tipps je gegnerischem Champion – vor dem Spiel erzeugt (Sparmodell, pro Patch gespeichert), ohne Cloud: Riots eigene Tipps"><Toggle checked={g.lolEnemyTips !== false} onChange={(v) => upd({ gaming: { lolEnemyTips: v } })} /></Field>
+      <Field label="LoL Champion-Empfehlung in der Championauswahl" hint="Aus deinem eigenen Pool und deiner Bilanz gegen diese Gegner; optional kurze KI-Begründung (Sparmodell)"><Toggle checked={g.lolPickAdvice !== false} onChange={(v) => upd({ gaming: { lolPickAdvice: v } })} /></Field>
       <Field label="LoL Pause-Hinweis nach Niederlagen" hint="Nur wenn deine eigene Statistik nach Niederlagen-Serien deutlich schlechter ist"><Toggle checked={g.lolBreakHint !== false} onChange={(v) => upd({ gaming: { lolBreakHint: v } })} /></Field>
       <Field label="LoL Wochenbericht (montags)"><Toggle checked={g.lolWeekly !== false} onChange={(v) => upd({ gaming: { lolWeekly: v } })} /></Field>
       <Field label="LoL Objective-Timer im Overlay" hint="Drache, Baron, Herold, Grubs, Atakhan – Respawns aus echten Kills"><Toggle checked={g.lolObjectives !== false} onChange={(v) => upd({ gaming: { lolObjectives: v } })} /></Field>

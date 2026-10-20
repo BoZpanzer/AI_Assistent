@@ -137,6 +137,14 @@ function createCore(opts) {
   s.scheduler = new Scheduler(s);
   s.localLLM.isGaming = () => !!s.gaming?.context?.state?.().gaming;
   s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
+  s.speech = new (require('./voice/speech').Speech)(s);
+  // Einmalig: bisherige Einstellung „nur lokale Stimme“ auf „automatisch“ (Cloud-Stimme, wenn erlaubt) umstellen
+  try {
+    if (!s.db.get("SELECT value FROM meta WHERE key='tts:auto-migrated'")) {
+      if ((s.settings.get('voice')?.tts?.engine || 'piper') === 'piper') s.settings.update({ voice: { tts: { engine: 'auto' } } });
+      s.db.run("INSERT OR REPLACE INTO meta(key,value) VALUES('tts:auto-migrated','1')");
+    }
+  } catch { /* nicht kritisch */ }
   // Lokaler Modus / Gemini Live aus: laufende Cloud-Sitzungen und -Aufrufe sofort beenden (Backend, nicht nur UI)
   bus.on('settings:changed', ({ keys }) => {
     if (!keys.includes('cloud')) return;

@@ -28,7 +28,7 @@ class AudioEngine {
     on('voice:audio', (d) => this.play(d.data).catch((e) => toast('Audioausgabe: ' + e.message, 'error')));
     on('voice:interrupted', () => this.flush());
     on('voice:state', ({ state }) => this.onVoiceState(state));
-    on('tts:speak', ({ text }) => this.speakLocal(text));
+    on('tts:speak', ({ text, private: priv }) => this.speakLocal(text, { private: !!priv }));
     this.tts = { gen: 0, ctx: null, src: null, speaking: false, warned: false };
   }
 
@@ -344,7 +344,7 @@ class AudioEngine {
    * nächster Satz wird schon berechnet, während der vorige läuft). Rückfall: Windows-Stimme.
    * full: ganzer Text (Knopf „Vorlesen“), sonst Kurzfassung. override: Stimme/Tempo/Tonhöhe für die Hörprobe.
    */
-  async speakLocal(text, { full = false, override = null } = {}) {
+  async speakLocal(text, { full = false, override = null, private: priv = false } = {}) {
     if (!text || this.mode.stream || this.mode.local) return;
     this.stopSpeech();
     const gen = this.tts.gen;
@@ -355,7 +355,7 @@ class AudioEngine {
     if (st.engine === 'windows') return this.windowsSpeak(prep.text, st);
     this.tts.speaking = true;
     try {
-      const synth = (t) => rpc('tts.synthesize', { text: t, override });
+      const synth = (t) => rpc('tts.synthesize', { text: t, override, private: priv });
       let next = synth(prep.parts[0]);
       for (let i = 0; i < prep.parts.length; i++) {
         const cur = await next;

@@ -116,6 +116,7 @@ function App() {
       {champ && (
         <Card icon={Swords} title={`Championauswahl${champ.myChampion ? ' · ' + champ.myChampion : ''}`} accent="#c8aa6e">
           {champ.enemies?.length > 0 && <div class="ov-dim">Gegner: {champ.enemies.join(', ')}</div>}
+          {!champ.locked && champ.picks && <OvPicks picks={champ.picks} />}
           {champ.advice ? <div class="ov-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(champ.advice) }} /> : champ.tips?.length ? <ul>{champ.tips.slice(0, 4).map((t) => <li>{t}</li>)}</ul> : <div class="ov-dim">Warte auf Picks …</div>}
           {champ.matchup?.card && <div style={{ marginTop: 6 }}>
             <b>Lane gegen {champ.matchup.vs}</b>
@@ -131,6 +132,8 @@ function App() {
           <div class="ov-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(review.summary) }} />
         </Card>
       )}
+      {champ?.enemyTips?.length > 0 && !live && <EnemyTips tips={champ.enemyTips} lane={champ.laneGuess} />}
+      {live && live.enemyTips?.length > 0 && <EnemyTips tips={live.enemyTips} lane={live.opponent?.champion} />}
       {live && live.tips?.length > 0 && <Card icon={Sparkles} title={`Live · ${live.champion}`}><ul>{live.tips.map((t) => <li>{t}</li>)}</ul></Card>}
       {live && live.objectives?.length > 0 && <Objectives live={live} now={now} />}
       {scan && now - scan.shownAt < 25000 && <Card icon={Sparkles} title="Item-Scan" accent="#facc15" onClose={() => setScan(null)}>{scan.state === 'running' ? <div class="ov-dim">Erkenne Item …</div> : scan.state === 'error' ? <div class="ov-dim">{scan.error}</div> : <OvScan s={scan} />}</Card>}
@@ -163,6 +166,36 @@ function App() {
       {interactive && <div class="ov-hint">Bedienmodus – endet automatisch nach 20 s</div>}
     </div>
   );
+}
+
+/** Tipps gegen die gegnerischen Champions (vor dem Spiel erzeugt; Lane-Gegner zuerst, klappbar). */
+function EnemyTips({ tips, lane }) {
+  const [open, setOpen] = useState(null);
+  const list = [...tips].sort((a, b) => (b.champion === lane) - (a.champion === lane));
+  return (
+    <Card icon={Swords} title="Gegner – worauf achten" accent="#e84057">
+      {list.map((t) => {
+        const isOpen = open === t.champion || (open === null && t.champion === (lane || list[0]?.champion));
+        return <div style={{ marginBottom: 4, cursor: 'pointer' }} onClick={() => setOpen(isOpen ? '' : t.champion)}>
+          <b>{t.champion}</b>{t.champion === lane ? <span class="ov-dim"> · Lane</span> : null}{t.danger ? <span class="ov-dim"> – {t.danger}</span> : null}
+          {isOpen && <ul>{t.tips.map((x) => <li>{x}</li>)}</ul>}
+        </div>;
+      })}
+      <div class="ov-dim" style={{ fontSize: 10 }}>{tips.some((t) => t.source === 'ki') ? 'KI-Champion-Wissen, vor dem Spiel erstellt' : 'Tipps von Riot (Data Dragon)'}</div>
+    </Card>
+  );
+}
+
+/** Champion-Empfehlung in der Championauswahl (eigener Pool + Bilanz, optional KI-Begründung). */
+function OvPicks({ picks }) {
+  if (!picks?.candidates?.length) return null;
+  const ai = picks.ai?.picks || [];
+  return <div style={{ marginTop: 6 }}>
+    <b>Empfehlung gegen dieses Team</b>
+    {ai.length ? <ul>{ai.map((p) => <li><b>{p.champion}</b> – {p.reason}</li>)}</ul>
+      : <ul>{picks.candidates.slice(0, 3).map((c) => <li><b>{c.champion}</b> – {c.wins}/{c.games} Siege{c.vs.length ? ' · gegen ' + c.vs.map((v) => `${v.enemy} ${v.wins}/${v.games}`).join(', ') : ''}</li>)}</ul>}
+    <div class="ov-dim" style={{ fontSize: 10 }}>Aus deinem Pool ({picks.onRole ? 'deine Rolle' : 'alle Rollen'}, {picks.basedOn} Spiele){ai.length ? ' · Begründung: KI' : ''}</div>
+  </div>;
 }
 
 /** Farben der Exit-Arten (auch auf der großen Karte gleich). */

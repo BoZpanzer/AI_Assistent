@@ -110,7 +110,7 @@ class Orchestrator {
       conversations.update(msg.id, { content: det.text, meta: { streaming: false, deterministic: det.deterministic, model: 'lokal (ohne KI)' } });
       bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
-      if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) bus.emit('tts:speak', { text: det.text });
+      if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) bus.emit('tts:speak', { text: det.text, private: conversations.get(cid)?.privacy === 'private' });
       return conversations.messages(cid, { limit: 1 })[0];
     }
     if (conversations.get(cid).privacy !== 'private' && !gemini.hasKey() && !this.s.localLLM?.cfg().model) {
@@ -180,7 +180,10 @@ class Orchestrator {
       if (lastUser) lastUser.parts.unshift(...images.slice(0, 3).map((im) => ({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } })));
     }
     const role = needsReasoning(text) ? 'reasoning' : 'fast';
-    const model = isLocal ? this.s.localLLM.cfg().model : gemini.model(role) || gemini.requireModel('fast');
+    // Gaming-Chats ohne Bild und ohne „gründlich“-Frage: Sparmodell (Flash-Lite, ältere Generation, ca. 8× günstiger)
+    const cc = gemini.cloudCfg();
+    const lite = !isLocal && role === 'fast' && !images.length && cc.economy !== false && cc.liteGamingChat !== false && conversations.get(cid)?.privacy === 'gaming' ? gemini.model('lite') : '';
+    const model = isLocal ? this.s.localLLM.cfg().model : lite || gemini.model(role) || gemini.requireModel('fast');
     // Fester Teil der Anweisung + Werkzeuge + bisheriger Verlauf bleiben gleich → Googles Cache greift.
     // Wechselnder Kontext (Uhrzeit, Spiel, Gedächtnis) hängt nur an der neuesten Nutzernachricht (wird nicht gespeichert).
     const { stable, context } = isPrivateConv ? this.systemSplit(channel, text) : { stable: privacy.CLOUD_SYSTEM, context: '' };
@@ -218,7 +221,7 @@ class Orchestrator {
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       const vs = this.s.settings.get('voice');
       // Sprachausgabe lokal (Windows-Stimmen, keine Cloud): Sprach-Eingaben werden standardmäßig beantwortet.
-      if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: String(final.content || '').slice(0, 8000) }); // Sprechfassung + Kürzung macht die Sprachausgabe
+      if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: String(final.content || '').slice(0, 8000), private: isPrivateConv }); // Sprechfassung + Kürzung macht die Sprachausgabe
       return final;
     } catch (e) {
       // Lösungs-Marker → Markdown-Link (Chat rendert Markdown)

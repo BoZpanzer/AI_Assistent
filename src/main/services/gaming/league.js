@@ -73,6 +73,7 @@ class League {
         position: self.position || null, team: self.team,
         opponent: opp ? { champion: opp.championName, level: opp.level, kills: opp.scores?.kills, deaths: opp.scores?.deaths, cs: opp.scores?.creepScore } : null,
         items: (self.items || []).map((i) => i.displayName),
+        enemies: players.filter((p) => p.team && p.team !== self.team).map((p) => p.championName).filter(Boolean),
         source: 'Live Client Data API (lokal)',
       };
       Object.assign(state, liveContext(all.events?.Events || [], players, self));
@@ -796,8 +797,8 @@ function summarizeLcuGame(g, me, champName) {
   const st = p.stats; const mins = g.gameDuration / 60;
   const team = (g.participants || []).filter((x) => x.teamId === p.teamId);
   const teamKills = team.length >= 5 ? team.reduce((a, x) => a + (x.stats?.kills || 0), 0) : null;
-  const lane = String(p.timeline?.lane || '').toUpperCase(); const role = String(p.timeline?.role || '').toUpperCase();
-  const pos = lane === 'BOTTOM' || lane === 'BOT' ? (role.includes('SUPPORT') ? 'UTILITY' : 'BOTTOM') : lane === 'MID' ? 'MIDDLE' : lane || 'UNKNOWN';
+  // Rolle nicht aus der (oft falschen) Lane-Schätzung des Clients, sondern aus Smite/Support-Item/Teamaufteilung
+  const pos = require('./lolanalysis').normalizeGame(g, me.puuid)?.me?.role || 'UNKNOWN';
   const cs = (st.totalMinionsKilled || 0) + (st.neutralMinionsKilled || 0);
   return {
     matchId: mid, champion: champName(p.championId), win: !!st.win, kills: st.kills, deaths: st.deaths, assists: st.assists,

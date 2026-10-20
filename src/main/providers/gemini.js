@@ -14,6 +14,10 @@ const ROLE_PREFS = {
   live: [/^gemini-3\.8-live$/, /^gemini-3\.\d+-live$/, /live-preview$/, /native-audio/, /live/],
   liveThinking: [/^gemini-3\.8-live-extended-thinking$/, /live.*thinking/],
   embedding: [/^gemini-embedding-2$/, /^gemini-embedding-\d/, /^gemini-embedding/, /^text-embedding-004$/],
+  // Sparmodell für kurze, strukturierte Aufgaben (Tipps, Karten, Empfehlungen): ältestes/günstigstes Flash-Lite zuerst
+  lite: [/^gemini-2\.5-flash-lite$/, /^gemini-3\.1-flash-lite$/, /^gemini-3\.5-flash-lite$/, /^gemini-flash-lite-latest$/, /flash-lite(?!.*(image|tts|live|audio|preview))/],
+  // Sprachausgabe (Text → Sprache): günstigstes TTS-Modell zuerst
+  tts: [/^gemini-3\.8-flash-lite-tts$/, /flash-lite-tts$/, /^gemini-3\.8-flash-tts$/, /flash-tts$/, /flash.*tts/, /tts/],
 };
 
 function pickModel(role, available) {
@@ -37,7 +41,7 @@ const cloudScope = new AsyncLocalStorage();
 
 /** Cloud functions that can be switched off individually (Einstellungen → Gemini / KI). */
 const FEATURES = {
-  chat: 'Chat (Uni/Gaming)', voice: 'Gemini Live (Echtzeit-Audio)', vision: 'Bildschirmanalyse', research: 'Websuche über Gemini',
+  chat: 'Chat (Uni/Gaming)', voice: 'Gemini Live (Echtzeit-Audio)', tts: 'Cloud-Stimme (Vorlesen)', vision: 'Bildschirmanalyse', research: 'Websuche über Gemini',
   lol: 'LoL-Analysen', news: 'Patch-Notes-Kurzfassungen', games: 'Spielseiten gestalten', wikilist: 'Checklisten aus dem Wiki',
   study: 'Handschrift erkennen', diagnostics: 'Verbindungstest', meta: 'Modellliste',
 };
@@ -66,7 +70,17 @@ class Gemini {
     this.running = 0; this.waiting = []; this.inflight = new Map(); this.rejected = new Map(); this.controllers = new Set();
   }
 
-  hasKey() { return !!this.secrets.get('gemini.api_key'); }
+  hasKey() { return !!this.secrets.get('gemini.api_key') || !!this.freeKey(); }
+  /** Optionaler zweiter Schlüssel aus einem Google-Projekt OHNE Abrechnung (kostenloses Kontingent). */
+  freeKey() { return this.secrets.get('gemini.free_api_key') || ''; }
+  /** Kostenloses Kontingent nutzbar (Schlüssel da und heute nicht erschöpft)? */
+  freeAvailable() { return !!this.freeKey() && !(this.freeExhaustedUntil > Date.now()); }
+  markFreeExhausted(e) {
+    // Tageslimit → bis Mitternacht (Pazifikzeit, grob: 10 h Puffer), Minutenlimit → 1 min
+    const daily = /per.?day|PerDay|daily/i.test(String(e?.message || e));
+    this.freeExhaustedUntil = Date.now() + (daily ? 10 * 3600_000 : 65_000);
+    log.info('Kostenloses Gemini-Kontingent ' + (daily ? 'für heute' : 'für diese Minute') + ' erschöpft – nutze den normalen Schlüssel (mit Budget).');
+  }
 
   cloudCfg() { return { mode: 'hybrid', features: {}, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90, ...(this.settings.get('cloud') || {}) }; }
   /** Is Gemini allowed for this function right now? Throws a readable CloudBlocked error if not. */
@@ -83,7 +97,7 @@ class Gemini {
   client() {
     if (!cloudScope.getStore()) throw new Error('Interner Fehler: Gemini-Aufruf außerhalb der zentralen Kostenkontrolle.');
     require('../core/privacy').assertExternal();
-    const key = this.secrets.get('gemini.api_key');
+    const key = cloudScope.getStore()?.freeKey ? this.freeKey() : this.secrets.get('gemini.api_key');
     if (!key) throw new Error('Kein Gemini-API-Schlüssel hinterlegt (Einstellungen → Gemini / KI).');
     if (!this._client || this._key !== key) {
       this._client = new this.sdk.GoogleGenAI({ apiKey: key });
@@ -111,7 +125,7 @@ class Gemini {
    * never retries a request Gemini rejected as invalid.
    * run(meter, signal) must call meter.add(response.usageMetadata, model) for each response.
    */
-  async cloud(feature, run, { model = '', estUsd = 0, dedupeKey = null, background = false, timeoutMs = null, free = false } = {}) {
+  async cloud(feature, run, { model = '', estUsd = 0, dedupeKey = null, background = false, timeoutMs = null, free = false, freeKey = false } = {}) {
     this.policy(feature);
     if (dedupeKey) {
       if (this.inflight.has(dedupeKey)) return this.inflight.get(dedupeKey);
@@ -133,10 +147,10 @@ class Gemini {
       const limit = timeoutMs || this.cloudCfg().timeoutSec * 1000;
       const timer = setTimeout(() => ac.abort(Object.assign(new Error('Zeitlimit für Gemini erreicht'), { name: 'TimeoutError' })), limit);
       try {
-        if (!free && this.guard) id = this.guard.reserve({ feature, model, estUsd: estUsd + (feature === 'research' ? this.guard.groundingUsd() : 0) });
+        if (!free && !freeKey && this.guard) id = this.guard.reserve({ feature, model, estUsd: estUsd + (feature === 'research' ? this.guard.groundingUsd() : 0) });
         this.bus?.emit('cloud:state', { active: this.running, feature });
         const abort = new Promise((_, reject) => ac.signal.addEventListener('abort', () => reject(ac.signal.reason || new Error('Abgebrochen')), { once: true }));
-        const out = await Promise.race([cloudScope.run({ feature }, () => run(meter, ac.signal)), abort]);
+        const out = await Promise.race([cloudScope.run({ feature, freeKey }, () => run(meter, ac.signal)), abort]);
         if (id) this.guard.settle(id, { usage: meter.usage, model: meter.model, status: 'done', extraUsd: feature === 'research' ? this.guard.groundingUsd() : 0 });
         return out;
       } catch (e) {
@@ -338,7 +352,7 @@ class Gemini {
    * One-shot request. Personal/private content and the „life“ functions stay on the local model
    * (Ollama); there is no automatic cloud fallback if the local model fails.
    */
-  async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low', background = false, maxOut, dedupe = false }) {
+  async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low', background = false, maxOut, dedupe = false, tier = null }) {
     const privacy = require('../core/privacy');
     const local = privacy.isPrivate() || feature === 'life' || privacy.privateText(JSON.stringify(contents));
     if (local || (this.cloudCfg().mode === 'local' && feature !== 'vision')) {
@@ -346,10 +360,22 @@ class Gemini {
       return this.localLLM.generate({ system, contents, json, schema, tools, background });
     }
     if (['lol', 'study', 'news', 'games'].includes(feature) && background && this.guard?.braking()) throw new Error('Gemini-Budget fast aufgebraucht – Hintergrund-KI pausiert (Kostenbremse).');
-    const m = model && model !== 'local' ? model : this.requireModel(feature === 'vision' ? 'vision' : 'fast');
+    // Sparmodell für kurze Aufgaben (Standard an): ältere/günstigere Flash-Lite-Generation
+    const lite = tier === 'lite' && this.cloudCfg().economy !== false && !model ? this.model('lite') : '';
+    const m = lite || (model && model !== 'local' ? model : this.requireModel(feature === 'vision' ? 'vision' : 'fast'));
     if (m === 'local') throw new Error('Kein Gemini-Modell verfügbar – bitte die Modellprüfung ausführen.');
     const limit = this.maxOut(effort, maxOut);
-    const dedupeKey = dedupe ? feature + ':' + require('node:crypto').createHash('sha256').update(JSON.stringify([m, system, contents, schema])).digest('hex') : null;
+    // Kostenloses Kontingent (zweiter Schlüssel) zuerst für Sparmodell-Aufgaben; bei Limit → normaler Schlüssel
+    if (lite && this.freeAvailable()) {
+      try { return await this.generateOnce({ m, system, contents, json, schema, temperature, tools, feature, effort, background, limit, dedupe, freeKey: true }); }
+      catch (e) { if (!isQuota(e)) throw e; this.markFreeExhausted(e); }
+    }
+    if (!this.secrets.get('gemini.api_key')) throw new CloudBlocked('Kostenloses Gemini-Kontingent erschöpft und kein normaler Schlüssel hinterlegt.');
+    return this.generateOnce({ m, system, contents, json, schema, temperature, tools, feature, effort, background, limit, dedupe, freeKey: false });
+  }
+
+  async generateOnce({ m, system, contents, json, schema, temperature, tools, feature, effort, background, limit, dedupe, freeKey }) {
+    const dedupeKey = dedupe ? feature + ':' + (freeKey ? 'free:' : '') + require('node:crypto').createHash('sha256').update(JSON.stringify([m, system, contents, schema])).digest('hex') : null;
     return this.cloud(feature, async (meter, signal) => {
       const base = { systemInstruction: system, temperature: temperature ?? 0.3, maxOutputTokens: limit, abortSignal: signal };
       if (json) { base.responseMimeType = 'application/json'; if (schema) base.responseSchema = schema; }
@@ -360,7 +386,34 @@ class Gemini {
       const text = r.text || '';
       if (json) { try { return JSON.parse(text); } catch { throw new Error('Ungültige JSON-Antwort des Modells'); } }
       return text;
-    }, { model: m, estUsd: this.estimate(m, { system, contents, tools, maxOut: limit, effort }), background, dedupeKey });
+    }, { model: m, estUsd: this.estimate(m, { system, contents, tools, maxOut: limit, effort }), background, dedupeKey, freeKey });
+  }
+
+  /**
+   * Text → Sprache mit einem Gemini-TTS-Modell. Liefert WAV (24 kHz, 16 bit, mono).
+   * Kostenloses Kontingent zuerst (falls zweiter Schlüssel), sonst normaler Schlüssel mit eigener Tagesgrenze.
+   */
+  async speak(text, { voiceName = 'Kore', style = '' } = {}) {
+    const model = this.model('tts');
+    if (!model) throw new CloudBlocked('Kein Gemini-Sprachmodell (TTS) verfügbar – Modellprüfung ausführen.');
+    const prompt = (style ? style.trim() + ': ' : 'Sprich natürlich, freundlich und deutlich auf Deutsch (englische Spiel- und Eigennamen englisch aussprechen): ') + String(text).slice(0, 1500);
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const run = (freeKey) => this.cloud('tts', async (meter, signal) => {
+      const r = await this.client().models.generateContent({ model, contents, config: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }, abortSignal: signal } });
+      meter.add(r.usageMetadata, model);
+      this.track(r, 'tts', model);
+      const part = (r.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
+      if (!part) throw new Error('Gemini hat kein Audio geliefert');
+      const rate = Number(String(part.inlineData.mimeType || '').match(/rate=(\d+)/)?.[1]) || 24000;
+      return pcmToWav(Buffer.from(part.inlineData.data, 'base64'), rate);
+    }, { model, estUsd: this.estimate(model, { contents, maxOut: Math.ceil(String(text).length / 12) * 32 }), freeKey });
+    if (this.freeAvailable()) {
+      try { return await run(true); } catch (e) { if (!isQuota(e)) throw e; this.markFreeExhausted(e); }
+    }
+    if (!this.secrets.get('gemini.api_key')) throw new CloudBlocked('Kostenloses Kontingent erschöpft – lokale Stimme wird genutzt.');
+    const cap = Number(this.settings.get('aiBudget')?.ttsDailyEur ?? 0.05);
+    if (this.guard && this.guard.eur(this.guard.ledgerUsd("feature='tts' AND day=?", require('../services/costguard').localDay())) >= cap) throw new CloudBlocked('Tagesgrenze der Cloud-Stimme erreicht – lokale Stimme wird genutzt.');
+    return run(false);
   }
 
   /** Grounded web research with Google Search. Sources are https only. No silent fallback. */
@@ -464,6 +517,15 @@ function isClientError(e) {
 function isOverloaded(e) { const m = String(e?.message || e); return [500, 502, 503, 504].includes(e?.status) || /\b(500|502|503|504)\b|UNAVAILABLE|overloaded|high demand|Service Unavailable|INTERNAL|DEADLINE_EXCEEDED/i.test(m); }
 /** 402: Abrechnung aktiv, aber Vorauszahlungsguthaben leer – kein Limit, Warten/Ausweichen hilft nicht. */
 function isPayment(e) { return e?.status === 402 || /\b402\b|PAYMENT_REQUIRED|PaymentRequired|prepay|prepayment|billing.*(balance|credit)/i.test(String(e?.message || e)); }
+/** Rohes PCM (16 bit, mono) → WAV-Datei. */
+function pcmToWav(pcm, rate = 24000) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12); h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+
 function isQuota(e) {
   if (isPayment(e)) return false;
   return /RESOURCE_EXHAUSTED|quota|\b429\b/i.test(String(e?.message || e)) || e?.status === 429;
@@ -514,5 +576,5 @@ function friendlyError(e) {
   return innerMessage(msg.replace(fix, '')).slice(0, 360) + fix;
 }
 
-module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo, CloudBlocked, FEATURES, estimateTokens, isClientError, cloudScope, BudgetError };
+module.exports = { Gemini, pcmToWav, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo, CloudBlocked, FEATURES, estimateTokens, isClientError, cloudScope, BudgetError };
 
