@@ -344,7 +344,7 @@ class AudioEngine {
    * nächster Satz wird schon berechnet, während der vorige läuft). Rückfall: Windows-Stimme.
    * full: ganzer Text (Knopf „Vorlesen“), sonst Kurzfassung. override: Stimme/Tempo/Tonhöhe für die Hörprobe.
    */
-  async speakLocal(text, { full = false, override = null, private: priv = false } = {}) {
+  async speakLocal(text, { full = false, override = null, private: priv = false, preview = false } = {}) {
     if (!text || this.mode.stream || this.mode.local) return;
     this.stopSpeech();
     const gen = this.tts.gen;
@@ -352,10 +352,10 @@ class AudioEngine {
     let prep;
     try { prep = await rpc('tts.prepare', { text, full }); } catch { prep = { text: String(text), parts: [String(text)] }; }
     if (gen !== this.tts.gen || !prep.parts.length) return;
-    if (st.engine === 'windows') return this.windowsSpeak(prep.text, st);
+    if (st.engine === 'windows') return this.windowsSpeak(prep.text, await this.withPreset(st));
     this.tts.speaking = true;
     try {
-      const synth = (t) => rpc('tts.synthesize', { text: t, override, private: priv });
+      const synth = (t) => rpc('tts.synthesize', { text: t, override, private: priv, preview });
       let next = synth(prep.parts[0]);
       for (let i = 0; i < prep.parts.length; i++) {
         const cur = await next;
@@ -368,7 +368,7 @@ class AudioEngine {
     } catch (e) {
       if (gen !== this.tts.gen) return;
       if (!this.tts.warned) { this.tts.warned = true; toast('Natürliche Stimme nicht verfügbar (' + (e.message || e) + ') – Windows-Stimme wird genutzt.', 'error'); }
-      this.windowsSpeak(prep.text, st);
+      this.windowsSpeak(prep.text, await this.withPreset(st));
     } finally { if (gen === this.tts.gen) { this.tts.speaking = false; setState({ outLevel: 0 }); } }
   }
 
@@ -400,6 +400,16 @@ class AudioEngine {
     try { this.tts.src?.stop(); } catch { /* ignore */ }
     this.tts.src = null; this.tts.speaking = false;
     try { speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+
+  /** Stimmprofil (J.A.R.V.I.S./Alya) auf die Windows-Stimme übertragen: passende Stimme, Tonhöhe, Tempo. */
+  async withPreset(st) {
+    if (!st.preset || st.preset === 'standard') return st;
+    if (!this.presets) { try { this.presets = (await rpc('tts.presets')).presets; } catch { this.presets = []; } }
+    const w = this.presets.find((p) => p.id === st.preset)?.windows;
+    if (!w) return st;
+    const v = speechSynthesis.getVoices().find((x) => x.localService && x.lang?.startsWith('de') && new RegExp(w.prefer, 'i').test(x.name));
+    return { ...st, windowsVoice: v?.name || st.windowsVoice, pitch: w.pitch, speed: w.speed };
   }
 
   /** Windows-Stimme: gewählte, sonst beste installierte deutsche Stimme (nie Online-Stimmen). */

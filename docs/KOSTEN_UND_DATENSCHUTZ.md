@@ -91,6 +91,7 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Diagnose-Protokolle | laufend | lokal, Schlüssel/Token geschwärzt, max. 8 MB | `logs/` | Einstellungen → Sicherheit → Protokolle leeren |
 | JARVIS-Kalender (Termine, Geburtstage, Uni, Aufgaben mit Fälligkeit, Erinnerungen) | nur wenn „Alles aus JARVIS nach Google übertragen“ an ist; letzte 30 bis nächste 180 Tage | Google Kalender (eigene Kalender „JARVIS · …“ je Art) | bei Google | Schalter aus bzw. Art abwählen (entfernt unveränderte Kopien) |
 | Vorgelesene Antworten (Cloud-Stimme) | Antworttext aus Uni-/Gaming-Chats, Spielansagen | Google (Gemini-TTS) | Audio-Cache lokal (max. 60 MB) | Sprachausgabe → „Nur lokal“; Funktion „Cloud-Stimme“ aus |
+| Vorgelesene Antworten mit eigener ElevenLabs-Stimme (optional) | nur mit hinterlegtem Schlüssel + Voice-ID, nicht privat, Zeichengrenze pro Tag | ElevenLabs | Audio-Cache lokal | Voice-ID leeren / Schlüssel entfernen |
 | Kostenloses Kontingent (Zusatz-Schlüssel) | Sparmodell-Anfragen, vorzulesende Texte | Google; darf laut Google zur Produktverbesserung genutzt werden | – | Schlüssel entfernen |
 | Kosten-Protokoll | je Gemini-Aufruf | lokal, nur Metadaten | Datenbank | ältere Einträge löschen |
 

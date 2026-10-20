@@ -13,6 +13,50 @@ export const upd = (patch) => guard(() => rpc('settings.update', patch));
 const SAMPLE = 'Hallo, ich bin JARVIS. Du warst Support mit Malphite – achte in der Lane auf Sivirs Spellshield und warde den Jungle vor dem Drachen. Deine Überlebensrate in Tarkov liegt heute bei sechzig Prozent.';
 const CLOUD_VOICES = ['Kore', 'Charon', 'Puck', 'Aoede', 'Fenrir', 'Leda', 'Orus', 'Zephyr', 'Enceladus', 'Iapetus', 'Algieba', 'Despina', 'Sulafat', 'Achird'];
 
+const PRESET_SAMPLES = {
+  standard: 'Hallo, ich bin JARVIS. So klinge ich mit deinen bisherigen Einstellungen.',
+  jarvis: 'Guten Abend. Alle Systeme laufen einwandfrei. Womit darf ich behilflich sein?',
+  alya: 'Hey, schön, dass du da bist! Sollen wir gleich mit deiner nächsten Aufgabe loslegen?',
+};
+
+/**
+ * Einstellungen → Stimme: Profil wählen (Standard / J.A.R.V.I.S. / Alya), je Profil eine Hörprobe.
+ * Wirkt sofort für alle Sprachantworten, ohne Neustart und ohne KI-Anfrage. Hörproben werden lokal gespeichert.
+ */
+function VoicePicker({ s }) {
+  const t = s.voice?.tts || {};
+  const [d] = useRpc('tts.presets', {}, { events: ['settings:changed'] });
+  const presets = d?.presets || [];
+  const cur = t.preset || 'standard';
+  const [busy, setBusy] = useState('');
+  const play = async (id) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id], { full: true, preview: true, override: { preset: id } }); } finally { setBusy(''); } };
+  const ev = t.elevenVoices || {};
+  const [key, setKey] = useState('');
+  const saveKey = async (v) => { await guard(() => rpc('secrets.set', { key: 'elevenlabs.api_key', value: v }), v ? 'ElevenLabs-Schlüssel gespeichert' : 'ElevenLabs-Schlüssel entfernt'); setState({ secrets: await rpc('secrets.status') }); setKey(''); };
+  return (
+    <Panel icon={Mic} title="Stimme" sub="Wie JARVIS klingt – wirkt sofort für alle Sprachantworten">
+      <Field label="Stimme"><Select value={cur} onChange={(x) => upd({ voice: { tts: { preset: x } } })} options={presets.map((p) => ({ value: p.id, label: p.label }))} /></Field>
+      {presets.map((p) => (
+        <div class="row gap-s" style={{ padding: '5px 0', alignItems: 'center' }}>
+          <input type="radio" name="voice-preset" checked={cur === p.id} onChange={() => upd({ voice: { tts: { preset: p.id } } })} />
+          <span class="grow small" style={{ cursor: 'pointer' }} onClick={() => upd({ voice: { tts: { preset: p.id } } })}><b>{p.label}</b><div class="tiny muted">{p.description}</div></span>
+          <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
+        </div>
+      ))}
+      <div class="tiny muted">J.A.R.V.I.S. und Alya sind eigenständige Stimmen mit ähnlicher Wirkung – keine Nachbildung echter Sprecher. Sie nutzen die Cloud-Stimme (falls an, siehe „Sprachausgabe“), sonst lokale Stimmen; fehlt eine Stimme, klingt es wie „Standard“.</div>
+      <details class="mt">
+        <summary class="small">Eigene lizenzierte Stimmen (ElevenLabs, optional)</summary>
+        <div class="tiny muted mb">Nur mit Stimmen, für die du die Rechte hast (z. B. eigene oder lizenzierte Voices in deinem ElevenLabs-Konto). Der Schlüssel bleibt verschlüsselt auf dem PC; ElevenLabs berechnet nach Zeichen.</div>
+        <Field label={<span><KeyRound size={12} /> ElevenLabs-Schlüssel</span>} hint={d?.elevenKey ? 'gespeichert' : 'elevenlabs.io → Profil → API Keys'}>
+          <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={d?.elevenKey ? '••••••••••••' : 'sk_…'} value={key} onInput={(e) => setKey(e.currentTarget.value)} /><button class="btn xs" disabled={!key} onClick={() => saveKey(key)}>Speichern</button>{d?.elevenKey && <button class="btn xs ghost" onClick={() => saveKey('')}>Entfernen</button>}</div>
+        </Field>
+        {presets.map((p) => <Field label={`Voice-ID · ${p.label}`}><input class="inp" placeholder="leer = nicht nutzen" value={ev[p.id] || ''} onChange={(e) => upd({ voice: { tts: { elevenVoices: { [p.id]: e.currentTarget.value.trim().slice(0, 64) } } } })} /></Field>)}
+        <Field label="Höchstens Zeichen pro Tag" hint="danach Cloud-/lokale Stimme"><input class="inp" type="number" min="0" max="1000000" step="1000" style={{ width: 110 }} value={t.elevenDailyChars ?? 10000} onChange={(e) => upd({ voice: { tts: { elevenDailyChars: Math.max(0, Math.round(Number(e.currentTarget.value) || 0)) } } })} /></Field>
+      </details>
+    </Panel>
+  );
+}
+
 /** Lokale Sprachausgabe: Piper-Stimmen (mitgeliefert/auf Klick), Stil, Tempo, Tonhöhe, Lautstärke, Hörprobe. */
 function SpeechOutput({ s }) {
   const t = s.voice?.tts || {};
@@ -81,6 +125,7 @@ export function Settings() {
       <div class="page-body scroll-y">
         <div class="settings-grid">
           <General s={s} />
+          <VoicePicker s={s} />
           <Speech s={s} />
           <SpeechOutput s={s} />
           <LocalAI s={s} />

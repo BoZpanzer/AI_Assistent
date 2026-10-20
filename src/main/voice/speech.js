@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const log = require('../core/logger').scope('speech');
+const { resolve } = require('./voice-presets');
 
 const CACHE_MAX = 60 * 1024 * 1024;
 
@@ -54,26 +55,70 @@ class Speech {
     return this.s.gemini.cloudAllowed('tts');
   }
 
+  /** ElevenLabs nur mit eigenem Schlüssel + Voice-ID, nicht privat, Cloud nicht aus, unter der Zeichengrenze. */
+  elevenOk(priv, engine, c) {
+    if (priv || !['auto', 'gemini'].includes(engine) || !c.elevenVoiceId || !this.s.secrets.get('elevenlabs.api_key')) return false;
+    const cc = this.s.settings.get('cloud') || {};
+    if (cc.mode === 'local' || cc.features?.tts === false) return false;
+    return this.elevenUsed() < (Number(c.elevenDailyChars) || 10000);
+  }
+  elevenDay() { const d = new Date(); return `tts:eleven:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+  elevenUsed() { return Number(this.s.db.get('SELECT value FROM meta WHERE key=?', this.elevenDay())?.value || 0); }
+
+  /** ElevenLabs Text→Sprache (PCM 24 kHz → WAV). Schlüssel bleibt im Hauptprozess. */
+  async eleven(text, c) {
+    require('../core/privacy').assertExternal();
+    const r = await this.s.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(c.elevenVoiceId)}?output_format=pcm_24000`, {
+      method: 'POST', headers: { 'xi-api-key': this.s.secrets.get('elevenlabs.api_key'), 'Content-Type': 'application/json', Accept: 'audio/pcm' },
+      body: JSON.stringify({ text: String(text).slice(0, 1500), model_id: c.elevenModel || 'eleven_flash_v2_5' }), signal: AbortSignal.timeout(30000),
+    });
+    if (!r.ok) throw new Error('ElevenLabs antwortet mit HTTP ' + r.status);
+    const pcm = Buffer.from(await r.arrayBuffer());
+    if (pcm.length < 200) throw new Error('ElevenLabs hat kein Audio geliefert');
+    this.s.db.run('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', this.elevenDay(), String(this.elevenUsed() + String(text).length));
+    return require('../providers/gemini').pcmToWav(pcm, 24000);
+  }
+
+  cached(parts, make) {
+    const key = crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
+    const hit = this.fromCache(key);
+    if (hit) return Promise.resolve({ wav: hit, cached: true });
+    return make().then((wav) => { this.toCache(key, wav); return { wav }; });
+  }
+
   /**
-   * Satz → WAV. override: Hörprobe mit anderer Stimme/Engine. Rückgabe { wav, pitch, engine }.
-   * Scheitert die Cloud-Stimme (Grenze, offline, Limit), wird still lokal gesprochen.
+   * Satz → WAV mit dem gewählten Stimmprofil (Standard / J.A.R.V.I.S. / Alya). Reihenfolge: eigene lizenzierte
+   * ElevenLabs-Stimme (falls Voice-ID + Schlüssel) → Cloud-Stimme (Gemini-TTS) → lokal (Piper). Keine LLM-Anfrage –
+   * gesprochen wird die fertige Antwort. Fertige Cloud-Audios und Hörproben werden gespeichert.
+   * override: Hörprobe mit anderem Profil/Engine (ändert nichts dauerhaft).
    */
-  async synthesize(text, { override = {}, private: priv = false } = {}) {
-    const c = { ...this.cfg(), ...override };
+  async synthesize(text, { override = {}, private: priv = false, preview = false } = {}) {
+    const c = resolve({ ...this.cfg(), ...override }, { isInstalled: (v) => !!this.s.tts.voiceFile?.(v) });
     const engine = c.engine || 'auto';
+    const clamp = (x) => Math.max(0.8, Math.min(1.25, Number(x) || 1));
+    const cloudPitch = c.preset === 'standard' ? clamp(c.pitch) : 1; // Cloud-Stimmen der Profile klingen ohne Verstellung am natürlichsten
+    if (this.elevenOk(priv, engine, c)) {
+      try {
+        const r = await this.cached(['e', c.elevenVoiceId, c.elevenModel || '', String(text)], () => this.eleven(text, c));
+        return { ...r, pitch: cloudPitch, engine: 'elevenlabs', preset: c.preset };
+      } catch (e) { log.info('ElevenLabs nicht genutzt: ' + e.message); }
+    }
     if (this.cloudOk(priv, engine)) {
       const voiceName = c.cloudVoice || 'Kore';
-      const key = crypto.createHash('sha256').update(['g', voiceName, c.style || '', String(text)].join('|')).digest('hex').slice(0, 32);
-      const hit = this.fromCache(key);
-      if (hit) return { wav: hit, pitch: Math.max(0.8, Math.min(1.25, Number(c.pitch) || 1)), engine: 'gemini', cached: true };
       try {
-        const wav = await this.s.gemini.speak(text, { voiceName });
-        this.toCache(key, wav);
-        return { wav, pitch: Math.max(0.8, Math.min(1.25, Number(c.pitch) || 1)), engine: 'gemini' };
+        const r = await this.cached(['g', voiceName, c.cloudStyle || '', String(text)], () => this.s.gemini.speak(text, { voiceName, style: c.cloudStyle || '' }));
+        return { ...r, pitch: cloudPitch, engine: 'gemini', preset: c.preset };
       } catch (e) { log.info('Cloud-Stimme nicht genutzt: ' + e.message); }
     }
-    const r = await this.s.tts.synthesize(localPronunciation(text), override);
-    return { ...r, engine: 'piper' };
+    const local = { ...override, voice: c.voice, pitch: c.pitch, speed: c.speed, style: c.style, speaker: c.speaker };
+    const run = () => this.s.tts.synthesize(localPronunciation(text), local);
+    if (preview) {
+      // Hörproben lokal zwischenspeichern (gleicher Text, gleiche Stimme → sofort)
+      const r = await this.cached(['p', c.voice || '', c.pitch, c.speed, c.style || '', c.speaker ?? '', String(text)], async () => (await run()).wav);
+      return { ...r, pitch: clamp(c.pitch), engine: 'piper', preset: c.preset, fallback: !!c.presetFallback };
+    }
+    const r = await run();
+    return { ...r, engine: 'piper', preset: c.preset, fallback: !!c.presetFallback };
   }
 }
 

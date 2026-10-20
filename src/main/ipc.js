@@ -7,7 +7,7 @@ const logger = require('./core/logger');
 const { friendlyError } = require('./providers/gemini');
 const log = logger.scope('ipc');
 
-const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'riot.api_key', 'pubg.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
+const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'elevenlabs.api_key', 'riot.api_key', 'pubg.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
 
 /**
  * Single RPC entry point. Only our own app:// frame may call; every method
@@ -108,11 +108,13 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
     'tts.status': () => s.tts.status(),
     'tts.prepare': ({ text, full } = {}) => require('./voice/speakable').speakable(String(text || '').slice(0, 20000), { full: !!full || s.settings.get('voice').tts?.short === false }),
-    'tts.synthesize': async ({ text, override, private: priv } = {}) => {
-      const o = override && typeof override === 'object' ? { engine: override.engine, cloudVoice: override.cloudVoice, voice: override.voice, style: override.style, speaker: override.speaker, speed: override.speed, pitch: override.pitch } : {};
-      const r = await s.speech.synthesize(String(text || ''), { override: Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)), private: !!priv || require('./core/privacy').privateText(String(text || '')) });
-      return { audio: r.wav.toString('base64'), pitch: r.pitch, engine: r.engine };
+    'tts.synthesize': async ({ text, override, private: priv, preview } = {}) => {
+      const o = override && typeof override === 'object' ? { preset: override.preset, engine: override.engine, cloudVoice: override.cloudVoice, voice: override.voice, style: override.style, speaker: override.speaker, speed: override.speed, pitch: override.pitch } : {};
+      const r = await s.speech.synthesize(String(text || ''), { preview: !!preview, override: Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)), private: !!priv || require('./core/privacy').privateText(String(text || '')) });
+      return { audio: r.wav.toString('base64'), pitch: r.pitch, engine: r.engine, preset: r.preset, fallback: !!r.fallback };
     },
+    // Stimmprofile für Einstellungen → Stimme (ohne Schlüssel; nur ob einer hinterlegt ist)
+    'tts.presets': () => ({ presets: require('./voice/voice-presets').publicPresets(), elevenKey: !!s.secrets.get('elevenlabs.api_key') }),
     'tts.install': ({ id }) => s.tts.install(String(id || '')),
     'tts.remove': ({ id }) => s.tts.remove(String(id || '')),
     'local.installOllama': () => s.localLLM.installOllama(),
