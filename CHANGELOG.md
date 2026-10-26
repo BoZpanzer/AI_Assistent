@@ -10,6 +10,7 @@ Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 - **Daily/Weekly:** Häkchen setzen sich zur Reset-Zeit automatisch zurück; eigene Aufgaben möglich. Reset-Uhrzeit lässt sich aus dem Countdown im Spiel übernehmen.
 - **Rechner:** Upgrade (erwartete Versuche/Kosten, 50/90/99 %), Crafting (Materialkosten, Gewinn, gespeicherte Rezepte), Regeneration (wann ist das Kontingent voll → Erinnerung).
 - **Dungeon, Items, Builds, NPCs, Kinah, PvP:** über die Spielrecherche mit vorbereiteten Fragen und Quellen; eigene Karte per Kartenbild; Screenshot-Analyse wie bei den anderen Spielen.
+- **Cloud-Stimme mit Gratis-Schlüssel:** Ist der kostenlose Zusatz-Schlüssel hinterlegt, liest die Gemini-Stimme auch dann weiter vor, wenn das bezahlte Tages- oder Monatsbudget erreicht ist – sie kostet darüber nichts. Private Texte bleiben lokal.
 
 ## 4.6.0 – Bessere Stimme, Sparmodelle, Gegner-Tipps, Champion-Empfehlung
 

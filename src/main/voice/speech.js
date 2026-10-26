@@ -52,7 +52,7 @@ class Speech {
   /** Cloud-Stimme erlaubt für diesen Text? */
   cloudOk(priv, engine = this.cfg().engine || 'auto') {
     if (priv || !['auto', 'gemini'].includes(engine)) return false;
-    return this.s.gemini.cloudAllowed('tts');
+    return this.s.gemini.cloudAllowed('tts', { freeOk: true });
   }
 
   /** ElevenLabs nur mit eigenem Schlüssel + Voice-ID, nicht privat, Cloud nicht aus, unter der Zeichengrenze. */
