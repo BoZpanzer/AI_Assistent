@@ -6,10 +6,11 @@ import { Panel, Checkbox, Empty, SourceTag, Spinner, useNow, ask, Select } from 
 import { countdown, ago, fmtDateTime } from '../../lib/format.js';
 import { renderMarkdown, onMarkdownClick } from '../../lib/markdown.js';
 import { createMapAutoRetry } from '../../lib/map-auto-retry.mjs';
+import { Aion2Bosses, Aion2Resets, Aion2Calc } from './aion2.jsx';
 
 export const SPAN = {
   map: 'w-7', 'tarkov-raidplan': 'w-5', 'tarkov-companion': 'w-5', 'tarkov-needed': 'w-7', 'tarkov-hideout': 'w-6', 'tarkov-raid': 'w-5', 'tarkov-quests': 'w-4', 'tarkov-item': 'w-4', checklist: 'w-6', 'other-games': 'w-6',
-  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12', 'tarkov-economy': 'w-6', 'lol-progress': 'w-6', 'tarkov-ammo': 'w-6',
+  'lol-overview': 'w-12', 'lol-champions': 'w-6', 'lol-matches': 'w-6', 'lol-coaching': 'w-6', 'lol-live': 'w-6', 'lol-goals': 'w-6', 'lol-champion': 'w-12', 'lol-champselect': 'w-6', 'lol-review': 'w-6', 'lol-mistakes': 'w-6', 'lol-game': 'w-12', 'lol-coach': 'w-6', playtime: 'w-6', news: 'w-6', servers: 'w-6', deals: 'w-6', 'rok-speedups': 'w-6', 'aion2-bosses': 'w-6', 'aion2-resets': 'w-6', 'aion2-calc': 'w-6', 'ark-breeding': 'w-6', 'cs2-matches': 'w-6', 'racing-laps': 'w-6', 'pubg-matches': 'w-6', 'stardew-farm': 'w-6', 'wiki-lists': 'w-6', 'factorio-calc': 'w-12', 'tarkov-economy': 'w-6', 'lol-progress': 'w-6', 'tarkov-ammo': 'w-6',
   ask: 'w-12', links: 'w-6', 'game-stats': 'w-6', timers: 'w-6', 'rok-planner': 'w-6', progress: 'w-6', 'game-research': 'w-12', wiki: 'w-6', notes: 'w-6', sources: 'w-6',
 };
 
@@ -777,7 +778,7 @@ function GameResearch({ game, params }) {
     setBusy(false);
   };
   useEffect(() => { if (params.query) { setQ(params.query); run(params.query); } }, [params.query]);
-  const suggestions = { rok: ['Beste Kommandantenpaare für Infanterie', 'Aktuelle Events und Prioritäten', 'Rathaus 22 Voraussetzungen'], ark: ['Betäubungspfeile für Rex Level 150', 'Beste Fundorte für Metall auf The Island', 'Zähmfutter Argentavis'], eldenring: ['Boss-Guide Malenia', 'Starke Build für Stärke', 'Fundort Schmiedesteine'] }[game.id] || ['Tipps für Einsteiger', 'Aktueller Patch – wichtigste Änderungen', 'Beste Strategie für '];
+  const suggestions = { rok: ['Beste Kommandantenpaare für Infanterie', 'Aktuelle Events und Prioritäten', 'Rathaus 22 Voraussetzungen'], ark: ['Betäubungspfeile für Rex Level 150', 'Beste Fundorte für Metall auf The Island', 'Zähmfutter Argentavis'], eldenring: ['Boss-Guide Malenia', 'Starke Build für Stärke', 'Fundort Schmiedesteine'], aion2: ['Dungeon-Guide: Bossmechaniken und Loot', 'Wo droppt …? (Item-Finder)', 'Beste Farmspots für …', 'Bester Build für meine Klasse', 'Gear-Vergleich: … gegen …', 'NPC-Finder: Händler/Trainer für …', 'Profitabelste Kinah-Farm gerade', 'PvP-Events: Zeiten und Belohnungen'] }[game.id] || ['Tipps für Einsteiger', 'Aktueller Patch – wichtigste Änderungen', 'Beste Strategie für '];
   return (
     <Panel icon={Search} title="Spielwissen & Recherche" sub="Aktuelle Informationen mit Quellen (Google-Suche über Gemini)">
       <div class="row">
@@ -1725,6 +1726,6 @@ export const WIDGETS = {
   'lol-overview': LolOverview, 'lol-champions': LolChampions, 'lol-matches': LolMatches, 'lol-coaching': LolCoaching, 'lol-live': LolLive, 'lol-goals': LolGoals, 'lol-champion': LolChampion,
   'lol-champselect': LolChampSelect, 'lol-review': LolReview, 'lol-mistakes': LolMistakes, 'lol-game': LolGame, 'lol-coach': LolCoach,
   'rok-planner': RokPlanner, progress: Progress, ask: AskWidget, links: LinksWidget,
-  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc, 'tarkov-economy': TarkovEconomy, 'lol-progress': LolProgress, 'tarkov-ammo': TarkovAmmo,
+  playtime: Playtime, news: News, servers: Servers, deals: Deals, 'rok-speedups': RokSpeedups, 'aion2-bosses': Aion2Bosses, 'aion2-resets': Aion2Resets, 'aion2-calc': Aion2Calc, 'ark-breeding': ArkBreeding, 'cs2-matches': Cs2Matches, 'racing-laps': RacingLaps, 'pubg-matches': PubgMatches, 'stardew-farm': StardewFarm, 'wiki-lists': WikiListsWidget, 'factorio-calc': FactorioCalc, 'tarkov-economy': TarkovEconomy, 'lol-progress': LolProgress, 'tarkov-ammo': TarkovAmmo,
 };
 export { nextScheduled };

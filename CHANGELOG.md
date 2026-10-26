@@ -2,6 +2,15 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 4.7.0 – AION 2 im HUD
+
+- **AION 2 als eigenes Spiel:** Spielseite mit Boss-/Event-Timer, Daily/Weekly-Checkliste, Regenerationsrechner sowie Upgrade- und Crafting-Rechner; im Overlay die nächsten Events und laufenden Boss-Timer.
+- **Boss-Timer:** 49 Feldbosse (Respawn-Zeiten Community-Stand 10/2026, je Boss anpassbar). „✓ tot“ startet den Respawn-Timer, der im Overlay mitläuft.
+- **Events:** Kaira (alle 3 h), Artefakt-Belagerung und Executors (Mo/Do/Sa) in Serverzeit; Region EU/NA wählbar.
+- **Daily/Weekly:** Häkchen setzen sich zur Reset-Zeit automatisch zurück; eigene Aufgaben möglich. Reset-Uhrzeit lässt sich aus dem Countdown im Spiel übernehmen.
+- **Rechner:** Upgrade (erwartete Versuche/Kosten, 50/90/99 %), Crafting (Materialkosten, Gewinn, gespeicherte Rezepte), Regeneration (wann ist das Kontingent voll → Erinnerung).
+- **Dungeon, Items, Builds, NPCs, Kinah, PvP:** über die Spielrecherche mit vorbereiteten Fragen und Quellen; eigene Karte per Kartenbild; Screenshot-Analyse wie bei den anderen Spielen.
+
 ## 4.6.0 – Bessere Stimme, Sparmodelle, Gegner-Tipps, Champion-Empfehlung
 
 - **Stimmenauswahl (Einstellungen → Stimme):** „Standard“ (bisherige Stimme), „J.A.R.V.I.S.“ (tief, ruhig, elegant, britisch anmutend) und „Alya (Anime)“ (natürlich, freundlich, weich) – je mit ▶-Hörprobe (lokal gespeichert), Wechsel sofort ohne Neustart und ohne KI-Anfrage, gilt für alle Sprachantworten. Eigenständige Stimmen mit ähnlicher Wirkung, keine Nachbildung echter Sprecher. Optional eigene, rechtmäßig lizenzierte ElevenLabs-Stimmen per Voice-ID (Schlüssel bleibt verschlüsselt im Hauptprozess, Zeichengrenze pro Tag). Fehlt eine Stimme, klingt es wie „Standard“.

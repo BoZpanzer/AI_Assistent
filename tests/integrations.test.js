@@ -549,6 +549,7 @@ test('Spiel-Kits: jedes gespielte Steam-Spiel hat passende Fragen, Layout aus fe
     for (const l of p.links) assert.match(l.url, /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}\//, id);
     for (const c of p.checklists) assert.ok(c.items.length && c.items.every((x) => typeof x === 'string' && x.length <= 120), id);
     if (p.wiki) assert.match(p.wiki.api, /^https:\/\/.+api\.php$/, id);
+    if (p.integration !== 'generic') continue; // eigene Integrationen (z. B. AION 2) haben ein eigenes Layout, eigener Test
     const layout = core.gaming.layout(id);
     assert.ok(layout.widgets.every((w) => WIDGET_TYPES.includes(w.type)), id);
     assert.equal(layout.widgets[0].type, 'ask', id);

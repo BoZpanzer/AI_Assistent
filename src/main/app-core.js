@@ -100,6 +100,7 @@ function createCore(opts) {
   s.gaming.news = new GameNews(s);
   s.gaming.deals = new Deals(s);
   s.gaming.rok = new Rok(s);
+  s.gaming.aion2 = new (require('./services/gaming/aion2').Aion2)(s);
   s.gaming.ark = new Ark(s);
   s.gaming.cs2 = new Cs2(s);
   s.gaming.ac = new AcTelemetry(s);
