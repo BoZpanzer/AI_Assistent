@@ -241,7 +241,7 @@ const KITS = {
   aion2: {
     genre: 'rpg',
     questions: ['Dungeon-Guide: Bossmechaniken und Loot für …', 'Wo droppt das Item …?', 'Beste Farmspots für das Material …', 'Welcher Build (Skills, Rotation, Ausrüstung) für meine Klasse …?', 'Wo finde ich den NPC …?', 'Was ist gerade die profitabelste Kinah-Farm?', 'Wann sind PvP-Events und was gibt es als Belohnung?'],
-    links: [{ label: 'AION 2 Datenbank & Tools (metabot.gg)', url: 'https://metabot.gg/en/aion-2' }, { label: 'Dungeon-Drops (gamewith.ai)', url: 'https://gamewith.ai/aion2/en/dungeons/dead-dramatas-nest' }, { label: 'Boss-Timer (aion2atlas.app)', url: 'https://aion2atlas.app/boss-timer/' }],
+    links: [{ label: 'Quests (Questlog)', url: 'https://questlog.gg/aion-2/en/db/quests' }, { label: 'Boss-Zeitplan (Questlog)', url: 'https://questlog.gg/aion-2/en/boss-schedule' }, { label: 'Karte (Questlog)', url: 'https://questlog.gg/aion-2/en/map' }, { label: 'AION 2 Datenbank & Tools (metabot.gg)', url: 'https://metabot.gg/en/aion-2' }, { label: 'Dungeon-Drops (gamewith.ai)', url: 'https://gamewith.ai/aion2/en/dungeons/dead-dramatas-nest' }, { label: 'Boss-Timer (aion2atlas.app)', url: 'https://aion2atlas.app/boss-timer/' }],
   },
   throneandliberty: { genre: 'rpg', questions: ['Welche Waffenkombination passt zu mir?', 'Wie levele ich am schnellsten?', 'Was lohnt sich täglich und wöchentlich?'], links: [steamNews(2429640)] },
 
