@@ -12,9 +12,10 @@ So wenig Gemini wie möglich, so viel lokal wie sinnvoll – ohne das Spiel ausz
 | Raid-Ergebnis erfassen, Statistikfragen („Wie ist meine Überlebensrate heute?“) | **deterministisch**, auch per Sprache | Satzmuster lokal erkannt, 0 € |
 | Kartenkalibrierung, Einstellungen, Timer, Datenabfragen | **deterministisch** | |
 | Spracherkennung | **lokal** (whisper.cpp, in jedem Chat) | Audio verlässt den PC nicht |
-| Sprachausgabe | **lokal** (Piper-Stimme, alternativ Windows-Stimme) | keine Cloud, keine GPU |
+| Sprachausgabe | **Gemini-TTS** („Automatisch“, nur nicht private Texte, eigene Tagesgrenze, Audio-Cache) sonst **lokal** (Piper/Windows) | lokale deutsche Stimme spricht englische Spielbegriffe schlecht aus; Cloud-Stimme ca. 1 ct/min |
 | Private Chats, Finanzen, Persönliches, Geburtstage, Fristen aus Mails | **lokales Modell** (Ollama) | kein Cloud-Fallback |
-| Uni-/Gaming-Chats, Bildschirmfrage, Websuche, Matchup-Karte | **Gemini**, nur wenn erlaubt | Qualität lokal nicht erreichbar |
+| Uni-Chats, „gründliche“ Fragen, Bildschirmfrage, Websuche | **Gemini Flash**, nur wenn erlaubt | Qualität lokal nicht erreichbar |
+| Gaming-Chats, Matchup-Karte, Gegner-Tipps, Champion-Empfehlung, Kurzfassungen | **Gemini Sparmodell** (gemini-2.5-flash-lite, 0,10/0,40 $ je 1 Mio. Token) | kurze, strukturierte Aufgaben; ca. 8× günstiger als Flash |
 | Gemini Live (Echtzeit-Audio) | **aus** (Standard), optional | teuerste Funktion |
 
 Die Entscheidung trifft zentral `Orchestrator.route()` (Chat) bzw. `Gemini.generate()` (Einzelaufrufe); erzwungen wird sie in `Gemini.cloud()` im Hauptprozess.
@@ -35,6 +36,8 @@ Fällt das lokale Modell aus, wird **nie** automatisch Gemini benutzt.
 | Einstellung | Standard |
 |---|---|
 | Tagesbudget | 0,25 € (lokaler Kalendertag, Wechsel 00:00) |
+| davon Cloud-Stimme | höchstens 0,05 € pro Tag, danach lokale Stimme |
+| Kostenloser Zusatz-Schlüssel | optional; zuerst für Sparmodell und Cloud-Stimme, bei erschöpftem Kontingent normaler Schlüssel mit Budget |
 | Sitzungsbudget | 0,15 € (seit dem Start von JARVIS) |
 | Monatsbudget | 5,00 € (Warnung 80 %, Sparstufe 95 %, Sperre 100 %) |
 | Sperre bei Erreichen | an |
@@ -87,6 +90,9 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Goon-Meldung | nur per Knopf | tarkov.dev (mit Tarkov-Account-ID) | – | Knopf nicht nutzen |
 | Diagnose-Protokolle | laufend | lokal, Schlüssel/Token geschwärzt, max. 8 MB | `logs/` | Einstellungen → Sicherheit → Protokolle leeren |
 | JARVIS-Kalender (Termine, Geburtstage, Uni, Aufgaben mit Fälligkeit, Erinnerungen) | nur wenn „Alles aus JARVIS nach Google übertragen“ an ist; letzte 30 bis nächste 180 Tage | Google Kalender (eigene Kalender „JARVIS · …“ je Art) | bei Google | Schalter aus bzw. Art abwählen (entfernt unveränderte Kopien) |
+| Vorgelesene Antworten (Cloud-Stimme) | Antworttext aus Uni-/Gaming-Chats, Spielansagen | Google (Gemini-TTS) | Audio-Cache lokal (max. 60 MB) | Sprachausgabe → „Nur lokal“; Funktion „Cloud-Stimme“ aus |
+| Vorgelesene Antworten mit eigener ElevenLabs-Stimme (optional) | nur mit hinterlegtem Schlüssel + Voice-ID, nicht privat, Zeichengrenze pro Tag | ElevenLabs | Audio-Cache lokal | Voice-ID leeren / Schlüssel entfernen |
+| Kostenloses Kontingent (Zusatz-Schlüssel) | Sparmodell-Anfragen, vorzulesende Texte | Google; darf laut Google zur Produktverbesserung genutzt werden | – | Schlüssel entfernen |
 | Kosten-Protokoll | je Gemini-Aufruf | lokal, nur Metadaten | Datenbank | ältere Einträge löschen |
 
 Sichtbarkeit: Die Kopfzeile zeigt den Cloud-Zustand (aus / an mit laufenden Aufrufen und Tagesstand / gesperrt), ein aktives Mikrofon (lokal oder Gemini Live) und jede Bildschirmaufnahme.

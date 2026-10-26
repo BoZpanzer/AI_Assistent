@@ -1261,7 +1261,16 @@ function LolChampSelect() {
         <div class="row wrap gap-s"><b style={{ fontSize: 16 }}>{cs.myChampion || 'Noch kein Pick'}</b>{cs.role && <span class="chip static">{cs.role}</span>}{cs.myChampion && !cs.locked && <span class="chip static">Vorauswahl</span>}</div>
         <div class="small muted mt">Gegner: {cs.enemies?.length ? cs.enemies.join(', ') : 'noch verdeckt'}</div>
         {cs.advice ? <div class="md small mt" dangerouslySetInnerHTML={{ __html: renderMarkdown(cs.advice) }} /> : cs.active && cs.myChampion && cs.enemies?.length ? <div class="row small mt"><Spinner /> JARVIS denkt über das Matchup nach …</div> : null}
-        {cs.tips?.length > 0 && <div class="col mt" style={{ gap: 3 }}><b class="small">Tipps gegen die Gegner (Data Dragon)</b>{cs.tips.map((t) => <div class="small muted">• {t}</div>)}</div>}
+        {cs.picks?.candidates?.length > 0 && !cs.locked && <div class="col mt" style={{ gap: 3 }}>
+          <b class="small">Empfehlung gegen dieses Team</b>
+          {(cs.picks.ai?.picks?.length ? cs.picks.ai.picks : cs.picks.candidates.slice(0, 3)).map((p) => {
+            const c = cs.picks.candidates.find((x) => x.champion === p.champion) || p;
+            return <div class="small"><b>{p.champion}</b> <span class="muted">· {c.wins}/{c.games} Siege ({c.winrate} %){c.vs?.length ? ' · gegen ' + c.vs.map((v) => `${v.enemy} ${v.wins}/${v.games}`).join(', ') : ''}</span>{p.reason ? <div class="tiny muted">{p.reason}</div> : null}</div>;
+          })}
+          <div class="tiny muted">Aus deinem Pool ({cs.picks.onRole ? 'auf deiner Rolle' : 'alle Rollen – auf dieser Rolle zu wenig Spiele'}, {cs.picks.basedOn} gespeicherte Spiele){cs.picks.ai?.picks?.length ? ' · Begründung: KI (Sparmodell)' : ''}</div>
+        </div>}
+        {cs.enemyTips?.length > 0 ? <div class="col mt" style={{ gap: 4 }}><b class="small">Tipps gegen die Gegner</b>{cs.enemyTips.map((t) => <div class="small"><b>{t.champion}</b>{t.danger ? <span class="muted"> – {t.danger}</span> : null}{t.tips.map((x) => <div class="tiny muted">• {x}</div>)}</div>)}<div class="tiny muted">{cs.enemyTips.some((t) => t.source === 'ki') ? 'KI-Champion-Wissen (pro Patch gespeichert) – erscheint auch im Overlay während des Spiels' : 'Tipps von Riot (Data Dragon)'}</div></div>
+          : cs.tips?.length > 0 && <div class="col mt" style={{ gap: 3 }}><b class="small">Tipps gegen die Gegner (Data Dragon)</b>{cs.tips.map((t) => <div class="small muted">• {t}</div>)}</div>}
         {cs.enemies?.length > 0 && <div class="row wrap gap-s mt"><span class="tiny muted">Matchup-Karte:</span>{cs.enemies.map((e) => <button class={'chip' + ((pick || cs.laneGuess) === e ? ' active' : '')} onClick={() => setPick(e)}>{e}{cs.laneGuess === e ? ' · Lane?' : ''}</button>)}</div>}
         {(pick || cs.laneGuess) && <MatchupCard mine={cs.myChampion} vs={pick || cs.laneGuess} role={cs.role} preset={!pick && cs.matchup?.vs === cs.laneGuess ? cs.matchup : null} />}
       </>}

@@ -2,6 +2,16 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 4.6.0 – Bessere Stimme, Sparmodelle, Gegner-Tipps, Champion-Empfehlung
+
+- **Stimmenauswahl (Einstellungen → Stimme):** „Standard“ (bisherige Stimme), „J.A.R.V.I.S.“ (tief, ruhig, elegant, britisch anmutend) und „Alya (Anime)“ (natürlich, freundlich, weich) – je mit ▶-Hörprobe (lokal gespeichert), Wechsel sofort ohne Neustart und ohne KI-Anfrage, gilt für alle Sprachantworten. Eigenständige Stimmen mit ähnlicher Wirkung, keine Nachbildung echter Sprecher. Optional eigene, rechtmäßig lizenzierte ElevenLabs-Stimmen per Voice-ID (Schlüssel bleibt verschlüsselt im Hauptprozess, Zeichengrenze pro Tag). Fehlt eine Stimme, klingt es wie „Standard“.
+- **Richtige LoL-Rolle:** Die Rolle wird nicht mehr aus der (oft falschen) Lane-Schätzung des League-Clients übernommen, sondern aus Support-Item, Smite, Teamaufteilung und bei Bedarf den Positionen der ersten Minuten. Beispiel: Malphite mit Support-Item ist Support – auch wenn der Client „Top“ meldet. Gilt für neue Spiele und neu analysierte Spiele.
+- **Stimme, die Spielbegriffe richtig ausspricht:** Neu „Automatisch“ (Standard): Antworten werden mit einer Gemini-Stimme vorgelesen – englische Begriffe und Champion-Namen klingen richtig. Kosten ca. 1 Cent pro Minute Sprache (ab 2027 ca. 2 Cent), eigene Tagesgrenze (Standard 5 Cent), fertige Sätze werden gespeichert und kosten danach nichts. Private Chats werden immer lokal vorgelesen; bei Grenze/offline automatisch die lokale Stimme, die jetzt Gaming-Begriffe (Jungle, Lane, Wards, Raid …) verständlicher ausspricht.
+- **Sparmodelle:** Kurze Aufgaben (Matchup-Karten, Gegner-Tipps, Empfehlungen, Kurzfassungen) und Gaming-Chats nutzen das ältere, ca. 8× günstigere gemini-2.5-flash-lite. „Gründlich/analysiere …“-Fragen und Uni-Chats bleiben bei Flash. Abschaltbar unter Einstellungen → Gemini / KI.
+- **Kostenloser Zusatz-Schlüssel (optional):** Ein Schlüssel aus einem Google-Projekt ohne Abrechnung wird zuerst für Sparmodell und Cloud-Stimme genutzt (kostenloses Kontingent); ist es aufgebraucht, geht es mit dem normalen Schlüssel und Budget weiter. Hinweis: Im kostenlosen Kontingent darf Google Inhalte zur Produktverbesserung nutzen – JARVIS schickt darüber nie private Inhalte.
+- **LoL – Tipps gegen jeden Gegner:** Für jeden gegnerischen Champion die gefährlichste Fähigkeit und konkrete Konter-Tipps – in der Championauswahl und im Overlay während des Spiels (Lane-Gegner zuerst). Vor dem Spiel erzeugt, pro Patch gespeichert; ohne Cloud Riots eigene Tipps. Keine Live-Anweisungen (Riot-Regeln).
+- **LoL – Champion-Empfehlung:** In der Championauswahl schlägt JARVIS aus deinem eigenen Pool die passendsten Champions gegen das Gegnerteam vor – nach deiner Bilanz insgesamt und gegen genau diese Gegner, ohne gebannte/vergebene Champions; mit kurzer KI-Begründung (Sparmodell).
+
 ## 4.5.1 – Stundenplan mit Modulnamen, nur machbare Quests
 
 - **Stundenplan (Campus Dual):** Termine heißen jetzt wie das Modul (z. B. „Mathematik 1“) statt „Vorlesung/Seminar“; Prüfungen als „Modulprüfung: …“. Als Ort steht der Raum statt der Kohorte; Art, Dozent und Prüfer stehen in der Beschreibung. Wird beim nächsten Abgleich automatisch korrigiert (auch die Kopien in Google Kalender).

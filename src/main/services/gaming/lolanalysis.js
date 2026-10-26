@@ -29,31 +29,86 @@ function zone(pos, teamId) {
   return (teamId === 100) === blueSide ? 'eigener Jungle' : 'gegnerischer Jungle';
 }
 
+// Support-Items (Weltatlas-Linie und ältere Supportitems) – wer eins trägt, war Support
+const SUPPORT_ITEMS = new Set([3865, 3866, 3867, 3869, 3870, 3871, 3876, 3877, 3850, 3851, 3853, 3854, 3855, 3857, 3858, 3859, 3860, 3862, 3863, 3864]);
+const SMITE = 11;
+const ROLES = ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
+
+/** Lane aus den Positionen der Minuten 3–10 (Mehrheit; Basis/Fluss zählen nicht). */
+function laneFromPositions(positions) {
+  const n = { TOP: 0, MIDDLE: 0, BOTTOM: 0, JUNGLE: 0 };
+  for (const pos of positions) {
+    if (!pos || pos.x == null) continue;
+    const z = zone(pos, 100);
+    if (z === 'Toplane') n.TOP++; else if (z === 'Midlane') n.MIDDLE++; else if (z === 'Botlane') n.BOTTOM++; else if (/Jungle/.test(z)) n.JUNGLE++;
+  }
+  const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 3 ? best[0] : null;
+}
+
+/**
+ * Rollen je Team festlegen. Reihenfolge der Belege: Riot-Position (match-v5) > Smite (Jungle) > Support-Item >
+ * Lane-Schätzung des League-Clients (oft falsch, z. B. Support als „TOP“); Positionen der Minuten 3–10 entscheiden bei doppelten Rollen.
+ * Jede Rolle wird pro Team höchstens einmal vergeben; doppelte Rollen werden nach Belegstärke aufgelöst.
+ */
+function inferRoles(parts, frames = []) {
+  for (const p of parts) {
+    const hints = [];
+    if (p.riotRole) hints.push([p.riotRole, 5]);
+    if ((p.spells || []).includes(SMITE)) hints.push(['JUNGLE', 4]);
+    if ((p.items || []).some((i) => SUPPORT_ITEMS.has(Number(i)))) hints.push(['UTILITY', 4]);
+    if (frames.length) {
+      const pos = []; for (let m = 3; m <= 10; m++) pos.push(pf(atMinute(frames, m), p.id)?.position);
+      p.posLane = laneFromPositions(pos); // Tiebreak bei doppelten Rollen (nicht stärker als die Client-Schätzung)
+    }
+    if (p.clientRole) hints.push([p.clientRole, 1]);
+    else if (p.posLane) hints.push([p.posLane, 0.5]);
+    hints.sort((a, b) => b[1] - a[1]);
+    p.role = hints[0]?.[0] || null; p.roleConfidence = hints[0]?.[1] || 0;
+  }
+  for (const t of [100, 200]) {
+    const team = parts.filter((p) => p.teamId === t);
+    if (team.length !== 5) continue;
+    // Bot-Duo: zwei „BOTTOM“ → mehr CS = ADC, weniger = Support
+    const bots = team.filter((p) => p.role === 'BOTTOM');
+    if (bots.length === 2 && !team.some((p) => p.role === 'UTILITY')) { bots.sort((a, b) => b.cs - a.cs); bots[1].role = 'UTILITY'; }
+    for (let guard = 0; guard < 5; guard++) {
+      const dup = ROLES.find((r) => team.filter((p) => p.role === r).length > 1) || (team.some((p) => !p.role) ? '__none' : null);
+      if (!dup) break;
+      const missing = ROLES.filter((r) => !team.some((p) => p.role === r));
+      if (!missing.length) break;
+      const cands = dup === '__none' ? team.filter((p) => !p.role) : team.filter((p) => p.role === dup).sort((a, b) => a.roleConfidence - b.roleConfidence || a.cs - b.cs);
+      const move = cands[0];
+      // passendste fehlende Rolle: wenig CS → Support, Smite → Jungle, sonst die erste fehlende Lane
+      const target = missing.includes(move.posLane) ? move.posLane : missing.includes('UTILITY') && move.cs < 100 ? 'UTILITY' : missing.includes('JUNGLE') && (move.spells || []).includes(SMITE) ? 'JUNGLE' : missing[0];
+      move.role = target; move.roleConfidence = 0;
+    }
+  }
+  return parts;
+}
+
 /** Spieldaten aus LCU (v4-ähnlich) oder Riot match-v5 vereinheitlichen. */
-function normalizeGame(game, puuid) {
+function normalizeGame(game, puuid, frames = []) {
   const info = game?.info || game;
   if (!info) return null;
   const v5 = Array.isArray(info.participants) && info.participants[0] && 'puuid' in info.participants[0];
   const parts = (info.participants || []).map((p) => {
     if (v5) {
-      return { id: p.participantId, puuid: p.puuid, teamId: p.teamId, championId: p.championId, champion: p.championName, role: ROLE[p.teamPosition] || ROLE[p.individualPosition] || null, win: !!p.win,
+      return { id: p.participantId, puuid: p.puuid, teamId: p.teamId, championId: p.championId, champion: p.championName, riotRole: ROLE[p.teamPosition] || null, clientRole: ROLE[p.individualPosition] || null,
+        items: [p.item0, p.item1, p.item2, p.item3, p.item4, p.item5, p.item6].filter(Boolean), spells: [p.summoner1Id, p.summoner2Id], win: !!p.win,
         kills: p.kills, deaths: p.deaths, assists: p.assists, cs: (p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0), vision: p.visionScore, wardsPlaced: p.wardsPlaced, wardsKilled: p.wardsKilled,
         controlWards: p.visionWardsBoughtInGame ?? p.detectorWardsPlaced, damage: p.totalDamageDealtToChampions, damageTaken: p.totalDamageTaken, gold: p.goldEarned };
     }
     const ident = (game.participantIdentities || []).find((x) => x.participantId === p.participantId);
     const st = p.stats || {};
     const lane = String(p.timeline?.lane || '').toUpperCase(); const r = String(p.timeline?.role || '').toUpperCase();
-    let role = lane === 'JUNGLE' ? 'JUNGLE' : lane === 'TOP' ? 'TOP' : lane === 'MIDDLE' || lane === 'MID' ? 'MIDDLE' : lane === 'BOTTOM' || lane === 'BOT' ? (r.includes('SUPPORT') ? 'UTILITY' : r.includes('CARRY') ? 'BOTTOM' : null) : null;
-    if (!role && (p.spell1Id === 11 || p.spell2Id === 11)) role = 'JUNGLE'; // Zerschmettern
-    return { id: p.participantId, puuid: ident?.player?.puuid, teamId: p.teamId, championId: p.championId, champion: null, role, win: !!st.win,
+    const clientRole = lane === 'JUNGLE' ? 'JUNGLE' : lane === 'TOP' ? 'TOP' : lane === 'MIDDLE' || lane === 'MID' ? 'MIDDLE' : lane === 'BOTTOM' || lane === 'BOT' ? (r.includes('SUPPORT') ? 'UTILITY' : r.includes('CARRY') ? 'BOTTOM' : 'BOTTOM') : null;
+    return { id: p.participantId, puuid: ident?.player?.puuid, teamId: p.teamId, championId: p.championId, champion: null, clientRole,
+      items: [st.item0, st.item1, st.item2, st.item3, st.item4, st.item5, st.item6].filter(Boolean), spells: [p.spell1Id, p.spell2Id], win: !!st.win,
       kills: st.kills, deaths: st.deaths, assists: st.assists, cs: (st.totalMinionsKilled || 0) + (st.neutralMinionsKilled || 0), vision: st.visionScore, wardsPlaced: st.wardsPlaced, wardsKilled: st.wardsKilled,
       controlWards: st.visionWardsBoughtInGame, damage: st.totalDamageDealtToChampions, damageTaken: st.totalDamageTaken, gold: st.goldEarned };
   });
-  // Bot-Duo ohne klare Rolle: mehr CS = ADC, weniger = Support
-  for (const t of [100, 200]) {
-    const bot = parts.filter((p) => p.teamId === t && !p.role);
-    if (bot.length === 2) { bot.sort((a, b) => b.cs - a.cs); bot[0].role = 'BOTTOM'; bot[1].role = 'UTILITY'; }
-  }
+  inferRoles(parts, frames);
   const me = parts.find((p) => p.puuid === puuid);
   const duration = Number(info.gameDuration > 20000 ? info.gameDuration / 1000 : info.gameDuration) || 0; // v5 kann ms liefern
   const gameId = info.gameId; const platform = info.platformId;
@@ -76,7 +131,7 @@ const side = (pos) => (!pos || pos.x == null ? null : pos.y - pos.x > 0 ? 'top' 
 const SIDE_DE = { top: 'Top-Seite', bot: 'Bot-Seite' };
 
 function analyzeGame(game, timeline, puuid, { name = () => null, item = () => null } = {}) {
-  const g = normalizeGame(game, puuid);
+  const g = normalizeGame(game, puuid, framesOf(timeline));
   if (!g?.me) return null;
   const { me, parts } = g;
   const opp = parts.find((p) => p.teamId !== me.teamId && p.role && p.role === me.role) || null;
@@ -321,4 +376,4 @@ function majorRole(games) {
   return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 }
 
-module.exports = { analyzeGame, patterns, zone, normalizeGame, ROLE_DE, side, SIDE_DE, levelTimes };
+module.exports = { analyzeGame, patterns, zone, normalizeGame, inferRoles, SUPPORT_ITEMS, ROLE_DE, side, SIDE_DE, levelTimes };

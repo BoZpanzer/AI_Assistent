@@ -99,8 +99,10 @@ class LolFlow {
     const myChampion = name(me.championId) || name(me.championPickIntent);
     const locked = !!me.championId;
     const enemies = (sess.theirTeam || []).map((x) => name(x.championId)).filter(Boolean);
+    const allies = (sess.myTeam || []).filter((x) => x.cellId !== sess.localPlayerCellId).map((x) => name(x.championId) || name(x.championPickIntent)).filter(Boolean);
+    const bans = [...(sess.bans?.myTeamBans || []), ...(sess.bans?.theirTeamBans || [])].map(name).filter(Boolean);
     const role = POS[String(me.assignedPosition || '').toLowerCase()] || null;
-    const key = [myChampion, locked, role, ...enemies].join('|');
+    const key = [myChampion, locked, role, ...enemies, '/', ...allies, '/', ...bans].join('|');
     if (key === this.lastSelectKey) return;
     this.lastSelectKey = key;
     const tips = [];
@@ -112,9 +114,25 @@ class LolFlow {
     const want = role === 'ADC' ? 'Marksman' : role === 'Support' ? 'Support' : null;
     const cands = want ? enemies.filter((e) => champs.find((c) => c.name === e)?.tags?.[0] === want) : [];
     const laneGuess = cands.length === 1 ? cands[0] : null;
-    this.champ = { active: true, myChampion, locked, role, enemies, tips, laneGuess, advice: this.champ?.adviceKey === key ? this.champ.advice : null, matchup: this.champ?.matchup?.key === `${myChampion}|${laneGuess}` ? this.champ.matchup : null };
+    const prev = this.champ;
+    const enemyKey = [...enemies].sort().join('|');
+    const pickKey = [role, enemyKey, [...allies, ...bans].sort().join('|')].join('#');
+    this.champ = { active: true, myChampion, locked, role, enemies, allies, tips, laneGuess, advice: prev?.adviceKey === key ? prev.advice : null, matchup: prev?.matchup?.key === `${myChampion}|${laneGuess}` ? prev.matchup : null,
+      enemyTips: prev?.enemyTipsKey === enemyKey ? prev.enemyTips : null, enemyTipsKey: prev?.enemyTipsKey === enemyKey ? enemyKey : null,
+      picks: prev?.picksKey === pickKey ? prev.picks : null, picksKey: prev?.picksKey === pickKey ? pickKey : null };
     this.remember();
     this.s.bus.emit('lol:champselect', this.champ);
+    const still = () => !this.disposed && generation === this.generation && this.lastSelectKey === key && this.champ;
+    // Tipps gegen jeden gegnerischen Champion (vor dem Spiel, statisch – gilt dann auch im Spiel)
+    if (enemies.length && !this.champ.enemyTips) {
+      this.enemyTips({ enemies }).then((t) => { if (!still()) return; this.champ = { ...this.champ, enemyTips: t, enemyTipsKey: enemyKey }; this.remember(); this.s.bus.emit('lol:champselect', this.champ); }).catch((e) => log.debug('enemyTips', e));
+    }
+    // Champion-Empfehlung gegen das Gegnerteam – nur solange noch nicht festgelegt
+    if (!locked && enemies.length && !this.champ.picks && this.cfg().lolPickAdvice !== false) {
+      const pickable = await L.lcuGet('/lol-champ-select/v1/pickable-champion-ids').catch(() => null);
+      const pickNames = Array.isArray(pickable) ? new Set(pickable.map(name).filter(Boolean)) : null;
+      this.recommend({ role, enemies, allies, unavailable: bans, pickable: pickNames }).then((r) => { if (!still()) return; this.champ = { ...this.champ, picks: r, picksKey: pickKey }; this.remember(); this.s.bus.emit('lol:champselect', this.champ); }).catch((e) => log.debug('recommend', e));
+    }
     if (myChampion && laneGuess && !this.champ.matchup && this.cfg().lolMatchupCard !== false) {
       this.matchup({ mine: myChampion, vs: laneGuess, role }).then((mu) => {
         if (this.disposed || generation !== this.generation || this.lastSelectKey !== key || !this.champ) return;
@@ -133,7 +151,7 @@ class LolFlow {
       const goals = this.s.gaming.league.goals().map((g) => g.text).slice(0, 3);
       const st = this.s.gaming.league.stats(20).current;
       advice = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true,
-        model: this.s.gemini.requireModel('fast'), temperature: 0.4, maxOut: 600,
+        tier: 'lite', temperature: 0.4, maxOut: 600,
         system: 'Du bist ein knapper League-of-Legends-Coach. Antworte auf Deutsch in max. 4 kurzen Stichpunkten (Markdown-Liste). Nur Champion-Matchup-Wissen, keine erfundenen Zahlen oder Patch-Details. Keine Aussagen über andere Spieler.',
         contents: [{ role: 'user', parts: [{ text: `Ich spiele ${myChampion}${role ? ' auf ' + role : ''}. Gegnerische Champions: ${enemies.join(', ')}.${st ? ` Meine Ø-Werte: ${st.csPerMin} CS/min, ${st.avgD} Tode.` : ''}${goals.length ? ' Meine Trainingsziele: ' + goals.join('; ') + '.' : ''} Worauf muss ich in diesem Spiel achten (Lane-Phase, gefährlichste Fähigkeiten, Item-Hinweis)?` }] }],
       });
@@ -143,6 +161,105 @@ class LolFlow {
     this.champ = { ...this.champ, advice, adviceKey: key };
     this.remember();
     this.s.bus.emit('lol:champselect', this.champ);
+  }
+
+  /**
+   * Tipps gegen jeden gegnerischen Champion: gefährlichste Fähigkeit + 2–3 konkrete Konter-Tipps.
+   * Statisches Champion-Wissen, VOR dem Spiel erzeugt und pro Patch gespeichert (ein gebündelter Aufruf mit dem
+   * Sparmodell für alle noch unbekannten Champions). Ohne Cloud: Riots eigene „Enemy Tips“ (Data Dragon).
+   * Riot-Regeln: keine Live-Entscheidungen, keine Cooldown-/Positionsverfolgung – nur, was man vor dem Spiel weiß.
+   */
+  async enemyTips({ enemies = [] } = {}) {
+    const L = this.s.gaming.league; const K = await L.keyer();
+    let patch = null; try { patch = String(await L.ddVersion()).split('.').slice(0, 2).join('.'); } catch { patch = null; }
+    const list = [...new Set(enemies.filter(Boolean))].slice(0, 5);
+    const ck = (e) => `lol:enemytip:${patch || 'x'}:${K(e)}`;
+    const out = new Map(); const missing = [];
+    for (const e of list) { const c = this.s.gaming.cache.get(ck(e))?.value; if (c?.tips?.length) out.set(e, { ...c, champion: e, source: 'ki' }); else missing.push(e); }
+    if (missing.length && this.cfg().lolEnemyTips !== false && this.s.gemini.cloudAllowed('lol')) {
+      try {
+        let r = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true, tier: 'lite', json: true, schema: ENEMY_SCHEMA, temperature: 0.3, maxOut: 1200,
+          system: 'Du bist ein League-of-Legends-Coach. Für jeden genannten gegnerischen Champion: die gefährlichste Fähigkeit oder Stärke (danger, ein kurzer Satz mit Fähigkeitsname) und 2–3 konkrete, kurze Tipps, wie man dagegen spielt (worauf achten, was ausweichen/respektieren, wann er schwach ist, welches Item hilft). Allgemein bekanntes Champion-Wissen, keine erfundenen Zahlen oder Patchdetails. Deutsch, höchstens 16 Wörter pro Tipp.',
+          contents: [{ role: 'user', parts: [{ text: `Gegnerische Champions: ${missing.join(', ')}${patch ? ` (Patch ${patch})` : ''}.` }] }] });
+        if (typeof r === 'string') r = JSON.parse(r);
+        for (const x of r?.enemies || []) {
+          const nm = missing.find((m) => K(m) === K(x.champion || ''));
+          if (!nm || !Array.isArray(x.tips) || !x.tips.length) continue;
+          const v = { champion: nm, danger: String(x.danger || '').slice(0, 200), tips: x.tips.slice(0, 3).map((t) => String(t).slice(0, 160)) };
+          this.s.gaming.cache.set(ck(nm), v, 'Gemini (Champion-Wissen' + (patch ? ', Patch ' + patch : '') + ')', 30 * 86400000);
+          out.set(nm, { ...v, source: 'ki' });
+        }
+      } catch (e) { log.debug('enemyTips', e); }
+    }
+    for (const e of list) {
+      if (out.has(e)) continue;
+      try { const c = await L.champion(e); if (c?.enemytips?.length) out.set(e, { champion: e, danger: null, tips: c.enemytips.slice(0, 2), source: 'riot' }); } catch { /* offline */ }
+    }
+    return list.map((e) => out.get(e)).filter(Boolean);
+  }
+
+  /** Im Spiel: Gegner-Tipps einmal pro Match bereitstellen (aus dem Speicher, nicht blockierend). */
+  liveEnemyTips(enemies = []) {
+    const key = [...enemies].sort().join('|');
+    if (!key) return null;
+    if (this._live?.key === key) return this._live.tips;
+    const fromSelect = this.champ?.enemyTipsKey === key ? this.champ.enemyTips : null;
+    this._live = { key, tips: fromSelect || null };
+    if (!fromSelect) this.enemyTips({ enemies }).then((t) => { if (this._live?.key === key) this._live.tips = t; }).catch(() => {});
+    return this._live.tips;
+  }
+
+  /**
+   * Champion-Empfehlung gegen das Gegnerteam: aus deinem eigenen Pool (gespeicherte Spiele, bevorzugt auf deiner Rolle),
+   * gewichtet mit deiner Bilanz insgesamt und gegen genau diese Gegner (analysierte Spiele). Optional (Sparmodell):
+   * Auswahl und Begründung passend zur Zusammenstellung (Schadensart, Engage, Lane). Nur Champions aus deinem Pool.
+   */
+  async recommend({ role = null, enemies = [], allies = [], unavailable = [], pickable = null } = {}) {
+    const L = this.s.gaming.league; const K = await L.keyer();
+    const roleKey = { Top: 'TOP', Jungle: 'JUNGLE', Mid: 'MIDDLE', ADC: 'BOTTOM', Support: 'UTILITY' }[role] || null;
+    const ms = L.matches(300);
+    const build = (filterRole) => {
+      const pool = new Map();
+      for (const m of ms) {
+        if (!m.champion || (filterRole && roleKey && m.role && m.role !== roleKey)) continue;
+        const p = pool.get(m.champion) || { champion: m.champion, games: 0, wins: 0 }; p.games++; if (m.win) p.wins++; pool.set(m.champion, p);
+      }
+      return pool;
+    };
+    let pool = build(true); let onRole = true;
+    if ([...pool.values()].reduce((a, p) => a + p.games, 0) < 5) { pool = build(false); onRole = false; }
+    const taken = new Set([...enemies, ...allies, ...unavailable].map((x) => K(x)));
+    const pick = pickable ? new Set([...pickable].map((x) => K(x))) : null;
+    // Bilanz gegen Lane-Gegner aus den analysierten Spielen – einmal einlesen
+    const duels = [];
+    for (const r of this.s.db.all('SELECT match_id FROM lol_matches ORDER BY played_at DESC LIMIT 300')) { const d = L.getDeep(r.match_id); if (d?.champion && d?.opponent?.champion) duels.push({ me: K(d.champion), vs: K(d.opponent.champion), win: !!d.win }); }
+    const cands = [...pool.values()].filter((p) => !taken.has(K(p.champion)) && (!pick || pick.has(K(p.champion)))).map((p) => {
+      const vs = [];
+      let score = (p.wins + 2) / (p.games + 4) + Math.min(0.08, p.games * 0.005); // Erfahrung zählt etwas
+      for (const e of enemies) {
+        const g = duels.filter((x) => x.me === K(p.champion) && x.vs === K(e));
+        if (g.length) { const w = g.filter((x) => x.win).length; vs.push({ enemy: e, wins: w, games: g.length }); score += ((w + 1) / (g.length + 2) - 0.5) * Math.min(1, g.length / 4) * 0.5; }
+      }
+      return { champion: p.champion, games: p.games, wins: p.wins, winrate: Math.round((p.wins / p.games) * 100), vs, score: Math.round(score * 1000) / 1000 };
+    }).sort((a, b) => b.score - a.score || b.games - a.games).slice(0, 6);
+    let ai = null; let aiError = null;
+    if (cands.length >= 2 && enemies.length >= 2 && this.s.gemini.cloudAllowed('lol')) {
+      let patch = null; try { patch = String(await L.ddVersion()).split('.').slice(0, 2).join('.'); } catch { patch = null; }
+      const ck = `lol:pick:${patch || 'x'}:${roleKey || ''}:${enemies.map(K).sort().join(',')}:${allies.map(K).sort().join(',')}:${cands.map((c) => K(c.champion)).sort().join(',')}`;
+      ai = this.s.gaming.cache.get(ck)?.value || null;
+      if (!ai) {
+        try {
+          let r = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true, tier: 'lite', json: true, schema: PICK_SCHEMA, temperature: 0.3, maxOut: 700,
+            system: 'Du bist ein League-of-Legends-Coach in der Championauswahl. Wähle NUR aus dem genannten Champion-Pool des Spielers bis zu 3 Champions, die gegen das gegnerische Team am besten passen, und begründe jeweils in einem kurzen Satz (z. B. Schadensart des Gegners, Engage/Peel, Lane-Matchup, Synergie mit dem eigenen Team). Keine erfundenen Winrates. Deutsch.',
+            contents: [{ role: 'user', parts: [{ text: `Meine Rolle: ${role || 'unbekannt'}. Gegnerteam: ${enemies.join(', ')}.${allies.length ? ' Mein Team: ' + allies.join(', ') + '.' : ''} Mein Pool (eigene Spiele): ${cands.map((c) => `${c.champion} (${c.games} Spiele, ${c.winrate} %)`).join(', ')}.` }] }] });
+          if (typeof r === 'string') r = JSON.parse(r);
+          const names = new Map(cands.map((c) => [K(c.champion), c.champion]));
+          ai = { picks: (r?.picks || []).filter((x) => names.has(K(x.champion || ''))).slice(0, 3).map((x) => ({ champion: names.get(K(x.champion)), reason: String(x.reason || '').slice(0, 220) })), note: r?.note ? String(r.note).slice(0, 220) : null };
+          if (ai.picks.length) this.s.gaming.cache.set(ck, ai, 'Gemini (Champion-Wissen)', 14 * 86400000); else ai = null;
+        } catch (e) { aiError = e.message; ai = null; }
+      }
+    }
+    return { role, onRole, basedOn: ms.length, candidates: cands, ai, aiError };
   }
 
   /**
@@ -162,7 +279,7 @@ class LolFlow {
       card = this.s.gaming.cache.get(ck)?.value || null;
       if (!card && this.s.gemini.cloudAllowed('lol')) {
         try {
-          card = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true, model: this.s.gemini.requireModel('fast'), temperature: 0.3, json: true, schema: MATCHUP_SCHEMA, maxOut: 1500,
+          card = await this.s.gemini.generate({ feature: 'lol', background: true, dedupe: true, tier: 'lite', temperature: 0.3, json: true, schema: MATCHUP_SCHEMA, maxOut: 1500,
             system: 'Du bist ein erfahrener League-of-Legends-Coach. Deutsch, knapp, konkret. Nur allgemein bekanntes Champion- und Matchup-Wissen (Stärken je Spielphase, Fähigkeiten, typische Spielweise). Keine erfundenen Zahlen, Winrates oder Patch-Details. Bist du dir bei einem Punkt unsicher, lass ihn weg und setze confidence entsprechend.',
             contents: [{ role: 'user', parts: [{ text: `Matchup: Ich spiele ${mine}${role ? ' (' + role + ')' : ''} gegen ${vs}${patch ? ` (Patch ${patch})` : ''}. Beschreibe für jede Phase (Level 1–3, Level 6, Midgame, Lategame), wer im Vorteil ist (du/gegner/ausgeglichen) und was das für mich heißt – z. B. ob es okay ist, früh zu verlieren, oder ob ich früh Druck machen muss. Dazu Win-Condition, was ich vermeiden sollte, gefährlichste Fähigkeiten des Gegners und ein kurzer Item-/Runen-Hinweis.` }] }],
           });
@@ -258,7 +375,7 @@ class LolFlow {
     let questions = [];
     if (this.cfg().lolReviewAi === true && this.s.gemini.cloudAllowed('lol')) {
       try {
-        const res = await this.s.gemini.generate({ feature: 'lol', json: true, schema: REVIEW_SCHEMA, background: true, dedupe: true, maxOut: 1200,
+        const res = await this.s.gemini.generate({ feature: 'lol', json: true, schema: REVIEW_SCHEMA, background: true, dedupe: true, maxOut: 1200, tier: 'lite',
           model: this.s.gemini.requireModel('fast'), temperature: 0.4,
           system: 'Du bist ein ehrlicher, motivierender LoL-Coach. Deutsch, max. 4 Sätze. Nutze NUR die gelieferten Zahlen und Notizen, erfinde nichts. Wenn Notizen da sind, verknüpfe sie mit den Zahlen (z. B. Notiz „Jungler kam bot“ + Tod mit Jungler-Beteiligung).',
           contents: [{ role: 'user', parts: [{ text: `Spiel: ${JSON.stringify(m)}\n${deep?.hasTimeline ? `Timeline-Auswertung (Tode mit Minute/Ort/beteiligten Gegnern/Gold in der Tasche, Lane-Differenzen, Objectives, gegnerischer Jungler, eigenes Jungling): ${JSON.stringify({ deaths: deep.deathsDetail, csDiff10: deep.csDiff10, goldDiff15: deep.goldDiff15, opponent: deep.opponent?.champion, objectives: deep.objectives, enemyJungle: deep.enemyJungle, jungle: deep.jungle, wardsBefore14: deep.wardsBefore14, firstBackMin: deep.firstBackMin })}\n` : ''}${notes.length ? `Notizen, die ich mir im Spiel gemacht habe (meine eigene Wahrnehmung): ${JSON.stringify(notes.map((n) => ({ min: n.gameSec != null ? Math.round(n.gameSec / 60) : null, text: n.text })))}\n` : ''}Mein Schnitt (letzte 20 Ranked): ${JSON.stringify(avg)}\nRegelbasierte Hinweise: ${tips.join(' | ')}\nGib mir eine kurze Nachbesprechung mit dem wichtigsten Fokus fürs nächste Spiel (review). Stelle außerdem 2–3 kurze, konkrete Reflexionsfragen zu Momenten aus den Daten (z. B. zu einem bestimmten Tod mit Minute), die ich in einem Satz beantworten kann (questions).` }] }],
@@ -308,6 +425,8 @@ class LolFlow {
 }
 
 const REVIEW_SCHEMA = { type: 'object', required: ['review', 'questions'], properties: { review: { type: 'string' }, questions: { type: 'array', items: { type: 'string' } } } };
+const ENEMY_SCHEMA = { type: 'object', required: ['enemies'], properties: { enemies: { type: 'array', items: { type: 'object', required: ['champion', 'tips'], properties: { champion: { type: 'string' }, danger: { type: 'string' }, tips: { type: 'array', items: { type: 'string' } } } } } } };
+const PICK_SCHEMA = { type: 'object', required: ['picks'], properties: { picks: { type: 'array', items: { type: 'object', required: ['champion', 'reason'], properties: { champion: { type: 'string' }, reason: { type: 'string' } } } }, note: { type: 'string' } } };
 const MATCHUP_SCHEMA = {
   type: 'object', required: ['summary', 'phases', 'winCondition', 'confidence'],
   properties: {

@@ -149,10 +149,12 @@ class Scheduler {
     this.add('transit', 3 * 60_000, async () => { await s.transit.check(); }, { initialDelayMs: 60_000 });
     this.add('lol-live', 5_000, async () => {
       const g = s.settings.get('gaming');
-      if (!g.lolLiveCoach && g.lolObjectives === false) return;
+      if (!g.lolLiveCoach && g.lolObjectives === false && g.lolEnemyTips === false) return;
       const st = s.gaming.context.state();
       if (!st.running.some((p) => p.id === 'league')) return;
       const live = await s.gaming.league.live();
+      // Gegner-Tipps (statisch, vor/zu Spielbeginn erzeugt) für das Overlay
+      if (live.connected && g.lolEnemyTips !== false && live.enemies?.length) live.enemyTips = s.gaming.lolflow.liveEnemyTips(live.enemies);
       s.bus.emit('lol:live', live);
     });
     this.timer = setInterval(() => this.tick(), 5_000);

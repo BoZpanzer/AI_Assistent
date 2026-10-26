@@ -37,6 +37,10 @@ Quelle: gespeicherte Matches aus dem League-Client bzw. der Riot-API (in der Reg
 | KDA | (Kills + Assists) / max(1, Tode) |
 | Konter | eigene Bilanz gegen den Lane-Gegner aus analysierten Spielen (Riot-Timeline): ohne Gegner die schwierigsten Lane-Gegner (mind. 2 Duelle), mit Gegner deine Champions mit der besten Bilanz. Unter 5 Spielen als „wenig Daten“ markiert. **Eigene Daten, keine Community-Statistik.** |
 
+**Rolle:** aus Riot-Position (falls vorhanden), sonst Smite (Jungle), Support-Item (Support), Teamaufteilung und – bei doppelten Rollen – den Positionen der Minuten 3–10. Die Lane-Schätzung des League-Clients zählt nur als letzter Hinweis.
+
+**Champion-Empfehlung (Championauswahl):** Kandidaten nur aus deinem Pool (gespeicherte Spiele, bevorzugt auf deiner Rolle). Punktzahl = geglättete Siegquote (Siege+2)/(Spiele+4) + kleiner Erfahrungsbonus + Bilanz gegen genau diese Gegner aus analysierten Spielen. Gebannte und vergebene Champions fallen weg. Die KI-Begründung (Sparmodell) darf nur Champions aus dem Pool nennen.
+
 Die Matchup-Karte (Spielphasen, Win-Condition, Gefahren) ist eine **KI-Einschätzung** (Gemini, pro Matchup und Patch einmal erzeugt) und ausdrücklich nicht statistisch belegt.
 
 ## Sprachbefehle (ohne KI beantwortet)
