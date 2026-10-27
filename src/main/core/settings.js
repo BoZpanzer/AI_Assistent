@@ -49,7 +49,7 @@ const SCHEMA = {
     availableModels: { type: 'array', items: { type: 'string' }, maxItems: 400 },
     temperature: { type: 'number', minimum: 0, maximum: 1.5 },
     webSearch: { type: 'boolean' },
-    autoMemory: { type: 'boolean' },
+    autoMemory: { type: 'boolean' }, brainAutoLearn: { type: 'boolean' },
     aiCostMode: { type: 'string', enum: ['spar', 'max'] },
     aiBudget: { type: 'object', properties: { monthlyEur: { type: 'number', minimum: 0, maximum: 1000 }, dailyEur: { type: 'number', minimum: 0, maximum: 100 }, sessionEur: { type: 'number', minimum: 0, maximum: 100 }, hardStop: { type: 'boolean' }, warnPct: { type: 'number', minimum: 10, maximum: 99 }, brake: { type: 'boolean' }, usdToEur: { type: 'number', minimum: 0.5, maximum: 1.5 } } },
     // Cloud-KI: 'hybrid' = Gemini nur in Uni-/Gaming-Chats und freigegebenen Funktionen; 'local' = keine externen KI-Aufrufe
@@ -149,7 +149,7 @@ const DEFAULTS = {
   campusDualResults: { enabled: true, intervalHours: 3 }, campusDualExams: { enabled: true },
   backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
-  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
+  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, brainAutoLearn: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
   // Sparsamer Standard: Gemini nur in ausdrücklichen Uni-/Gaming-Chats; Gemini Live (Echtzeit-Audio) aus → lokale Spracheingabe
   cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, voice: false, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,

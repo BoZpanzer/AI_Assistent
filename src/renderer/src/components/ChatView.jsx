@@ -79,6 +79,7 @@ export function Message({ m, tool }) {
         {tool && <div class="tool-trace"><Wrench size={12} /> {TOOL_LABEL[tool] || tool} …</div>}
         {m.meta?.attachments?.length > 0 && <div class="sources">{m.meta.attachments.map((a) => <span class="chip static"><FileText size={12} />{a.name}</span>)}</div>}
         {(m.meta?.cards || []).map((c) => <Card card={c} />)}
+        {m.meta?.learned?.length > 0 && <div class="sources">{m.meta.learned.map((k) => <span class="chip static" title="Automatisch im Brain gespeichert – im Brain änder- oder löschbar">🧠 gemerkt: {k.title}</span>)}</div>}
         {!user && m.meta?.error && !streaming && m.conversationId && <button class="btn xs mt retry-btn" onClick={() => rpc('chat.retry', { conversationId: m.conversationId, messageId: m.id })}><RotateCcw size={12} />Nochmal versuchen</button>}
         {sources.length > 0 && (
           <div class="sources">

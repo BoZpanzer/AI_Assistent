@@ -140,6 +140,7 @@ function createCore(opts) {
   s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
   s.speech = new (require('./voice/speech').Speech)(s);
   s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
+  s.learner = new (require('./agent/learner').Learner)(s);
   // 5.0: Stimme nur noch lokal (OmniVoice → Piper). Alte Cloud-/ElevenLabs-Einstellungen auf „automatisch“, Schlüssel entfernen.
   try {
     if (['gemini', 'omnivoice'].includes(s.settings.get('voice')?.tts?.engine)) s.settings.update({ voice: { tts: { engine: 'auto' } } });

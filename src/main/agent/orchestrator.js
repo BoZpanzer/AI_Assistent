@@ -231,7 +231,7 @@ class Orchestrator {
     const { stable, context } = isPrivateConv ? this.systemSplit(channel, text) : { stable: privacy.CLOUD_SYSTEM, context: '' };
     const lastUser = [...contents].reverse().find((c) => c.role === 'user');
     if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts, ...(hint ? [{ text: hint }] : [])]; else contents.push({ role: 'user', parts: [{ text: context }] });
-    const cards = []; const sources = []; let full = routed.note ? `_(Lokal beantwortet – ${routed.note}.)_\n\n` : '';
+    const cards = []; const sources = []; const used = []; let full = routed.note ? `_(Lokal beantwortet – ${routed.note}.)_\n\n` : '';
     if (routed.note) bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: full });
     bus.emit('orb:state', { state: 'thinking' });
     try {
@@ -247,6 +247,7 @@ class Orchestrator {
         if (!r.functionCalls.length) break;
         const responses = [];
         for (const fc of r.functionCalls) {
+          used.push(fc.name);
           bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: fc.name, state: 'running' });
           const execute = () => this.execute(fc.name, fc.args, { conversationId: cid, channel, scope });
           const out = await (isPrivateConv ? privacy.local(execute) : isLocal ? execute() : privacy.cloud(execute));
@@ -261,6 +262,8 @@ class Orchestrator {
       }
       const final = conversations.update(msg.id, { content: full.trim() || (cards.length ? '' : '…'), meta: { streaming: false, cards, sources: sources.slice(0, 12), model, scope, local: isLocal } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
+      // Brain selbstständig erweitern (Hintergrund; privat → lokales Modell, sonst Gemini-Sparmodell)
+      if (!routed.note) setImmediate(() => this.s.learner?.learn({ cid, messageId: msg.id, userText: text, answer: final.content, scope: isLocal && scope !== 'private' ? 'private' : scope, sources, usedRemember: used.includes('remember') }).catch(() => {}));
       const vs = this.s.settings.get('voice');
       // Sprachausgabe lokal (Windows-Stimmen, keine Cloud): Sprach-Eingaben werden standardmäßig beantwortet.
       if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: String(final.content || '').slice(0, 8000), private: isPrivateConv }); // Sprechfassung + Kürzung macht die Sprachausgabe
