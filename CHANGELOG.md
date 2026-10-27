@@ -2,8 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
-## 4.7.0 – AION 2 im HUD
+## 4.7.0 – AION 2 im HUD, Buckets mit Ausgaben, Stimme per Sprachbefehl
 
+- **Buckets: Ausgaben hineinbuchen:** Ausgaben lassen sich jetzt direkt in einen Bucket buchen (Teilbeträge, auch über den Plan hinaus) – im Bucket selbst, über „→ Bucket“ beim normalen Erfassen oder per Chat („15 € fürs Kino aus dem Gaming-Bucket“). Ein Säulendiagramm zeigt je Bucket geplant (Umriss) und ausgegeben (Füllung, rot wenn überzogen), mit Monatsauswahl. Vom freien Geld wird nur noch der offene Rest abgezogen. „Rest bezahlt“ bucht den offenen Rest; der Bucket bleibt sichtbar. Beim Löschen eines Buckets bleiben die Ausgaben erhalten.
+- **Stimme per Sprachbefehl:** „Jarvis, Stimme auf Alya“, „nimm die Jarvis-Stimme“, „sprich wieder normal“ – wechselt sofort, ohne KI-Anfrage. Auch das Live-Gespräch nutzt die Profilstimme (ab dem nächsten Gespräch).
+- **Gaming-Einstellungen aufgeräumt:** in Reiter aufgeteilt – Allgemein, League of Legends, Tarkov, Weitere Spiele (inkl. AION 2: Region, Reset-Zeiten).
 - **AION 2 als eigenes Spiel:** Spielseite mit Boss-/Event-Timer, Daily/Weekly-Checkliste, Regenerationsrechner sowie Upgrade- und Crafting-Rechner; im Overlay die nächsten Events und laufenden Boss-Timer.
 - **Boss-Timer:** 49 Feldbosse (Respawn-Zeiten Community-Stand 10/2026, je Boss anpassbar). „✓ tot“ startet den Respawn-Timer, der im Overlay mitläuft.
 - **Events:** Kaira (alle 3 h), Artefakt-Belagerung und Executors (Mo/Do/Sa) in Serverzeit; Region EU/NA wählbar.
