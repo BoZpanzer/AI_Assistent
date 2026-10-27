@@ -139,7 +139,25 @@ class Orchestrator {
 
   /** Deterministic answers (no model): game statistics and their spoken/typed entry. */
   deterministic(text) {
+    try { const v = this.voiceCommand(text); if (v) return v; } catch (e) { log.debug('voice command', e); }
     try { return this.s.gaming?.stats?.answer(text) || null; } catch (e) { log.debug('deterministic', e); return null; }
+  }
+
+  /** „Stimme auf Alya/Jarvis/Standard“ – Profil wechseln, ohne Sprachmodell. */
+  voiceCommand(text) {
+    const id = require('../voice/voice-presets').parseVoiceCommand(text);
+    if (!id) return null;
+    return { text: this.setVoice(id).message, deterministic: 'voice' };
+  }
+
+  setVoice(preset) {
+    const { PRESETS, presetId } = require('../voice/voice-presets');
+    const id = presetId(preset);
+    const before = this.s.settings.get('voice')?.tts?.preset || 'standard';
+    this.s.settings.update({ voice: { tts: { preset: id } } });
+    const label = PRESETS[id].label;
+    const message = before === id ? `Ich spreche schon mit der Stimme „${label}“.` : id === 'standard' ? 'Alles klar – wieder die Standardstimme.' : `Alles klar – ab jetzt spreche ich als ${label}.`;
+    return { preset: id, label, changed: before !== id, message };
   }
 
   /**

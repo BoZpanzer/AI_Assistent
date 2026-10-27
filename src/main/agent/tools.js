@@ -157,6 +157,10 @@ function buildTools(s) {
     schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' }, domains: { type: 'array', items: { type: 'string', enum: Object.keys(DOMAINS) } }, game: { type: 'string' } } },
     run: async ({ query, domains, game }) => { const r = await s.brain.search(query, { scope: 'knowledge', domains, game, limit: 8 }); return { results: r.results.map((x) => ({ id: x.id, title: x.title, text: x.snippet, domain: x.domainLabel, source: x.sourceType, url: x.sourceUrl, possiblyOutdated: x.stale || undefined, updated: x.updatedAt })) }; } });
 
+  def({ name: 'set_voice', mode: 'read', description: 'Stimme von JARVIS wechseln („nimm die Alya-Stimme“, „sprich wie Jarvis“, „wieder normale Stimme“). Profile: standard, jarvis, alya. Gilt sofort für alle Sprachantworten.',
+    schema: { type: 'object', required: ['preset'], properties: { preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] } } },
+    run: ({ preset }) => s.orchestrator.setVoice(preset) });
+
   def({ name: 'voice_standby', mode: 'read', description: 'Sprachmodus pausieren („geh in den Standby“, „Pause“, „schlaf“): Das Mikrofon hört nur noch auf das Wake-Word „Hey Jarvis“, bis der Nutzer es wieder sagt.',
     schema: { type: 'object', properties: {} },
     run: () => s.voice.requestStandby({ reason: 'Befehl' }) });
