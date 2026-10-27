@@ -3,7 +3,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { tempCore, fakeSdk } = require('./helpers');
 const { priceFor, costUsd } = require('../src/main/services/costguard');
-const { pcmToWav } = require('../src/main/providers/gemini');
 const { localPronunciation } = require('../src/main/voice/speech');
 
 const MODELS = ['gemini-3.8-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-pro-preview', 'gemini-embedding-2'];
@@ -15,13 +14,9 @@ const ddragon = async (url) => {
   throw new Error('offline');
 };
 
-test('Prices: old 2.5 Flash-Lite and TTS models are known (no Pro fallback price)', () => {
+test('Prices: old 2.5 Flash-Lite models are known (no Pro fallback price)', () => {
   assert.equal(priceFor('gemini-2.5-flash-lite').out, 0.40);
   assert.equal(priceFor('gemini-2.5-flash').out, 2.5);
-  assert.equal(priceFor('gemini-3.8-flash-lite-tts', new Date('2026-10-20')).outAudio, 6.0);
-  assert.equal(priceFor('gemini-3.8-flash-lite-tts', new Date('2027-01-02')).outAudio, 12.0);
-  // 1 Minute Sprache ≈ 1 920 Audio-Token (32/s) → unter 1,5 Cent
-  assert.ok(costUsd('gemini-3.8-flash-lite-tts', { in: 100, out: 1920, outAudio: 1920 }, new Date('2026-10-20')) < 0.015);
   assert.ok(costUsd('gemini-2.5-flash-lite', { in: 2000, out: 500 }) < costUsd('gemini-3.8-flash', { in: 2000, out: 500 }) / 5, 'Sparmodell deutlich günstiger');
 });
 
@@ -50,33 +45,9 @@ test('Economy: short tasks use the cheapest Flash-Lite; free key first, paid key
   } finally { cleanup(); }
 });
 
-test('Cloud voice: Gemini TTS for normal text (cached afterwards), private text and the daily cap use the local voice', async () => {
-  const sdk = fakeSdk([], { models: MODELS });
-  let calls = 0;
-  const Orig = sdk.sdk.GoogleGenAI;
-  sdk.sdk.GoogleGenAI = class extends Orig { constructor(o) { super(o); this.models.generateContent = async (req) => { calls++; return { usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 320, candidatesTokensDetails: [{ modality: 'AUDIO', tokenCount: 320 }] }, candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: Buffer.alloc(4800).toString('base64') } }] } }], model: req.model }; }; } };
-  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk });
-  try {
-    core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
-    let local = 0; core.tts.synthesize = async (t) => { local++; return { wav: Buffer.from('RIFFlocal' + t), pitch: 1, voice: 'x' }; };
-    const a = await core.speech.synthesize('Achte auf Sivirs Spellshield.');
-    assert.equal(a.engine, 'gemini'); assert.equal(a.wav.subarray(0, 4).toString(), 'RIFF'); assert.equal(a.wav.length, 44 + 4800);
-    const b = await core.speech.synthesize('Achte auf Sivirs Spellshield.');
-    assert.equal(b.cached, true); assert.equal(calls, 1, 'gleicher Satz → aus dem Speicher, keine Kosten');
-    const p = await core.speech.synthesize('Mein Gehalt ist zu niedrig', { private: true });
-    assert.equal(p.engine, 'piper'); assert.equal(local, 1);
-    core.settings.update({ aiBudget: { ttsDailyEur: 0 } });
-    const c = await core.speech.synthesize('Neuer Satz für heute.');
-    assert.equal(c.engine, 'piper', 'Tagesgrenze erreicht → lokal');
-    core.settings.update({ aiBudget: { ttsDailyEur: 1 }, voice: { tts: { engine: 'piper' } } });
-    assert.equal((await core.speech.synthesize('Noch ein Satz.')).engine, 'piper');
-  } finally { cleanup(); }
-});
-
 test('Local voice: English gaming terms get a German-readable spelling', () => {
   const t = localPronunciation('Der Jungler gankt die Toplane, setz Wards vor dem Raid und den Quests.');
-  assert.match(t, /Dschangler/); assert.match(t, /Topp-Lehn/); assert.match(t, /Wohrds/); assert.match(t, /Reid/); assert.match(t, /Kwests/);
-  const w = pcmToWav(Buffer.alloc(10), 24000); assert.equal(w.readUInt32LE(24), 24000);
+  assert.match(t, /Dschungler/); assert.match(t, /Topp-Lehn/); assert.match(t, /Wohrds/); assert.match(t, /Reid/); assert.match(t, /Kwests/);
 });
 
 test('LoL: tips against every enemy champion (one cheap call, cached per patch), Riot tips without cloud', async () => {
@@ -123,15 +94,3 @@ test('LoL: champion recommendation from own pool, own record vs these enemies, t
   } finally { cleanup(); }
 });
 
-test('Cloud voice with the free key keeps working when the paid budget is used up', async () => {
-  const sdk = fakeSdk([], { models: MODELS });
-  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk });
-  try {
-    core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
-    core.gemini.guard.exceeded = () => 'daily';
-    assert.equal(core.speech.cloudOk(false, 'auto'), false, 'ohne Gratis-Schlüssel: Budget erreicht → lokal');
-    core.secrets.set('gemini.free_api_key', 'FREE');
-    assert.equal(core.speech.cloudOk(false, 'auto'), true, 'Gratis-Schlüssel kostet nichts → Cloud-Stimme bleibt');
-    assert.equal(core.speech.cloudOk(true, 'auto'), false, 'private Texte nie in die Cloud');
-  } finally { cleanup(); }
-});

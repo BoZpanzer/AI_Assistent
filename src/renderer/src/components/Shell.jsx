@@ -284,9 +284,6 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
   const voice = useStore((s) => s.voice);
   const page = useStore((s) => s.page);
   const draft = useStore((s) => s.chatDraft);
-  const privacyCid = useStore((s) => s.conversationId);
-  const [privacyConvs] = useRpc('conv.list', {}, { events: ['conversations:changed'], initial: [], deps: [privacyCid] });
-  const privateMode = !['study', 'gaming'].includes(privacyConvs.find((c) => c.id === privacyCid)?.privacy);
   const muted = useStore((s) => s.micMuted);
   const ref = useRef();
   useEvent('ui:focus-input', () => ref.current?.focus());
@@ -315,11 +312,6 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
   return (
     <div class="panel" style={{ position: 'relative' }}>
       {showMini && <MiniChat />}
-      <div class="row gap-s small" style={{ padding: '6px 12px' }}>
-        <button class="btn xs" onClick={async () => { const c = await rpc('conv.private', { id: getState().conversationId }); if (c) toast('Private: dieses Gespräch bleibt lokal'); }}>🔒 Private-Tag</button>
-        <b>{privateMode ? "🔒 Lokal" : "☁ Cloud · nur freigegebene Uni-/Gaming-Inhalte"}</b><span class="muted">Neuer Chat:</span>
-        {[['private', 'Private · lokal'], ['study', 'Uni · Cloud'], ['gaming', 'Gaming · Cloud']].map(([privacy, label]) => <button class="btn xs" onClick={async () => { const c = await rpc('conv.create', { privacy }); setState({ conversationId: c.id }); toast(label + ' gestartet'); }}>{label}</button>)}
-      </div>
       {files.length > 0 && <div class="chips">{files.map((f, i) => <span class="chip"><Paperclip size={12} />{f.name}<X size={12} onClick={() => setFiles(files.filter((_, j) => j !== i))} /></span>)}</div>}
       <div class="chatbar">
         <button class="btn icon attach" onClick={attach} title="Datei anhängen"><Paperclip size={22} /></button>
@@ -328,7 +320,7 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
             onInput={(e) => { setText(e.currentTarget.value); e.currentTarget.style.height = '52px'; e.currentTarget.style.height = Math.min(140, e.currentTarget.scrollHeight) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
           {liveVoiceOn && <button class="mic" style={muted ? { color: 'var(--red)' } : undefined} onClick={() => audio.setMuted(!muted)} title={muted ? 'Stummschaltung aufheben' : 'Mikrofon stummschalten'}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</button>}
-          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Offline-Aufnahme stoppen und privat senden' : liveVoiceOn ? 'Cloud-Sprachmodus beenden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : privateMode ? '🔒 Offline-Spracherkennung (whisper.cpp)' : '☁ Gemini Live (Zustimmung erforderlich)'}>
+          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Aufnahme stoppen und senden' : liveVoiceOn ? 'Cloud-Sprachmodus beenden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : '🔒 Spracheingabe (lokal erkannt, privat bleibt lokal)'}>
             {voiceOn ? <CircleStop size={22} /> : <Mic size={22} />}
           </button>
           <button class="send" onClick={send} title="Senden (Enter)"><SendHorizontal size={24} /></button>

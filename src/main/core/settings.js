@@ -49,14 +49,14 @@ const SCHEMA = {
     availableModels: { type: 'array', items: { type: 'string' }, maxItems: 400 },
     temperature: { type: 'number', minimum: 0, maximum: 1.5 },
     webSearch: { type: 'boolean' },
-    autoMemory: { type: 'boolean' },
+    autoMemory: { type: 'boolean' }, brainAutoLearn: { type: 'boolean' },
     aiCostMode: { type: 'string', enum: ['spar', 'max'] },
-    aiBudget: { type: 'object', properties: { monthlyEur: { type: 'number', minimum: 0, maximum: 1000 }, ttsDailyEur: { type: 'number', minimum: 0, maximum: 5 }, dailyEur: { type: 'number', minimum: 0, maximum: 100 }, sessionEur: { type: 'number', minimum: 0, maximum: 100 }, hardStop: { type: 'boolean' }, warnPct: { type: 'number', minimum: 10, maximum: 99 }, brake: { type: 'boolean' }, usdToEur: { type: 'number', minimum: 0.5, maximum: 1.5 } } },
+    aiBudget: { type: 'object', properties: { monthlyEur: { type: 'number', minimum: 0, maximum: 1000 }, dailyEur: { type: 'number', minimum: 0, maximum: 100 }, sessionEur: { type: 'number', minimum: 0, maximum: 100 }, hardStop: { type: 'boolean' }, warnPct: { type: 'number', minimum: 10, maximum: 99 }, brake: { type: 'boolean' }, usdToEur: { type: 'number', minimum: 0.5, maximum: 1.5 } } },
     // Cloud-KI: 'hybrid' = Gemini nur in Uni-/Gaming-Chats und freigegebenen Funktionen; 'local' = keine externen KI-Aufrufe
     cloud: { type: 'object', properties: {
       mode: { type: 'string', enum: ['hybrid', 'local'] },
       economy: { type: 'boolean' }, liteGamingChat: { type: 'boolean' },
-      features: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['chat', 'voice', 'tts', 'vision', 'research', 'lol', 'news', 'games', 'wikilist', 'study', 'diagnostics', 'meta'].map((k) => [k, { type: 'boolean' }])) },
+      features: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['chat', 'voice', 'vision', 'research', 'lol', 'news', 'games', 'wikilist', 'study', 'diagnostics', 'meta'].map((k) => [k, { type: 'boolean' }])) },
       maxConcurrent: { type: 'integer', minimum: 1, maximum: 4 }, maxOutputTokens: { type: 'integer', minimum: 256, maximum: 16384 }, timeoutSec: { type: 'integer', minimum: 10, maximum: 300 } } },
     birthdaysToCalendar: { type: 'boolean' },
     // Voice
@@ -70,10 +70,13 @@ const SCHEMA = {
       cloudMaxMinutes: { type: 'number', minimum: 1, maximum: 60 }, cloudMaxEur: { type: 'number', minimum: 0.01, maximum: 5 }, cloudVad: { type: 'boolean' },
       bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 },
       tts: { type: 'object', properties: {
-        engine: { type: 'string', enum: ['auto', 'gemini', 'piper', 'windows'] }, cloudVoice: { type: 'string', maxLength: 40 }, preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] }, elevenModel: { type: 'string', maxLength: 60 }, elevenDailyChars: { type: 'integer', minimum: 0, maximum: 1000000 },
-        elevenVoices: { type: 'object', properties: { standard: { type: 'string', maxLength: 64 }, jarvis: { type: 'string', maxLength: 64 }, alya: { type: 'string', maxLength: 64 } } }, voice: { type: 'string', maxLength: 80 }, style: { type: 'string', maxLength: 30 },
+        engine: { type: 'string', enum: ['auto', 'omnivoice', 'gemini', 'piper', 'windows'] }, preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] },
+        voice: { type: 'string', maxLength: 80 }, style: { type: 'string', maxLength: 30 },
         speaker: { type: 'integer', minimum: 0, maximum: 500 }, speed: { type: 'number', minimum: 0.6, maximum: 1.6 }, pitch: { type: 'number', minimum: 0.8, maximum: 1.25 },
-        volume: { type: 'number', minimum: 0, maximum: 1.5 }, short: { type: 'boolean' }, windowsVoice: { type: 'string', maxLength: 200 }, piperExecutable: { type: 'string', maxLength: 1000 } } } } },
+        volume: { type: 'number', minimum: 0, maximum: 1.5 }, short: { type: 'boolean' }, windowsVoice: { type: 'string', maxLength: 200 }, piperExecutable: { type: 'string', maxLength: 1000 },
+        omni: { type: 'object', properties: { enabled: { type: 'boolean' }, preload: { type: 'boolean' },
+          voices: { type: 'object', properties: { standard: { type: 'string', maxLength: 200 }, jarvis: { type: 'string', maxLength: 200 }, alya: { type: 'string', maxLength: 200 } } },
+          seeds: { type: 'object', properties: { standard: { type: 'integer', minimum: 1, maximum: 1000000 }, jarvis: { type: 'integer', minimum: 1, maximum: 1000000 }, alya: { type: 'integer', minimum: 1, maximum: 1000000 } } } } } } } } },
     // Google
     google: { type: 'object', properties: {
       clientId: { type: 'string', maxLength: 200 }, calendarSync: { type: 'boolean' }, exportLocalToGoogle: { type: 'boolean' },
@@ -146,12 +149,12 @@ const DEFAULTS = {
   campusDualResults: { enabled: true, intervalHours: 3 }, campusDualExams: { enabled: true },
   backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
   models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
-  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, ttsDailyEur: 0.05, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
+  availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, brainAutoLearn: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
   // Sparsamer Standard: Gemini nur in ausdrücklichen Uni-/Gaming-Chats; Gemini Live (Echtzeit-Audio) aus → lokale Spracheingabe
-  cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, voice: false, tts: true, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
+  cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, voice: false, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 45,
-    tts: { engine: 'auto', preset: 'standard', elevenVoices: {}, elevenModel: 'eleven_flash_v2_5', elevenDailyChars: 10000, cloudVoice: 'Kore', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '' },
+    tts: { engine: 'auto', preset: 'standard', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '', omni: { enabled: true, preload: true, voices: {}, seeds: {} } },
     whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true, cloudMaxMinutes: 10, cloudMaxEur: 0.1, cloudVad: true },
   google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '', exportCalendars: {}, exportKinds: { termine: true, geburtstage: true, todos: true, erinnerungen: true, uni: true } },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },

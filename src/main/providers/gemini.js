@@ -17,7 +17,6 @@ const ROLE_PREFS = {
   // Sparmodell für kurze, strukturierte Aufgaben (Tipps, Karten, Empfehlungen): ältestes/günstigstes Flash-Lite zuerst
   lite: [/^gemini-2\.5-flash-lite$/, /^gemini-3\.1-flash-lite$/, /^gemini-3\.5-flash-lite$/, /^gemini-flash-lite-latest$/, /flash-lite(?!.*(image|tts|live|audio|preview))/],
   // Sprachausgabe (Text → Sprache): günstigstes TTS-Modell zuerst
-  tts: [/^gemini-3\.8-flash-lite-tts$/, /flash-lite-tts$/, /^gemini-3\.8-flash-tts$/, /flash-tts$/, /flash.*tts/, /tts/],
 };
 
 function pickModel(role, available) {
@@ -41,7 +40,7 @@ const cloudScope = new AsyncLocalStorage();
 
 /** Cloud functions that can be switched off individually (Einstellungen → Gemini / KI). */
 const FEATURES = {
-  chat: 'Chat (Uni/Gaming)', voice: 'Gemini Live (Echtzeit-Audio)', tts: 'Cloud-Stimme (Vorlesen)', vision: 'Bildschirmanalyse', research: 'Websuche über Gemini',
+  chat: 'Chat (Uni/Gaming)', voice: 'Gemini Live (Echtzeit-Audio)', vision: 'Bildschirmanalyse', research: 'Websuche über Gemini',
   lol: 'LoL-Analysen', news: 'Patch-Notes-Kurzfassungen', games: 'Spielseiten gestalten', wikilist: 'Checklisten aus dem Wiki',
   study: 'Handschrift erkennen', diagnostics: 'Verbindungstest', meta: 'Modellliste',
 };
@@ -390,33 +389,6 @@ class Gemini {
     }, { model: m, estUsd: this.estimate(m, { system, contents, tools, maxOut: limit, effort }), background, dedupeKey, freeKey });
   }
 
-  /**
-   * Text → Sprache mit einem Gemini-TTS-Modell. Liefert WAV (24 kHz, 16 bit, mono).
-   * Kostenloses Kontingent zuerst (falls zweiter Schlüssel), sonst normaler Schlüssel mit eigener Tagesgrenze.
-   */
-  async speak(text, { voiceName = 'Kore', style = '' } = {}) {
-    const model = this.model('tts');
-    if (!model) throw new CloudBlocked('Kein Gemini-Sprachmodell (TTS) verfügbar – Modellprüfung ausführen.');
-    const prompt = (style ? style.trim() + ': ' : 'Sprich natürlich, freundlich und deutlich auf Deutsch (englische Spiel- und Eigennamen englisch aussprechen): ') + String(text).slice(0, 1500);
-    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
-    const run = (freeKey) => this.cloud('tts', async (meter, signal) => {
-      const r = await this.client().models.generateContent({ model, contents, config: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }, abortSignal: signal } });
-      meter.add(r.usageMetadata, model);
-      this.track(r, 'tts', model);
-      const part = (r.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
-      if (!part) throw new Error('Gemini hat kein Audio geliefert');
-      const rate = Number(String(part.inlineData.mimeType || '').match(/rate=(\d+)/)?.[1]) || 24000;
-      return pcmToWav(Buffer.from(part.inlineData.data, 'base64'), rate);
-    }, { model, estUsd: this.estimate(model, { contents, maxOut: Math.ceil(String(text).length / 12) * 32 }), freeKey });
-    if (this.freeAvailable()) {
-      try { return await run(true); } catch (e) { if (!isQuota(e)) throw e; this.markFreeExhausted(e); }
-    }
-    if (!this.secrets.get('gemini.api_key')) throw new CloudBlocked('Kostenloses Kontingent erschöpft – lokale Stimme wird genutzt.');
-    const cap = Number(this.settings.get('aiBudget')?.ttsDailyEur ?? 0.05);
-    if (this.guard && this.guard.eur(this.guard.ledgerUsd("feature='tts' AND day=?", require('../services/costguard').localDay())) >= cap) throw new CloudBlocked('Tagesgrenze der Cloud-Stimme erreicht – lokale Stimme wird genutzt.');
-    return run(false);
-  }
-
   /** Grounded web research with Google Search. Sources are https only. No silent fallback. */
   async research(query, { system, background = false } = {}) {
     require('../core/privacy').assertExternal();
@@ -518,14 +490,6 @@ function isClientError(e) {
 function isOverloaded(e) { const m = String(e?.message || e); return [500, 502, 503, 504].includes(e?.status) || /\b(500|502|503|504)\b|UNAVAILABLE|overloaded|high demand|Service Unavailable|INTERNAL|DEADLINE_EXCEEDED/i.test(m); }
 /** 402: Abrechnung aktiv, aber Vorauszahlungsguthaben leer – kein Limit, Warten/Ausweichen hilft nicht. */
 function isPayment(e) { return e?.status === 402 || /\b402\b|PAYMENT_REQUIRED|PaymentRequired|prepay|prepayment|billing.*(balance|credit)/i.test(String(e?.message || e)); }
-/** Rohes PCM (16 bit, mono) → WAV-Datei. */
-function pcmToWav(pcm, rate = 24000) {
-  const h = Buffer.alloc(44);
-  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12); h.writeUInt32LE(16, 16);
-  h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
-  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([h, pcm]);
-}
 
 function isQuota(e) {
   if (isPayment(e)) return false;
@@ -577,5 +541,5 @@ function friendlyError(e) {
   return innerMessage(msg.replace(fix, '')).slice(0, 360) + fix;
 }
 
-module.exports = { Gemini, pcmToWav, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo, CloudBlocked, FEATURES, estimateTokens, isClientError, cloudScope, BudgetError };
+module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo, CloudBlocked, FEATURES, estimateTokens, isClientError, cloudScope, BudgetError };
 

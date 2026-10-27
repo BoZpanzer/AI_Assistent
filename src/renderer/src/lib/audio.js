@@ -217,9 +217,8 @@ class AudioEngine {
       const cloud = getState().settings?.cloud || {};
       // Standard: lokale Spracherkennung (whisper.cpp) für alle Chats – Gemini Live nur, wenn ausdrücklich eingeschaltet.
       if (target.privacy === 'private' || cloud.mode === 'local' || cloud.features?.voice !== true) return await this.startLocalVoice(conversationId, generation);
-      if (!['study', 'gaming'].includes(target.privacy)) throw new Error('Unbekannter Sprachmodus.');
       const approved = await ask(
-        'Gemini Live überträgt dein Mikrofon-Audio an Google, verarbeitet das Gespräch in der Cloud und kann die freigegebene Chat-Historie verwenden. Audio jetzt für diesen Uni-/Gaming-Chat übertragen?',
+        'Gemini Live überträgt dein Mikrofon-Audio an Google und verarbeitet das Gespräch in der Cloud (nur mit den nicht-privaten Nachrichten dieses Gesprächs). Sag in dieser Sitzung nichts Privates – dafür ist die normale Spracheingabe da, die das automatisch lokal hält. Audio jetzt übertragen?',
         '', { confirmOnly: true, okLabel: 'Cloud-Audio für diese Sitzung erlauben' },
       );
       if (!approved || generation !== this.startGeneration || getState().conversationId !== conversationId) return;

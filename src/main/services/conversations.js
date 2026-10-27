@@ -5,8 +5,9 @@ const { id, nowIso, safeJson, truncate } = require('../core/util');
 class Conversations {
   constructor(ctx) { this.db = ctx.db; this.bus = ctx.bus; }
 
-  create(title = 'Neues Gespräch', privacy = 'private') {
-    if (!['private', 'study', 'gaming'].includes(privacy)) throw new Error('Ungültiger Gesprächsmodus');
+  /** privacy: 'auto' (Standard ab 5.0 – jede Nachricht wird einzeln eingeordnet); alte Werte private/study/gaming bleiben gültig. */
+  create(title = 'Neues Gespräch', privacy = 'auto') {
+    if (!['auto', 'private', 'study', 'gaming'].includes(privacy)) throw new Error('Ungültiger Gesprächsmodus');
     const cid = id('c'); const now = nowIso();
     this.db.run('INSERT INTO conversations(id,title,created_at,updated_at) VALUES(?,?,?,?)', cid, title, now, now);
     this.db.run('UPDATE conversations SET privacy=? WHERE id=?', privacy, cid);
@@ -33,6 +34,7 @@ class Conversations {
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) n FROM conversations c WHERE archived=0 ORDER BY updated_at DESC LIMIT ?`, limit)
       .map((r) => ({ id: r.id, title: r.title, privacy: r.privacy, updatedAt: r.updated_at, preview: truncate(r.last || '', 90), messages: r.n }));
   }
+  legacyPublic(cid) { return ['study', 'gaming'].includes(this.get(cid)?.privacy); }
   markPrivate(cid) { this.db.run("UPDATE conversations SET privacy='private' WHERE id=?", cid); this.bus.emit('conversations:changed', {}); return this.get(cid); }
   rename(cid, title) { this.db.run('UPDATE conversations SET title=? WHERE id=?', String(title).slice(0, 120), cid); this.bus.emit('conversations:changed', {}); }
   remove(cid) { this.db.run('DELETE FROM conversations WHERE id=?', cid); this.bus.emit('conversations:changed', {}); }
@@ -61,9 +63,11 @@ class Conversations {
     return rows.reverse().map((r) => ({ id: r.id, conversationId: r.conversation_id, role: r.role, content: r.content, meta: safeJson(r.meta, {}), channel: r.channel, createdAt: r.created_at }));
   }
   /** Model history: last N user/assistant text turns (tool details omitted). */
-  history(cid, maxTurns = 16, maxChars = 24000, upTo) {
-    let rows = this.messages(cid, { limit: maxTurns * 2 + 4 });
+  /** publicOnly: nur nicht-private Nachrichten (für Gemini). legacyPrivate: altes privates Gespräch → nichts. */
+  history(cid, maxTurns = 16, maxChars = 24000, upTo, { publicOnly = false, legacyPrivate = false } = {}) {
+    let rows = this.messages(cid, { limit: (maxTurns * 2 + 4) * (publicOnly ? 3 : 1) });
     if (upTo) { const k = rows.findIndex((m) => m.id === upTo); if (k >= 0) rows = rows.slice(0, k + 1); }
+    if (publicOnly) rows = legacyPrivate ? [] : rows.filter((m) => m.meta?.scope && m.meta.scope !== 'private' || (!m.meta?.scope && this.legacyPublic(cid)));
     // Fehlermeldungen („⚠️ …“) sind keine echten Antworten → nicht als Verlauf ans Modell
     rows = rows.filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.meta?.error).slice(-maxTurns * 2);
     const out = []; let size = 0;

@@ -54,6 +54,8 @@ function tempCore(opts = {}) {
   const fake = fakeSdk(opts.script || []);
   const fetch = opts.fetch ? withoutTarkovJson(opts.fetch, opts.tarkovJson) : (async () => { throw new Error('offline'); });
   const core = createCore({ dataDir: dir, version: '3.0.0', genaiSdk: opts.genaiSdk || fake.sdk, fetch, platform: { toast: opts.toast } });
+  // Der Brain-Lernschritt würde in älteren Tests zusätzliche Modellaufrufe erzeugen → nur, wenn ein Test ihn will.
+  if (!opts.learn) core.settings.update({ brainAutoLearn: false });
   if (opts.local) {
     // Scripted local provider; the separate loopback integration test exercises Ollama's wire protocol.
     core.localLLM.stepStream = async (o) => {

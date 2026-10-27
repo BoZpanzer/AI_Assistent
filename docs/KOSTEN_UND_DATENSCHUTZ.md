@@ -1,6 +1,6 @@
 # Kosten, Datenschutz und Aufgabenverteilung
 
-Stand: 19.10.2026 · gilt ab Branch `fix/kalibrierung-kosten-lokal`
+Stand: 27.10.2026 · gilt ab JARVIS 5.0
 
 ## Leitlinie
 
@@ -12,10 +12,11 @@ So wenig Gemini wie möglich, so viel lokal wie sinnvoll – ohne das Spiel ausz
 | Raid-Ergebnis erfassen, Statistikfragen („Wie ist meine Überlebensrate heute?“) | **deterministisch**, auch per Sprache | Satzmuster lokal erkannt, 0 € |
 | Kartenkalibrierung, Einstellungen, Timer, Datenabfragen | **deterministisch** | |
 | Spracherkennung | **lokal** (whisper.cpp, in jedem Chat) | Audio verlässt den PC nicht |
-| Sprachausgabe | **Gemini-TTS** („Automatisch“, nur nicht private Texte, eigene Tagesgrenze, Audio-Cache) sonst **lokal** (Piper/Windows) | lokale deutsche Stimme spricht englische Spielbegriffe schlecht aus; Cloud-Stimme ca. 1 ct/min |
-| Private Chats, Finanzen, Persönliches, Geburtstage, Fristen aus Mails | **lokales Modell** (Ollama) | kein Cloud-Fallback |
-| Uni-Chats, „gründliche“ Fragen, Bildschirmfrage, Websuche | **Gemini Flash**, nur wenn erlaubt | Qualität lokal nicht erreichbar |
-| Gaming-Chats, Matchup-Karte, Gegner-Tipps, Champion-Empfehlung, Kurzfassungen | **Gemini Sparmodell** (gemini-2.5-flash-lite, 0,10/0,40 $ je 1 Mio. Token) | kurze, strukturierte Aufgaben; ca. 8× günstiger als Flash |
+| Sprachausgabe | **lokal**: KI-Stimme OmniVoice auf der Grafikkarte (nach Installation per Klick), sonst Piper/Windows | 0 €, nichts verlässt den PC; Gemini liefert nur Text |
+| Private Nachrichten (pro Nachricht automatisch erkannt): Termine, Finanzen, Familie, eigene Daten, Assistenz-Aktionen, Anhänge | **lokales Modell** (Ollama) | kein Cloud-Fallback |
+| Nicht private Nachrichten (Wissen, Uni, allgemeine Fragen), „gründliche“ Fragen, Bildschirmfrage, Websuche | **Gemini Flash**, nur wenn erlaubt – ohne private Nachrichten im Verlauf | Qualität lokal nicht erreichbar |
+| Brain selbst erweitern (nach Antworten) | privat: **lokales Modell**; sonst **Gemini Sparmodell**, max. 40×/Tag | Sensibles wird nie automatisch gespeichert |
+| Gaming-Nachrichten, Matchup-Karte, Gegner-Tipps, Champion-Empfehlung, Kurzfassungen | **Gemini Sparmodell** (gemini-2.5-flash-lite, 0,10/0,40 $ je 1 Mio. Token) | kurze, strukturierte Aufgaben; ca. 8× günstiger als Flash |
 | Gemini Live (Echtzeit-Audio) | **aus** (Standard), optional | teuerste Funktion |
 
 Die Entscheidung trifft zentral `Orchestrator.route()` (Chat) bzw. `Gemini.generate()` (Einzelaufrufe); erzwungen wird sie in `Gemini.cloud()` im Hauptprozess.
@@ -23,8 +24,8 @@ Die Entscheidung trifft zentral `Orchestrator.route()` (Chat) bzw. `Gemini.gener
 
 ## Modi
 
-- **Sparsam hybrid** (Standard): Gemini nur in ausdrücklich gewählten Uni-/Gaming-Chats und für eingeschaltete Funktionen.
-- **Strikt lokal**: keine externen KI-Aufrufe. Uni-/Gaming-Chats werden – falls eingerichtet – vom lokalen Modell beantwortet, mit sichtbarem Hinweis.
+- **Sparsam hybrid** (Standard): Gemini nur für nicht private Nachrichten und eingeschaltete Funktionen; JARVIS ordnet jede Nachricht selbst ein (siehe unten).
+- **Strikt lokal**: keine externen KI-Aufrufe. Nicht private Nachrichten werden – falls eingerichtet – vom lokalen Modell beantwortet, mit sichtbarem Hinweis.
   Umschalten: Einstellungen → Gemini / KI → Modus, oder Klick auf den Cloud-Chip oben in der Kopfzeile („Cloud pausieren“).
   Laufende Gemini-Aufrufe werden dabei abgebrochen, eine Live-Sitzung beendet.
 
@@ -36,8 +37,7 @@ Fällt das lokale Modell aus, wird **nie** automatisch Gemini benutzt.
 | Einstellung | Standard |
 |---|---|
 | Tagesbudget | 0,25 € (lokaler Kalendertag, Wechsel 00:00) |
-| davon Cloud-Stimme | höchstens 0,05 € pro Tag, danach lokale Stimme |
-| Kostenloser Zusatz-Schlüssel | optional; zuerst für Sparmodell und Cloud-Stimme, bei erschöpftem Kontingent normaler Schlüssel mit Budget |
+| Kostenloser Zusatz-Schlüssel | optional; zuerst für das Sparmodell, bei erschöpftem Kontingent normaler Schlüssel mit Budget |
 | Sitzungsbudget | 0,15 € (seit dem Start von JARVIS) |
 | Monatsbudget | 5,00 € (Warnung 80 %, Sparstufe 95 %, Sperre 100 %) |
 | Sperre bei Erreichen | an |
@@ -83,22 +83,23 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 |---|---|---|---|---|
 | Mikrofon (lokal) | nur nach Mikrofon-Taste/Wake-Word, endet nach Sprechpause | whisper.cpp auf dem PC | temporäre WAV, sofort gelöscht | Mikrofon nicht drücken / Wake-Word aus |
 | Mikrofon (Gemini Live) | nur wenn Funktion an + Zustimmung je Sitzung; nur bei erkannter Sprache | Google | nicht von JARVIS | Funktion „Gemini Live“ aus (Standard) |
-| Transkript / Chattext | aus Eingabe | privat: lokal; Uni/Gaming: Gemini | lokale Datenbank (Gesprächsverlauf) | Gespräch löschen; Modus „Strikt lokal“ |
+| Transkript / Chattext | aus Eingabe | pro Nachricht: privat → lokal, sonst Gemini (ohne private Nachrichten) | lokale Datenbank (Gesprächsverlauf) | Gespräch löschen; Modus „Strikt lokal“ |
 | Bildschirm | nur Hotkey/Frage, **nur während ein Spiel aktiv ist**, bevorzugt nur das Spielfenster, max. 1 600 px; Tarkov-Itemscan nur Ausschnitt um den Mauszeiger | Gemini (Gaming-Chat des Spiels) | **standardmäßig nicht gespeichert** | Einstellungen → Sicherheit; Funktion „Bildschirmanalyse“ aus |
 | Spieldaten (LoL-Matches, Tarkov-Log, Statistik) | Client/Log/Riot-API | lokal; an Gemini nur in Gaming-Chats bzw. LoL nach Freigabe „LoL-Daten für Cloud“ | lokale Datenbank | Freigabe aus; Statistik-Einträge löschen |
 | Öffentliche Spieldaten (json.tarkov.dev bzw. api.tarkov.dev, Data Dragon, Steam-News) | Abruf | Drittanbieter (kein Personenbezug außer IP) | Cache (Ablaufzeit) | Einstellungen → Sicherheit → Spieldaten-Cache löschen |
 | Goon-Meldung | nur per Knopf | tarkov.dev (mit Tarkov-Account-ID) | – | Knopf nicht nutzen |
 | Diagnose-Protokolle | laufend | lokal, Schlüssel/Token geschwärzt, max. 8 MB | `logs/` | Einstellungen → Sicherheit → Protokolle leeren |
 | JARVIS-Kalender (Termine, Geburtstage, Uni, Aufgaben mit Fälligkeit, Erinnerungen) | nur wenn „Alles aus JARVIS nach Google übertragen“ an ist; letzte 30 bis nächste 180 Tage | Google Kalender (eigene Kalender „JARVIS · …“ je Art) | bei Google | Schalter aus bzw. Art abwählen (entfernt unveränderte Kopien) |
-| Vorgelesene Antworten (Cloud-Stimme) | Antworttext aus Uni-/Gaming-Chats, Spielansagen | Google (Gemini-TTS) | Audio-Cache lokal (max. 60 MB) | Sprachausgabe → „Nur lokal“; Funktion „Cloud-Stimme“ aus |
-| Vorgelesene Antworten mit eigener ElevenLabs-Stimme (optional) | nur mit hinterlegtem Schlüssel + Voice-ID, nicht privat, Zeichengrenze pro Tag | ElevenLabs | Audio-Cache lokal | Voice-ID leeren / Schlüssel entfernen |
-| Kostenloses Kontingent (Zusatz-Schlüssel) | Sparmodell-Anfragen, vorzulesende Texte | Google; darf laut Google zur Produktverbesserung genutzt werden | – | Schlüssel entfernen |
+| Vorgelesene Antworten | jede Sprachantwort | **lokal** (OmniVoice/Piper) | Audio-Cache lokal (max. 60 MB) | – |
+| Lokale KI-Stimme (Installation) | nur per Klick | Downloads von GitHub (uv), python.org-Builds, PyTorch, PyPI, Hugging Face (Modell) | `omnivoice/` im Datenordner (ca. 6 GB) | Einstellungen → Lokale KI-Stimme → Entfernen |
+| Brain-Lernschritt | nach Antworten | privat: lokal; sonst Gemini Sparmodell (nur dieser Austausch) | Brain (lokal) | Einstellungen → „Brain selbstständig erweitern“ aus; Einträge im Brain löschen |
+| Kostenloses Kontingent (Zusatz-Schlüssel) | Sparmodell-Anfragen | Google; darf laut Google zur Produktverbesserung genutzt werden | – | Schlüssel entfernen |
 | Kosten-Protokoll | je Gemini-Aufruf | lokal, nur Metadaten | Datenbank | ältere Einträge löschen |
 
 Sichtbarkeit: Die Kopfzeile zeigt den Cloud-Zustand (aus / an mit laufenden Aufrufen und Tagesstand / gesperrt), ein aktives Mikrofon (lokal oder Gemini Live) und jede Bildschirmaufnahme.
 
 **Lokale Modellserver:** JARVIS spricht Ollama nur über `127.0.0.1` an (kein DNS, kein Proxy, keine Weiterleitung, keine `:cloud`-Modelle). Ollama selbst lauscht standardmäßig nur auf `127.0.0.1:11434`; ist `OLLAMA_HOST` auf eine andere Adresse gesetzt (z. B. `0.0.0.0`), zeigt JARVIS eine Warnung. Empfehlung: `OLLAMA_HOST=127.0.0.1:11434`. JARVIS kann die Konfiguration des separat installierten Ollama-Dienstes nicht erzwingen.
 
-**Keine Telemetrie** in JARVIS. Netzwerkzugriffe: Gemini (nur über die Pforte), Hugging Face (nur beim Laden einer zusätzlichen Stimme per Klick), Google Kalender/Drive (nach Freigabe), Riot, tarkov.dev, Steam, DB-Fahrplan, GitHub-Updates.
+**Keine Telemetrie** in JARVIS. Netzwerkzugriffe: Gemini (nur über die Pforte), Hugging Face/PyTorch/PyPI (nur beim Laden einer Stimme bzw. der KI-Stimme per Klick), Google Kalender/Drive (nach Freigabe), Riot, tarkov.dev, Steam, DB-Fahrplan, GitHub-Updates.
 
 Grenzen: Ein Spielfenster kann selbst private Inhalte zeigen (z. B. In-Game-Chat). Fenstererkennung erfolgt über den Fenstertitel; wird kein Spielfenster gefunden, wird der Bildschirm unter dem Mauszeiger aufgenommen (in der Kopfzeile sichtbar). Was Google mit übertragenen Daten macht, regeln Googles Bedingungen.

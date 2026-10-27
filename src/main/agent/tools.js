@@ -21,12 +21,12 @@ function buildTools(s) {
     ...t, run: (args, ctx = {}) => checkLolDisclosure(ctx.conversationId) || t.run(args, ctx),
   } : t);
   const isPrivate = () => require('../core/privacy').isPrivate();
-  // Only a real cloud conversation can disclose private match stats to Gemini.
-  // Background/local tool calls without a valid cloud conversation must keep
-  // their existing behavior (integration tests use a non-existent conversation).
+  // Eigene LoL-Matchdaten gehen nur mit Zustimmung an Gemini: Werkzeugaufrufe aus einer Gemini-Antwort laufen im
+  // Cloud-Kontext (privacy.cloud). Lokale/Hintergrund-Aufrufe behalten ihr bisheriges Verhalten.
   const checkLolDisclosure = (conversationId) => {
     const mode = conversationId && s.conversations.get(conversationId)?.privacy;
-    if ((mode === 'gaming' || mode === 'study') && s.settings.get('gaming')?.lolCloudShare !== true) return {
+    const cloud = require('../core/privacy').isCloud() || mode === 'gaming' || mode === 'study';
+    if (cloud && !isPrivate() && s.settings.get('gaming')?.lolCloudShare !== true) return {
       error: 'LoL-Daten sind für Gemini nicht freigegeben. Bitte unter Einstellungen → Gaming „Eigene LoL-Matches im Gaming-Cloud-Chat verwenden“ bewusst aktivieren. Gespeicherte Daten bleiben bis dahin lokal.',
       needsConsent: true,
     };

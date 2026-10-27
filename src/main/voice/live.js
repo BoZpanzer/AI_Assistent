@@ -47,9 +47,16 @@ class LiveVoice {
 
   isOpen() { return !!this.session; }
 
+  /** Thema der Live-Sitzung: Gaming, wenn ein Spiel läuft oder besprochen wird (bzw. alter Gaming-Chat), sonst allgemein. */
+  liveScope() {
+    const p = this.s.conversations.get(this.conversationId)?.privacy;
+    if (p === 'gaming' || p === 'study') return p;
+    try { const st = this.s.gaming?.context?.state?.() || {}; return st.active || st.discussed ? 'gaming' : 'general'; } catch { return 'general'; }
+  }
+
   cloudConversationAllowed() {
     const c = this.conversationId && this.s.conversations.get(this.conversationId);
-    return !!c && ['study', 'gaming'].includes(c.privacy);
+    return !!c && c.privacy !== 'private'; // alte private Gespräche bleiben lokal
   }
 
   assertCloudConversation() {
@@ -62,8 +69,8 @@ class LiveVoice {
   async start({ conversationId, cloudAudioApproved = false } = {}) {
     const { gemini, settings, conversations } = this.s;
     const conversation = conversationId ? conversations.get(conversationId) : conversations.current();
-    if (!conversation || !['study', 'gaming'].includes(conversation.privacy)) {
-      throw new Error('Datenschutz: Gemini Live ist nur für freigegebene Uni-/Gaming-Gespräche erlaubt.');
+    if (!conversation || conversation.privacy === 'private') {
+      throw new Error('Datenschutz: Dieses Gespräch ist privat – bitte die lokale Spracheingabe verwenden.');
     }
     if (cloudAudioApproved !== true) {
       throw new Error('Datenschutz: Audioübertragung an Gemini benötigt vor jeder Sitzung deine ausdrückliche Zustimmung.');
@@ -95,7 +102,7 @@ class LiveVoice {
   config() {
     const vs = this.s.settings.get('voice');
     const decl = this.s.orchestrator.declarations({ nonBlocking: this.extended });
-    const allowed = privacy.cloudTools(this.s.conversations.get(this.conversationId)?.privacy);
+    const allowed = privacy.cloudTools(this.liveScope());
     decl[0].functionDeclarations = decl[0].functionDeclarations.filter(t => allowed.has(t.name));
     decl[0].functionDeclarations.push({
       name: 'confirm_pending_action',
@@ -107,7 +114,7 @@ class LiveVoice {
       responseModalities: ['AUDIO'],
       systemInstruction: privacy.CLOUD_SYSTEM + ' Antworte auf Deutsch, kurz und gut verständlich. Nutze die freigegebenen Werkzeuge für aktuelle Spielinformationen; erfinde keine Ergebnisse.',
       tools: decl,
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: require('./voice-presets').PRESETS[vs.tts?.preset]?.gemini?.voice || vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: require('./voice-presets').PRESETS[vs.tts?.preset]?.live || vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
       inputAudioTranscription: {}, outputAudioTranscription: {},
       // Im Sprachmodus berechnet Google bei JEDER Antwort den ganzen Sitzungsverlauf neu → Verlauf eng deckeln
       // (ab ~10k Token auf ~5k kürzen; älteres bleibt im Chatverlauf erhalten)
@@ -149,7 +156,7 @@ class LiveVoice {
     this.reconnects = 0;
     if (fresh) {
       // Shared memory with the text chat: prime with recent turns of the same conversation.
-      const hist = this.s.conversations.history(this.conversationId, 6, 4000);
+      const hist = this.s.conversations.history(this.conversationId, 6, 4000, undefined, { publicOnly: true });
       if (hist.length) {
         try { this.session.sendClientContent({ turns: hist, turnComplete: false }); } catch (e) { log.debug('History-Prime', e); }
       }
@@ -274,7 +281,7 @@ class LiveVoice {
         try {
           if (fc.name === 'confirm_pending_action') response = await this.voiceConfirm(!!fc.args?.approve);
           else {
-            const out = await this.s.orchestrator.execute(fc.name, fc.args, { conversationId, channel: 'voice' });
+            const out = await privacy.cloud(() => this.s.orchestrator.execute(fc.name, fc.args, { conversationId, channel: 'voice', scope: this.liveScope() }));
             if (out.card) this.s.conversations.add(conversationId, { role: 'tool', content: '', channel: 'voice', meta: { cards: [out.card] } });
             response = out.response;
           }

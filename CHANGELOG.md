@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.0.0 – Lokale KI-Stimme, automatisch privat, Brain lernt selbst
+
+- **Neue lokale KI-Stimme (OmniVoice):** natürlich klingende Stimme auf deiner Grafikkarte – kostenlos, offline, auch für private Antworten. J.A.R.V.I.S. und Alya haben feste, mitgelieferte Stimmen (von OmniVoice erzeugt, keine echte Person); „neu würfeln“ erzeugt eine andere, „Original“ holt sie zurück. Englische Spielbegriffe werden eingedeutscht („Dschungler“, „Gänk“, „Altimet“). Installation nur per Klick unter Einstellungen → Lokale KI-Stimme (ca. 6 GB: Python, PyTorch, Modell), mit einem Klick wieder entfernbar. Läuft auch beim Zocken (ca. 2–3 GB Grafikspeicher). Ohne Installation spricht weiter die einfache lokale Stimme.
+- **Gemini nur noch für Text:** Die Cloud-Stimme (Gemini-TTS) und ElevenLabs sind entfernt – keine Audio-Kosten mehr. Gemini Live (Echtzeit-Gespräch) bleibt als Option.
+- **Automatisch privat oder öffentlich – pro Nachricht:** Keine Chat-Modi mehr („Private · lokal“, „Uni · Cloud“, „Gaming · Cloud“, Private-Tag fallen weg). JARVIS erkennt bei jeder Nachricht selbst: Termine, Finanzen, Familie, eigene Daten, Assistenz-Aktionen und Anhänge → lokales Modell; Gaming, Uni-Wissen und allgemeine Fragen → Gemini. Gemini sieht dabei nie die privaten Nachrichten des Gesprächs. Jede Antwort zeigt „🔒 lokal“ oder „☁ Gemini“; `#Private` erzwingt lokal. Alte private Gespräche bleiben komplett lokal.
+- **Brain erweitert sich selbst:** Nach Antworten prüft dasselbe Modell, ob etwas Dauerhaftes dabei war (Vorlieben, Ziele, Projekte, Mains …) – private Nachrichten das lokale Modell, sonst Gemini-Sparmodell (höchstens 40×/Tag). Sensibles wird nie automatisch gespeichert, Duplikate und Änderungen erkennt das Brain. Am Chat siehst du „🧠 gemerkt: …“. Abschaltbar unter Einstellungen → Gemini / KI.
+
 ## 4.7.0 – AION 2 im HUD, Buckets mit Ausgaben, Stimme per Sprachbefehl
 
 - **Buckets: Ausgaben hineinbuchen:** Ausgaben lassen sich jetzt direkt in einen Bucket buchen (Teilbeträge, auch über den Plan hinaus) – im Bucket selbst, über „→ Bucket“ beim normalen Erfassen oder per Chat („15 € fürs Kino aus dem Gaming-Bucket“). Ein Säulendiagramm zeigt je Bucket geplant (Umriss) und ausgegeben (Füllung, rot wenn überzogen), mit Monatsauswahl. Vom freien Geld wird nur noch der offene Rest abgezogen. „Rest bezahlt“ bucht den offenen Rest; der Bucket bleibt sichtbar. Beim Löschen eines Buckets bleiben die Ausgaben erhalten.

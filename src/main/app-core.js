@@ -139,12 +139,12 @@ function createCore(opts) {
   s.localLLM.isGaming = () => !!s.gaming?.context?.state?.().gaming;
   s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
   s.speech = new (require('./voice/speech').Speech)(s);
-  // Einmalig: bisherige Einstellung „nur lokale Stimme“ auf „automatisch“ (Cloud-Stimme, wenn erlaubt) umstellen
+  s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
+  s.learner = new (require('./agent/learner').Learner)(s);
+  // 5.0: Stimme nur noch lokal (OmniVoice → Piper). Alte Cloud-/ElevenLabs-Einstellungen auf „automatisch“, Schlüssel entfernen.
   try {
-    if (!s.db.get("SELECT value FROM meta WHERE key='tts:auto-migrated'")) {
-      if ((s.settings.get('voice')?.tts?.engine || 'piper') === 'piper') s.settings.update({ voice: { tts: { engine: 'auto' } } });
-      s.db.run("INSERT OR REPLACE INTO meta(key,value) VALUES('tts:auto-migrated','1')");
-    }
+    if (['gemini', 'omnivoice'].includes(s.settings.get('voice')?.tts?.engine)) s.settings.update({ voice: { tts: { engine: 'auto' } } });
+    if (s.secrets.has('elevenlabs.api_key')) s.secrets.delete('elevenlabs.api_key');
   } catch { /* nicht kritisch */ }
   // Lokaler Modus / Gemini Live aus: laufende Cloud-Sitzungen und -Aufrufe sofort beenden (Backend, nicht nur UI)
   bus.on('settings:changed', ({ keys }) => {
@@ -161,6 +161,8 @@ function createCore(opts) {
     s.scheduler.start();
     s._brainSyncTimer = setTimeout(() => s.gaming.brainSync.syncAll(), 30_000);
     s.birthdays.schedule(20_000);
+    s._omniTimer = setTimeout(() => !s.stopped && s.omnivoice.warmup(), 15_000);
+    bus.on('settings:changed', ({ keys }) => { if (keys.includes('voice')) { if (!s.omnivoice.allowed()) s.omnivoice.stop(); else if (s.omnivoice.cfg().preload !== false && !s.omnivoice.proc) s.omnivoice.warmup(); } });
     bus.on('settings:changed', ({ keys }) => { if (keys.includes('birthdaysToCalendar')) s.birthdays.schedule(500); });
     bus.on('settings:changed', ({ keys }) => {
       if (keys.includes('study')) { s.study.start(); s.scheduler.runNow('study-scan'); if (s.drive.active()) s.scheduler.runNow('drive-sync'); }
@@ -169,7 +171,7 @@ function createCore(opts) {
   };
   s.stop = () => {
     s.stopped = true;
-    try { clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.eftLogs.stop({ final: false }); s.gaming.eftRaid.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._omniTimer); s.omnivoice?.stop(); clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.eftLogs.stop({ final: false }); s.gaming.eftRaid.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); s.voice.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

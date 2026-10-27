@@ -26,9 +26,6 @@ const PRICES_AS_OF = '2026-10-20';
 const PRICES = [
   { re: /embedding/, in: 0.15, cached: 0.15, out: 0 },
   // Sprachausgabe (TTS): Text rein, Audio raus; ab 01.01.2027 doppelt
-  { re: /flash-lite-tts/, steps: [{ from: '0000', in: 0.5, cached: 0.05, out: 6.0, outAudio: 6.0 }, { from: '2027-01-01', in: 1.0, cached: 0.1, out: 12.0, outAudio: 12.0 }] },
-  { re: /3\.8-flash-tts/, steps: [{ from: '0000', in: 0.5, cached: 0.05, out: 9.0, outAudio: 9.0 }, { from: '2027-01-01', in: 1.0, cached: 0.1, out: 18.0, outAudio: 18.0 }] },
-  { re: /tts/, in: 1.0, cached: 0.1, out: 20.0, outAudio: 20.0 },
   // Ältere 2.5-Generation (weiterhin verfügbar, deutlich günstiger)
   { re: /2\.5-flash-lite/, in: 0.10, inAudio: 0.30, cached: 0.01, out: 0.40 },
   { re: /2\.5-flash(?!-lite)/, in: 0.30, inAudio: 1.0, cached: 0.03, out: 2.5 },
@@ -91,7 +88,7 @@ class BudgetError extends Error {
 }
 
 /** Sparsamer Standardmodus (dokumentiert in docs/KOSTEN_UND_DATENSCHUTZ.md). */
-const DEFAULT_BUDGET = { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, ttsDailyEur: 0.05, warnPct: 80, hardStop: true, usdToEur: 0.86, brake: true };
+const DEFAULT_BUDGET = { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, warnPct: 80, hardStop: true, usdToEur: 0.86, brake: true };
 
 class CostGuard {
   constructor(s, { now = () => new Date() } = {}) {

@@ -73,12 +73,13 @@ export function Message({ m, tool }) {
     <div class={`msg ${user ? 'user' : ''}`}>
       <div class="who">{user ? initial() : <Spark />}</div>
       <div class="bubble" style={user ? undefined : { flex: 1 }}>
-        <span class="time">{m.channel === 'voice' && <Mic size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}{fmtTime(m.createdAt)}</span>
+        <span class="time">{m.channel === 'voice' && <Mic size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}{fmtTime(m.createdAt)}{!user && m.meta?.scope && <span class="scope-tag" title={m.meta.scope === 'private' ? 'Privat – nur das lokale Modell, bleibt auf dem PC' : 'Nicht privat – von Gemini beantwortet (ohne deine privaten Nachrichten)'}>{m.meta.scope === 'private' || m.meta.local ? ' · 🔒 lokal' : ' · ☁ Gemini'}</span>}</span>
         {m.content ? <div class="msg-body selectable" onClick={(e) => onMarkdownClick(e, rpc)} dangerouslySetInnerHTML={{ __html: html }} /> : streaming ? <div class="typing"><i /><i /><i /></div> : null}
         {streaming && m.content && <span class="cursor" />}
         {tool && <div class="tool-trace"><Wrench size={12} /> {TOOL_LABEL[tool] || tool} …</div>}
         {m.meta?.attachments?.length > 0 && <div class="sources">{m.meta.attachments.map((a) => <span class="chip static"><FileText size={12} />{a.name}</span>)}</div>}
         {(m.meta?.cards || []).map((c) => <Card card={c} />)}
+        {m.meta?.learned?.length > 0 && <div class="sources">{m.meta.learned.map((k) => <span class="chip static" title="Automatisch im Brain gespeichert – im Brain änder- oder löschbar">🧠 gemerkt: {k.title}</span>)}</div>}
         {!user && m.meta?.error && !streaming && m.conversationId && <button class="btn xs mt retry-btn" onClick={() => rpc('chat.retry', { conversationId: m.conversationId, messageId: m.id })}><RotateCcw size={12} />Nochmal versuchen</button>}
         {sources.length > 0 && (
           <div class="sources">

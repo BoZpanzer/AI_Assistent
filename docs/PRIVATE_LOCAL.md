@@ -1,20 +1,21 @@
-# Lokale KI, Private-Tags, geplante Ausgaben und Tarkov-Ziele
+# Lokale KI, automatische Privat-Erkennung, Buckets und Tarkov-Ziele
 
 ## Einrichtung auf deinem PC
 
 1. Ollama installieren und ein **lokales Modell mit Tool Calling** herunterladen. Modellgröße passend zu RAM/VRAM wählen; JARVIS lädt selbst keine Modelle herunter.
 2. Ollamas Cloud-Funktionen deaktivieren: `OLLAMA_NO_CLOUD=1` als Umgebungsvariable für den Ollama-Prozess setzen und Ollama neu starten. Alternativ `disable_ollama_cloud: true` in Ollamas `server.json`. Offizielle Anleitung: https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features
 3. In JARVIS unter **Einstellungen → Lokale KI & Private** den lokalen Port einstellen (Standard 11434), **Lokale Modelle laden** und das installierte Modell wählen.
-4. Einen **Private · lokal**-Chat starten. Dieser braucht keinen Gemini-Schlüssel. Bei ausgeschaltetem Ollama erscheint ein Fehler; es gibt keinen Cloud-Fallback.
+4. Einfach schreiben oder sprechen. Private Nachrichten beantwortet das lokale Modell (kein Gemini-Schlüssel nötig). Bei ausgeschaltetem Ollama erscheint ein Fehler; es gibt keinen Cloud-Fallback.
 
 JARVIS spricht ausschließlich mit `127.0.0.1`, folgt keinen Redirects und verwendet keinen HTTP-Proxy für lokale KI. Modellnamen mit `cloud`, Remote-Modelle und Modelle ohne lokale Modellinformationen werden abgelehnt. Der lokale Ollama-Prozess muss tatsächlich auf deinem PC laufen; eine absichtlich eingerichtete Weiterleitung oder ein manipuliertes lokales Programm kann die Anwendung nicht ausschließen. Ollama/Modellqualität und Windows-Integration müssen auf dem Ziel-PC getestet werden.
 
 ## Welche Daten wohin gehen
 
-- Bestehende und neue Standardgespräche sind **Private**. Finanzen, Termine, Familie, persönliches Gedächtnis, Anhänge und gemischte Gespräche bleiben lokal.
-- Der **Private-Tag** in der Eingabeleiste markiert ein ganzes Gespräch dauerhaft als privat. Auch `#Private` / `[Private]` im Nachrichtentext funktionieren. Im Brain gibt es eine Private-Checkbox beim Bearbeiten; das Brain bleibt grundsätzlich lokal.
-- **Uni · Cloud** und **Gaming · Cloud** erstellen getrennte, leere Gespräche. Nur ausdrücklich dafür freigegebene Inhalte dort eingeben. Diese Gespräche bekommen weder persönlichen Systemkontext noch Zugriff auf Brain, Kalender, Finanzen oder Dokumente. Die Cloud-Werkzeuge sind zunächst auf vier geprüfte Tarkov-Abfragen begrenzt.
-- Häufige private Begriffe schalten einen Cloud-Chat zusätzlich auf lokal. Das ist nur eine zusätzliche Schranke, **keine verlässliche semantische Erkennung aller privaten Inhalte**. Private Daten deshalb immer im Private-Chat eingeben. Ein nachträglicher Tag kann frühere Cloud-Übertragungen nicht zurückholen.
+- **Ab 5.0 gibt es keine Chat-Modi mehr.** JARVIS ordnet **jede Nachricht** selbst ein (ohne KI, sofort):
+  - **privat → lokales Modell**: Termine, Finanzen, Familie, Gesundheit, „meine …“-Daten (Klausur, Aufgaben, Notizen …), Assistenz-Aktionen („erinner mich“, „trag … ein“, „merk dir“), Anhänge, eingefügte Bilder, `#Private`. Kurze Folgefragen direkt danach bleiben privat.
+  - **nicht privat → Gemini**: Gaming, Uni-Wissen, allgemeine Fragen. Gemini bekommt dabei **nur die nicht privaten Nachrichten** des Gesprächs, keinen persönlichen Systemkontext und keinen Zugriff auf Brain, Kalender, Finanzen oder Dokumente.
+  - Jede Antwort zeigt „🔒 lokal“ bzw. „☁ Gemini“. Im Zweifel `#Private` voranstellen.
+- Die Erkennung arbeitet mit Wortlisten – sie ist eine Schranke, **keine verlässliche semantische Erkennung**. Alte Gespräche, die vor 5.0 als privat markiert waren, bleiben komplett lokal.
 - Anhänge erzwingen lokale Verarbeitung. Bild- und Audioverarbeitung durch ein lokales Modell sind noch nicht enthalten. Text aus unterstützten Dokumenten wird lokal gelesen; Cloud-OCR ist gesperrt.
 - Persönliche Hintergrundanalysen verwenden die lokale KI. Die ausdrücklich abgegrenzten Gaming-Funktionen (Spielseiten, LoL, Patch-News, Wiki-Listen) dürfen weiter Gemini nutzen, sofern kein Private-Kontext/Marker vorliegt.
 
@@ -27,9 +28,9 @@ JARVIS spricht ausschließlich mit `127.0.0.1`, folgt keinen Redirects und verwe
 - Automatische Fahrplanung anhand privater Terminorte ist deaktiviert. Manuell abgefragte öffentliche Fahrplandaten bleiben verfügbar.
 - Private Tools dürfen keine externen Zugriffe ausführen, auch nicht nach Bestätigung. Eine explizite Tool-Freigabeliste und ein asynchroner Netzwerk-Kontext verhindern, dass ein lokales Modell private Daten durch Web-/Browser-/Cloud-Tools versendet.
 
-## Geplante Ausgaben
+## Buckets
 
-Unter **Alltag → Geplante Ausgaben · Buckets** einen Namen, Betrag und Zielmonat eintragen. Reservierungen reduzieren das freie Geld und das verbleibende Monatsbudget, zählen aber nicht als ausgegebener Betrag. Bearbeiten verschiebt oder ändert die Reservierung, **Freigeben** entfernt sie. **Bezahlt → buchen** erfasst nach Bestätigung eine echte Ausgabe mit dem heutigen Datum und entfernt die Reservierung in einer Transaktion. Wiederholtes Buchen derselben Reservierung wird abgelehnt. Reservierungen sind einmalig pro Zielmonat, kein automatischer monatlicher Sparplan.
+Unter **Alltag → Buckets** Geld je Zweck und Monat verplanen (Name, Plan-Betrag, Monat). Ausgaben lassen sich direkt hineinbuchen – im Bucket, über „→ Bucket“ beim normalen Erfassen oder per Chat („15 € aus dem Kino-Bucket“). Das Säulendiagramm zeigt je Bucket geplant (Umriss) und ausgegeben (Füllung, rot wenn überzogen). Vom freien Geld wird nur der offene Rest abgezogen. **Rest bezahlt** bucht den offenen Rest; beim Löschen eines Buckets bleiben die Ausgaben erhalten.
 
 ## Tarkov-Ziel
 
