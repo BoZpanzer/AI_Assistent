@@ -45,7 +45,7 @@ const SCHEMA = {
     models: { type: 'object', properties: {
       fast: { type: 'string', maxLength: 80 }, reasoning: { type: 'string', maxLength: 80 },
       research: { type: 'string', maxLength: 80 }, vision: { type: 'string', maxLength: 80 },
-      live: { type: 'string', maxLength: 80 }, embedding: { type: 'string', maxLength: 80 } } },
+      embedding: { type: 'string', maxLength: 80 } } },
     availableModels: { type: 'array', items: { type: 'string' }, maxItems: 400 },
     temperature: { type: 'number', minimum: 0, maximum: 1.5 },
     webSearch: { type: 'boolean' },
@@ -56,19 +56,17 @@ const SCHEMA = {
     cloud: { type: 'object', properties: {
       mode: { type: 'string', enum: ['hybrid', 'local'] },
       economy: { type: 'boolean' }, liteGamingChat: { type: 'boolean' },
-      features: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['chat', 'voice', 'vision', 'research', 'lol', 'news', 'games', 'wikilist', 'study', 'diagnostics', 'meta'].map((k) => [k, { type: 'boolean' }])) },
+      features: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['chat', 'vision', 'research', 'lol', 'news', 'games', 'wikilist', 'study', 'diagnostics', 'meta'].map((k) => [k, { type: 'boolean' }])) },
       maxConcurrent: { type: 'integer', minimum: 1, maximum: 4 }, maxOutputTokens: { type: 'integer', minimum: 256, maximum: 16384 }, timeoutSec: { type: 'integer', minimum: 10, maximum: 300 } } },
     birthdaysToCalendar: { type: 'boolean' },
     // Voice
     voice: { type: 'object', properties: {
       inputDeviceId: { type: 'string', maxLength: 300 }, outputDeviceId: { type: 'string', maxLength: 300 },
-      voiceName: { type: 'string', maxLength: 60 }, speakReplies: { type: 'boolean' },
+      speakReplies: { type: 'boolean' },
       wakeWord: { type: 'boolean' }, wakeSensitivity: { type: 'number', minimum: 0.1, maximum: 0.95 },
-      pushToTalkKey: { type: 'string', maxLength: 40 }, extendedThinking: { type: 'boolean' },
+      pushToTalkKey: { type: 'string', maxLength: 40 },
       whisperExecutable: { type: 'string', maxLength: 1000 }, whisperModel: { type: 'string', maxLength: 1000 },
       whisperThreads: { type: 'integer', minimum: 1, maximum: 16 }, speakVoiceReplies: { type: 'boolean' },
-      cloudMaxMinutes: { type: 'number', minimum: 1, maximum: 60 }, cloudMaxEur: { type: 'number', minimum: 0.01, maximum: 5 }, cloudVad: { type: 'boolean' },
-      bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 },
       tts: { type: 'object', properties: {
         engine: { type: 'string', enum: ['auto', 'omnivoice', 'gemini', 'piper', 'windows'] }, preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] },
         voice: { type: 'string', maxLength: 80 }, style: { type: 'string', maxLength: 30 },
@@ -148,14 +146,14 @@ const DEFAULTS = {
   updateChannelUrl: '', updateRepo: '', updateCheck: true, campusDualUrl: '',
   campusDualResults: { enabled: true, intervalHours: 3 }, campusDualExams: { enabled: true },
   backupDrive: { enabled: false, folder: 'coding', keep: 14, intervalHours: 24 },
-  models: { fast: '', reasoning: '', research: '', vision: '', live: '', embedding: '' },
+  models: { fast: '', reasoning: '', research: '', vision: '', embedding: '' },
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, brainAutoLearn: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
-  // Sparsamer Standard: Gemini nur in ausdrücklichen Uni-/Gaming-Chats; Gemini Live (Echtzeit-Audio) aus → lokale Spracheingabe
-  cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, voice: false, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
-  voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
-    wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 45,
+  // Sparsamer Standard: Gemini nur für nicht private Nachrichten; Sprache komplett lokal
+  cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
+  voice: { inputDeviceId: 'default', outputDeviceId: 'default', speakReplies: false,
+    wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space',
     tts: { engine: 'auto', preset: 'standard', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '', omni: { enabled: true, preload: true, voices: {}, seeds: {} } },
-    whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true, cloudMaxMinutes: 10, cloudMaxEur: 0.1, cloudVad: true },
+    whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true },
   google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '', exportCalendars: {}, exportKinds: { termine: true, geburtstage: true, todos: true, erinnerungen: true, uni: true } },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },
   gaming: { detection: true, reduceWhileGaming: true, riotId: '', leagueDir: '', riotRegion: 'euw1', lolLiveCoach: false, lolMatchupCard: true, patchNotes: true, patchSummaries: false, breakReminderMin: 0, wishlistAlerts: true, wishlistMinDiscount: 30, gameRecap: true, arkCuddleHours: 8, cs2Gsi: true, acTelemetry: true, pubgName: '', pubgShard: 'steam', stardewSave: '', cs2GsiPort: 3175, servers: [], lolBreakHint: true, lolWeekly: true, favorites: [], lolChampSelect: true, lolReview: true, lolCloudShare: false, steamDir: '', steamId: '', steamAutoImport: true, steamMinMinutes: 1, lolReviewAi: false, lolTeamAdvice: false, lolEnemyTips: true, lolPickAdvice: true, aion2: { region: 'eu', resetTime: '05:00', weeklyDay: 3 }, tarkovTrackerSync: true, lolObjectives: true, lolObjectiveTimes: {}, autoDesign: false, eftLogWatch: true, eftDir: '', eftScreenshotsDir: '', eftMoveShots: true, eftShotKeepDays: 7, eftFaction: 'pmc', eftRunthroughSec: 430, eftScavCooldownMin: 25, eftScanHotkey: 'Alt+Shift+S', eftAlerts: { matchFound: true, raidStart: true, runthrough: true, scavReady: true, fleaSold: true, speak: false } },

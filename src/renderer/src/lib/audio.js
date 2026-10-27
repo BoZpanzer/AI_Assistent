@@ -1,33 +1,23 @@
 import { rpc, on } from './api.js';
 import { getState, setState, toast } from './store.js';
-import { ask } from '../components/ui.jsx';
 
 /**
- * Renderer audio engine.
- * - Microphone with Chromium echo cancellation / noise suppression / AGC.
- * - 16 kHz PCM16 frames → Gemini Live (via main) and/or the local wake-word worker.
- * - 24 kHz player with instant flush (barge-in), output level for the orb.
- * - Local barge-in: user speech while JARVIS talks stops playback immediately.
+ * Renderer audio engine (ab 5.1 komplett lokal).
+ * - Mikrofon mit Echo-/Rauschunterdrückung; 16-kHz-PCM16 → lokale Aufnahme (whisper.cpp im Hauptprozess)
+ *   und/oder das lokale Wake-Word („Hey Jarvis“).
+ * - Sprachausgabe: lokale Stimme (OmniVoice/Piper) Satz für Satz, sonst Windows-Stimme.
  */
 class AudioEngine {
   constructor() {
     this.inCtx = null; this.outCtx = null; this.stream = null; this.capture = null; this.player = null;
-    this.mode = { stream: false, wake: false, local: false };
-    this.cloudConversationId = null;
+    this.mode = { wake: false, local: false };
     this.localChunks = []; this.localSamples = 0; this.localConversationId = null; this.localWorking = false;
     this.wakeWorker = null; this.wakeReady = false;
-    this.noiseFloor = 0.004; this.speechMs = 0; this.playing = false; this.outRms = 0;
-    this.lastActivityPing = 0;
-    this.muted = false;
-    this.micPending = null; this.playerPending = null; this.starting = false; this.startGeneration = 0; this.playbackGeneration = 0;
+    this.noiseFloor = 0.004; this.playing = false; this.outRms = 0;
+    this.micPending = null; this.starting = false; this.startGeneration = 0;
     this.micGeneration = 0;
-    // Cloud-Audio nur bei erkannter Sprache senden (Vorlauf 4 Frames ≈ 320 ms, Nachlauf ≈ 1 s), sonst nichts.
-    this.preroll = []; this.sending = false; this.hangMs = 0;
     // Lokale Aufnahme: automatisch beenden nach Sprechpause (für Wake-Word/Freihand beim Gaming)
     this.localHeard = 0; this.localSilentMs = 0;
-    on('voice:audio', (d) => this.play(d.data).catch((e) => toast('Audioausgabe: ' + e.message, 'error')));
-    on('voice:interrupted', () => this.flush());
-    on('voice:state', ({ state }) => this.onVoiceState(state));
     on('tts:speak', ({ text, private: priv }) => this.speakLocal(text, { private: !!priv }));
     this.tts = { gen: 0, ctx: null, src: null, speaking: false, warned: false };
   }
@@ -79,50 +69,23 @@ class AudioEngine {
     if (this.stream !== stream) return;
     this.disposeMic();
     const generation = this.micGeneration;
-    if (!this.mode.stream && !this.mode.wake && !this.mode.local) return;
+    if (!this.mode.wake && !this.mode.local) return;
     try {
       await this.micPending;
       if (generation !== this.micGeneration) return;
-      if (!this.mode.stream && !this.mode.wake && !this.mode.local) return;
+      if (!this.mode.wake && !this.mode.local) return;
       await this.ensureMic();
       this.releaseMicIfIdle();
     } catch (e) {
       if (generation !== this.micGeneration) return;
-      if (this.mode.local) await this.stopLocalVoice();
-      await this.stopVoice();
+      if (this.mode.local) this.cancelLocalVoice();
       await this.setWakeWord(false);
       toast('Mikrofon getrennt; kein Ersatzgerät verfügbar: ' + e.message, 'error');
     }
   }
 
-  async ensurePlayer() {
-    if (this.player) return;
-    if (this.playerPending) return this.playerPending;
-    this.playerPending = this.openPlayer();
-    try { await this.playerPending; } finally { this.playerPending = null; }
-  }
-
-  async openPlayer() {
-    try {
-      this.outCtx = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
-      const dev = getState().settings?.voice?.outputDeviceId;
-      if (dev && dev !== 'default' && this.outCtx.setSinkId) { try { await this.outCtx.setSinkId(dev); } catch { /* device gone */ } }
-      await this.outCtx.audioWorklet.addModule('audio/player-worklet.js');
-      this.player = new AudioWorkletNode(this.outCtx, 'jarvis-player', { outputChannelCount: [1] });
-      this.player.port.onmessage = (e) => {
-        if (e.data.type === 'level') { this.outRms = e.data.rms; this.playing = e.data.playing; setState({ outLevel: Math.min(1, e.data.rms * 6) }); }
-        if (e.data.type === 'drained') { this.playing = false; setState({ outLevel: 0 }); }
-      };
-      this.player.connect(this.outCtx.destination);
-    } catch (e) {
-      await this.outCtx?.close().catch(() => {});
-      this.outCtx = null; this.player = null;
-      throw e;
-    }
-  }
-
   releaseMicIfIdle() {
-    if (this.mode.stream || this.mode.wake || this.mode.local) return;
+    if (this.mode.wake || this.mode.local) return;
     this.disposeMic();
   }
 
@@ -150,92 +113,30 @@ class AudioEngine {
       else if (!this.localHeard && this.localSamples >= 16000 * 8) this.cancelLocalVoice('Nichts gehört – Aufnahme beendet.');
       return;
     }
-    if (this.mode.stream && getState().conversationId !== this.cloudConversationId) {
-      // Switching chats must not keep streaming from the previous conversation.
-      this.stopVoice();
-      return;
-    }
-    if (this.mode.stream && this.muted) { setState({ micLevel: 0 }); return; }
-    if (this.mode.stream) {
-      const speechThresh = Math.max(0.012, this.noiseFloor * 4, this.playing ? this.outRms * 0.6 : 0);
-      if (getState().settings?.voice?.cloudVad === false) window.jarvis.sendAudio(pcm.buffer);
-      else if (rms > speechThresh) {
-        if (!this.sending) { for (const f of this.preroll) window.jarvis.sendAudio(f.buffer); this.preroll = []; this.sending = true; }
-        window.jarvis.sendAudio(pcm.buffer);
-        this.hangMs = 1000;
-      } else if (this.sending) {
-        window.jarvis.sendAudio(pcm.buffer);
-        this.hangMs -= 80;
-        if (this.hangMs <= 0) { this.sending = false; rpc('voice.audioEnd').catch(() => {}); }
-      } else { this.preroll.push(pcm.slice()); if (this.preroll.length > 4) this.preroll.shift(); }
-      if (rms > speechThresh) {
-        this.speechMs += 80;
-        if (this.playing && this.speechMs >= 160 && getState().settings?.voice?.bargeIn !== false) this.flush(); // barge-in
-        if (Date.now() - this.lastActivityPing > 3000) { this.lastActivityPing = Date.now(); rpc('voice.activity').catch(() => {}); }
-      } else this.speechMs = 0;
-    } else if (this.mode.wake && this.wakeWorker) {
+    if (this.mode.wake && this.wakeWorker) {
       this.wakeWorker.postMessage({ type: 'audio', pcm }, [pcm.buffer]);
     }
   }
 
-  async play(b64) {
-    const generation = this.playbackGeneration;
-    await this.ensurePlayer();
-    if (this.outCtx.state === 'suspended') await this.outCtx.resume();
-    if (generation !== this.playbackGeneration) return;
-    const bin = atob(b64);
-    const pcm = new Int16Array(bin.length >> 1);
-    for (let i = 0; i < pcm.length; i++) pcm[i] = (bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8)) << 16 >> 16;
-    this.player.port.postMessage({ type: 'push', pcm }, [pcm.buffer]);
-    this.playing = true;
-  }
-  flush() {
-    this.playbackGeneration++;
-    this.player?.port.postMessage({ type: 'clear' });
-    this.playing = false;
-    setState({ outLevel: 0 });
-    this.stopSpeech();
-  }
+  /** Wiedergabe sofort stoppen (z. B. wenn du anfängst zu sprechen). */
+  flush() { this.playing = false; setState({ outLevel: 0 }); this.stopSpeech(); }
 
-  setMuted(m) { this.muted = !!m; setState({ micMuted: this.muted }); }
-
-  /** Private: push-to-talk via local whisper.cpp. Study/Gaming: Gemini Live with consent each session. */
+  /** Mikrofon an/aus: Aufnahme bis zur Sprechpause, Erkennung lokal (whisper.cpp), danach wie getippter Text. */
   async toggleVoice() {
     if (this.localWorking) { toast('JARVIS erkennt deine Sprache noch lokal.'); return; }
     if (this.mode.local) return this.stopLocalVoice();
-    if (this.starting || this.mode.stream || ['listening', 'speaking', 'thinking', 'connecting'].includes(getState().voice)) return this.stopVoice();
     return this.startVoice();
   }
   async startVoice() {
-    if (this.starting || this.mode.stream || this.mode.local || this.localWorking) return;
+    if (this.starting || this.mode.local || this.localWorking) return;
     this.starting = true;
     const generation = ++this.startGeneration;
-    const conversationId = getState().conversationId;
-    try {
-      const target = await rpc('voice.target', { conversationId });
-      if (generation !== this.startGeneration || getState().conversationId !== conversationId) return;
-      const cloud = getState().settings?.cloud || {};
-      // Standard: lokale Spracherkennung (whisper.cpp) für alle Chats – Gemini Live nur, wenn ausdrücklich eingeschaltet.
-      if (target.privacy === 'private' || cloud.mode === 'local' || cloud.features?.voice !== true) return await this.startLocalVoice(conversationId, generation);
-      const approved = await ask(
-        'Gemini Live überträgt dein Mikrofon-Audio an Google und verarbeitet das Gespräch in der Cloud (nur mit den nicht-privaten Nachrichten dieses Gesprächs). Sag in dieser Sitzung nichts Privates – dafür ist die normale Spracheingabe da, die das automatisch lokal hält. Audio jetzt übertragen?',
-        '', { confirmOnly: true, okLabel: 'Cloud-Audio für diese Sitzung erlauben' },
-      );
-      if (!approved || generation !== this.startGeneration || getState().conversationId !== conversationId) return;
-      await this.ensureMic();
-      await this.ensurePlayer();
-      if (generation !== this.startGeneration || getState().conversationId !== conversationId) { this.releaseMicIfIdle(); return; }
-      if (this.inCtx.state === 'suspended') await this.inCtx.resume();
-      this.mode.stream = true;
-      this.cloudConversationId = conversationId;
-      await rpc('voice.start', { conversationId, cloudAudioApproved: true });
-    } catch (e) {
-      this.mode.stream = false;
-      this.cloudConversationId = null;
-      this.releaseMicIfIdle();
-      toast(String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, ''), 'error', 7000);
-    } finally { this.starting = false; }
+    try { await this.startLocalVoice(getState().conversationId, generation); }
+    catch (e) { this.releaseMicIfIdle(); toast(String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, ''), 'error', 7000); }
+    finally { this.starting = false; }
   }
+  /** Laufende Aufnahme verwerfen (z. B. Chatwechsel, Mikrofon weg). */
+  async stopVoice() { this.startGeneration++; this.cancelLocalVoice(); this.flush(); this.releaseMicIfIdle(); }
   async startLocalVoice(conversationId, generation = this.startGeneration) {
     const available = await rpc('voice.localStatus');
     if (!available.ready) {
@@ -283,7 +184,7 @@ class AudioEngine {
       let binary = '';
       for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
       const result = await rpc('voice.transcribeLocal', { conversationId, audio: btoa(binary) });
-      if (result?.started) toast('Sprache offline erkannt und im privaten Chat gesendet.');
+      if (result?.started) toast('Sprache lokal erkannt und gesendet.');
     } catch (e) {
       toast(String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, ''), 'error', 8500);
     } finally {
@@ -291,26 +192,6 @@ class AudioEngine {
       setState({ voice: 'off' });
     }
   }
-  async stopVoice() {
-    this.startGeneration++;
-    this.mode.stream = false;
-    this.sending = false; this.preroll = [];
-    this.cloudConversationId = null;
-    this.setMuted(false);
-    this.flush();
-    await rpc('voice.stop').catch(() => {});
-    this.releaseMicIfIdle();
-  }
-  onVoiceState(state) {
-    if (['off', 'standby', 'error'].includes(state)) {
-      if (state !== 'standby') this.flush();
-      this.mode.stream = false;
-      this.cloudConversationId = null;
-      if (state === 'standby') this.wakeWorker?.postMessage({ type: 'reset' });
-      this.releaseMicIfIdle();
-    }
-  }
-
   /** Optional local wake word (openWakeWord in a worker). */
   async setWakeWord(enabled) {
     const sens = getState().settings?.voice?.wakeSensitivity ?? 0.5;
@@ -328,7 +209,7 @@ class AudioEngine {
         if (m.type === 'ready') this.wakeReady = true;
         if (m.type === 'error') { toast('Wake-Word: ' + m.error, 'error'); this.setWakeWord(false); }
         // Eigene Sprachausgabe/Wiedergabe darf das Wake-Word nicht auslösen (Rückkopplung)
-        if (m.type === 'wake' && !this.mode.stream && !this.mode.local && !this.localWorking && !this.playing && !this.tts.speaking && !speechSynthesis.speaking) { chime(); this.startVoice(); }
+        if (m.type === 'wake' && !this.mode.local && !this.localWorking && !this.playing && !this.tts.speaking && !speechSynthesis.speaking) { chime(); this.startVoice(); }
         if (m.type === 'score') setState({ wakeScore: m.score });
       };
       this.wakeWorker.postMessage({ type: 'init', threshold: sens });
@@ -344,7 +225,7 @@ class AudioEngine {
    * full: ganzer Text (Knopf „Vorlesen“), sonst Kurzfassung. override: Stimme/Tempo/Tonhöhe für die Hörprobe.
    */
   async speakLocal(text, { full = false, override = null, private: priv = false, preview = false } = {}) {
-    if (!text || this.mode.stream || this.mode.local) return;
+    if (!text || this.mode.local) return;
     this.stopSpeech();
     const gen = this.tts.gen;
     const st = { ...(getState().settings?.voice?.tts || {}), ...(override || {}) };

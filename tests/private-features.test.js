@@ -128,7 +128,7 @@ test('Calendar, backup, embeddings and voice fail closed; private recipes use lo
     assert.equal(typeof s.vectors.backfill, 'undefined', 'kein Embedding-Hintergrundjob mehr');
     assert.equal((await s.driveBackup.run({ force: true })).skipped, 'private-data');
     await assert.rejects(s.driveBackup.upload('/none'), /Private/);
-    await assert.rejects(s.voice.start(), /Datenschutz/);
+    assert.equal(s.voice.isOpen(), false);
     assert.equal((await s.transit.check()).skipped, 'private-calendar');
     s.localLLM.generate = async () => ({ recipes: [{ name: 'local' }] });
     s.life.addPantry(['Reis', 'Tomaten', 'Bohnen']);

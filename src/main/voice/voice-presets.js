@@ -2,7 +2,7 @@
 /**
  * Stimmprofile für die Sprachausgabe (Einstellungen → Stimme).
  * Es werden KEINE echten Sprecher nachgebildet: „J.A.R.V.I.S.“ und „Alya“ sind eigenständige, von OmniVoice
- * aus Beschreibungen erzeugte Stimmen. Je Profil Werte für jede Engine (OmniVoice, Piper, Windows, Gemini Live);
+ * aus Beschreibungen erzeugte Stimmen. Je Profil Werte für jede Engine (OmniVoice, Piper, Windows);
  * fehlt etwas, gilt „Standard“. Profile werden nur lokal gespeichert.
  */
 const PRESETS = Object.freeze({
@@ -12,14 +12,12 @@ const PRESETS = Object.freeze({
   },
   jarvis: {
     label: 'J.A.R.V.I.S.', description: 'Tief, ruhig, elegant, britisch anmutend – eine eigenständige KI-Butler-Stimme.',
-    live: 'Charon', // Stimme im Gemini-Live-Gespräch
     piper: { voice: 'de_DE-thorsten-medium', pitch: 0.9, speed: 0.93 },
     omni: { instruct: 'male, middle-aged, low pitch' },
     windows: { prefer: 'conrad|killian|stefan|florian|george|ryan|thomas', pitch: 0.85, speed: 0.95 },
   },
   alya: {
     label: 'Alya (Anime)', description: 'Natürlich, freundlich und weich – eine eigenständige, anime-inspirierte Stimme.',
-    live: 'Leda',
     piper: { voice: 'de_DE-kerstin-low', pitch: 1.08, speed: 1.02 },
     omni: { instruct: 'female, young adult, high pitch' },
     windows: { prefer: 'katja|amala|seraphina|hedda|louisa', pitch: 1.2, speed: 1.02 },

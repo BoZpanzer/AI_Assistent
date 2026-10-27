@@ -75,35 +75,18 @@ test('stopping during worklet initialization cannot resurrect a capture graph', 
   assert.equal(h.stopped(), 1); assert.equal(h.audio.stream, null); assert.equal(h.audio.capture, null);
 });
 
-test('unplugged microphone automatically reopens capture for an active session', async () => {
+test('unplugged microphone automatically reopens capture for an active recording', async () => {
   let h, calls = 0;
   const replacement = { getTracks: () => [], getAudioTracks: () => [{ readyState: 'live' }] };
   h = harness({ getUserMedia: async () => ++calls === 1 ? h.stream : replacement });
-  h.audio.mode.stream = true;
+  h.audio.mode.wake = true;
   await h.audio.ensureMic();
   const oldCapture = h.audio.capture;
   h.track.readyState = 'ended';
   await h.track.onended();
-  assert.equal(calls, 2); assert.equal(h.audio.stream, replacement); assert.equal(h.audio.mode.stream, true);
+  assert.equal(calls, 2); assert.equal(h.audio.stream, replacement); assert.equal(h.audio.mode.wake, true);
   let staleFrames = 0; h.audio.onFrame = () => staleFrames++;
   oldCapture.port.onmessage({ data: { pcm: new Int16Array(1), rms: 1 } });
   assert.equal(staleFrames, 0);
-  h.audio.mode.stream = false; h.audio.releaseMicIfIdle();
-});
-
-test('server-side stop flushes speech still waiting for player initialization', async () => {
-  let release;
-  const h = harness({ addModule: () => new Promise(r => { release = r; }) });
-  const pending = h.audio.play('AAA=');
-  h.audio.onVoiceState('off'); release(); await pending;
-  assert.equal(h.posts.filter(m => m.type === 'push').length, 0);
-});
-
-test('interruption during asynchronous player startup discards queued speech', async () => {
-  let release;
-  const gate = new Promise(r => { release = r; });
-  const h = harness({ addModule: () => gate });
-  const a = h.audio.play('AAA='), b = h.audio.play('AAA=');
-  h.audio.flush(); release(); await Promise.all([a, b]);
-  assert.equal(h.contexts(), 1); assert.equal(h.posts.filter(m => m.type === 'push').length, 0);
+  h.audio.mode.wake = false; h.audio.releaseMicIfIdle();
 });

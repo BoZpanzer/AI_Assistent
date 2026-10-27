@@ -11,8 +11,6 @@ const ROLE_PREFS = {
   reasoning: [/^gemini-pro-latest$/, /^gemini-3\.\d+-pro(-preview)?$/, /^gemini-3.*pro(?!.*(image|tts|customtools))/, /^gemini-3\.8-flash$/, /^gemini-2\.5-pro$/],
   research: [/^gemini-3\.8-flash$/, /^gemini-3\.\d+-flash$/, /^gemini-flash-latest$/, /^gemini-2\.5-flash$/],
   vision: [/^gemini-3\.8-flash$/, /^gemini-3\.\d+-flash$/, /^gemini-flash-latest$/, /^gemini-2\.5-flash$/],
-  live: [/^gemini-3\.8-live$/, /^gemini-3\.\d+-live$/, /live-preview$/, /native-audio/, /live/],
-  liveThinking: [/^gemini-3\.8-live-extended-thinking$/, /live.*thinking/],
   embedding: [/^gemini-embedding-2$/, /^gemini-embedding-\d/, /^gemini-embedding/, /^text-embedding-004$/],
   // Sparmodell für kurze, strukturierte Aufgaben (Tipps, Karten, Empfehlungen): ältestes/günstigstes Flash-Lite zuerst
   lite: [/^gemini-2\.5-flash-lite$/, /^gemini-3\.1-flash-lite$/, /^gemini-3\.5-flash-lite$/, /^gemini-flash-lite-latest$/, /flash-lite(?!.*(image|tts|live|audio|preview))/],
@@ -32,7 +30,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { costUsd, normalizeUsage, BudgetError } = require('../services/costguard');
 
 /**
- * Every Gemini request runs inside cloudScope (set only by Gemini.cloud / liveConnect).
+ * Every Gemini request runs inside cloudScope (set only by Gemini.cloud).
  * client() refuses to hand out the SDK outside it, so no code path can bypass the
  * central mode, privacy, budget, timeout and retry rules.
  */
@@ -40,7 +38,7 @@ const cloudScope = new AsyncLocalStorage();
 
 /** Cloud functions that can be switched off individually (Einstellungen → Gemini / KI). */
 const FEATURES = {
-  chat: 'Chat (Uni/Gaming)', voice: 'Gemini Live (Echtzeit-Audio)', vision: 'Bildschirmanalyse', research: 'Websuche über Gemini',
+  chat: 'Chat (nicht private Nachrichten)', vision: 'Bildschirmanalyse', research: 'Websuche über Gemini',
   lol: 'LoL-Analysen', news: 'Patch-Notes-Kurzfassungen', games: 'Spielseiten gestalten', wikilist: 'Checklisten aus dem Wiki',
   study: 'Handschrift erkennen', diagnostics: 'Verbindungstest', meta: 'Modellliste',
 };
@@ -189,7 +187,7 @@ class Gemini {
 
   requireModel(role) {
     const m = this.model(role);
-    if (!m && this.localLLM && !['live', 'liveThinking', 'embedding', 'vision'].includes(role)) return 'local';
+    if (!m && this.localLLM && !['embedding', 'vision'].includes(role)) return 'local';
     if (!m) throw new Error(`Kein verfügbares Modell für „${role}“ – bitte in den Einstellungen die Modellprüfung ausführen.`);
     return m;
   }
@@ -219,13 +217,12 @@ class Gemini {
     const models = await this.listModels(apiKey);
     const names = models.map((m) => m.name);
     const chosen = {};
-    for (const role of ['fast', 'reasoning', 'research', 'vision', 'live', 'embedding']) chosen[role] = pickModel(role, names);
+    for (const role of ['fast', 'reasoning', 'research', 'vision', 'embedding']) chosen[role] = pickModel(role, names);
     const current = this.settings.get('models') || {};
     const merged = {};
     for (const [k, v] of Object.entries(chosen)) merged[k] = current[k] && names.includes(current[k]) ? current[k] : v;
     this.settings.update({ availableModels: names, models: merged });
-    const requested = ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking'].map((n) => ({ name: n, available: names.includes(n) }));
-    return { models, chosen: merged, requested };
+    return { models, chosen: merged };
   }
 
   /** Smallest possible request for the connection test (Diagnose). */
@@ -431,31 +428,6 @@ class Gemini {
         throw e;
       }
     }
-  }
-
-  /**
-   * Gemini Live (real-time audio): connects inside the central gate and opens a ledger entry that the
-   * voice session updates with every usage report (see LiveVoice). The caller must call liveEnd().
-   */
-  async liveConnect({ model, config, callbacks, estUsd = 0.005 }) {
-    this.policy('voice');
-    const ledger = this.guard ? this.guard.reserve({ feature: 'voice', model, estUsd }) : null;
-    try {
-      const session = await cloudScope.run({ feature: 'voice' }, () => this.client().live.connect({ model, config, callbacks }));
-      return { session, ledger };
-    } catch (e) { if (ledger) this.guard.settle(ledger, { status: isClientError(e) ? 'failed' : 'done' }); throw e; }
-  }
-  liveUsage(ledger, usageMetadata, model) {
-    const n = normalizeUsage(usageMetadata);
-    if (!ledger || !n || !this.guard) return { exceeded: this.guard?.exceeded() || null };
-    return this.guard.addUsage(ledger, n, model);
-  }
-  /** floorUsd: time-based minimum (streamed audio minutes) in case Google sent no usage data. */
-  liveEnd(ledger, floorUsd = 0) {
-    if (!ledger || !this.guard) return;
-    const row = this.db?.get('SELECT usd FROM ai_ledger WHERE id=?', ledger);
-    this.db?.run("UPDATE ai_ledger SET status='done', usd=MAX(usd, ?) WHERE id=?", Math.max(floorUsd, row?.usd || 0), ledger);
-    this.bus?.emit('cloud:usage', {});
   }
 
   /** Batch embeddings → Float32Array[] (normalised). */

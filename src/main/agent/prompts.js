@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Single source of truth for JARVIS' system instructions (text chat and live
+ * Single source of truth for JARVIS' system instructions (text chat and voice
  * voice share it — no diverging prompts).
  */
 function systemPrompt(opts) {

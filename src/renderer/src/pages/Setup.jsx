@@ -83,15 +83,14 @@ function Gemini({ done, ok }) {
   return (
     <>
       <LocalAI s={settings} />
-      <H icon={KeyRound} t="Gemini optional verbinden" s="Nur für ausdrücklich freigegebene Uni- und Gaming-Chats. Private Inhalte verarbeitet das lokale Modell." />
+      <H icon={KeyRound} t="Gemini optional verbinden" s="Für nicht private Nachrichten (Wissen, Uni, Gaming). Private Inhalte erkennt JARVIS selbst und verarbeitet sie mit dem lokalen Modell." />
       <div class="small muted">Schlüssel erstellen: <a onClick={() => rpc('shell.openExternal', { url: 'https://aistudio.google.com/app/apikey' })}>aistudio.google.com → API-Schlüssel</a>. Der Schlüssel wird mit Windows-DPAPI verschlüsselt gespeichert und verlässt JARVIS nur in Richtung Google.</div>
       <div class="row mt"><input class="inp grow" type="password" placeholder={secrets['gemini.api_key'] ? 'gespeichert – neu eingeben zum Ersetzen' : 'AIza…'} value={key} onInput={(e) => setKey(e.currentTarget.value)} /><button class="btn sm primary" disabled={busy || (!key && !secrets['gemini.api_key'])} onClick={() => test(key)}>{busy ? <Spinner /> : 'Verbindung testen'}</button></div>
       {r && !r.ok && <div class="notice warn">{r.error}</div>}
       {r?.ok && <>
         <Line ok>Verbindung erfolgreich – {r.count} Modelle für deinen Schlüssel verfügbar</Line>
         <div class="hud-label mt">Modellprüfung (über die offizielle API)</div>
-        {r.requested.map((m) => <Line ok={m.available} warn={!m.available}>{m.name} – {m.available ? 'verfügbar' : 'nicht verfügbar für diesen Schlüssel'}</Line>)}
-        {Object.entries(r.chosen).map(([k, v]) => <div class="small"><span class="muted" style={{ display: 'inline-block', width: 160 }}>{({ fast: 'Schnelle Antworten', reasoning: 'Reasoning', research: 'Webrecherche', vision: 'Multimodal', live: 'Echtzeit-Sprache', embedding: 'Embeddings' })[k]}</span>{v || <span class="warn">keins gefunden</span>}</div>)}
+        {Object.entries(r.chosen).map(([k, v]) => <div class="small"><span class="muted" style={{ display: 'inline-block', width: 160 }}>{({ fast: 'Schnelle Antworten', reasoning: 'Reasoning', research: 'Webrecherche', vision: 'Multimodal', embedding: 'Embeddings' })[k]}</span>{v || <span class="warn">keins gefunden</span>}</div>)}
       </>}
     </>
   );

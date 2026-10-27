@@ -30,8 +30,6 @@ const PRICES = [
   { re: /2\.5-flash-lite/, in: 0.10, inAudio: 0.30, cached: 0.01, out: 0.40 },
   { re: /2\.5-flash(?!-lite)/, in: 0.30, inAudio: 1.0, cached: 0.03, out: 2.5 },
   { re: /2\.5-pro/, in: 1.25, cached: 0.125, out: 10.0 },
-  // Live API (gemini-3.8-live, -extended-thinking, 3.1-flash-live-preview): Text- und Audiopreise getrennt
-  { re: /live|native-audio/, in: 0.75, inAudio: 3.0, cached: 0.075, out: 4.5, outAudio: 12.0 },
   { re: /3\.5-flash-lite/, in: 0.30, cached: 0.03, out: 2.5 },
   { re: /3\.1-flash-lite/, in: 0.25, inAudio: 0.5, cached: 0.025, out: 1.5 },
   { re: /lite/, in: 0.30, cached: 0.03, out: 2.5 },
@@ -174,16 +172,6 @@ class CostGuard {
       status === 'failed' ? 'failed' : 'done', m, usd, u.in || 0, u.cached || 0, u.out || 0, u.think || 0, id);
     this.s.bus?.emit('cloud:usage', {});
     this.warnIfNeeded();
-  }
-
-  /** Laufende Echtzeit-Sitzung (Gemini Live): Verbrauch fortlaufend addieren und Grenzen prüfen. */
-  addUsage(id, usage, model) {
-    const row = this.s.db.get('SELECT model, at, usd, in_tok, cached_tok, out_tok, think_tok FROM ai_ledger WHERE id=?', id);
-    if (!row) return { exceeded: null };
-    const usd = costUsd(model || row.model, usage, row.at);
-    this.s.db.run('UPDATE ai_ledger SET usd=usd+?, in_tok=in_tok+?, cached_tok=cached_tok+?, out_tok=out_tok+?, think_tok=think_tok+? WHERE id=?', usd, usage.in || 0, usage.cached || 0, usage.out || 0, usage.think || 0, id);
-    this.s.bus?.emit('cloud:usage', {});
-    return { exceeded: this.exceeded(), usd: row.usd + usd };
   }
 
   /** Welche Grenze ist (ohne neue Reservierung) bereits erreicht? */

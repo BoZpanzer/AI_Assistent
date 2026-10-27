@@ -2,73 +2,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { LiveVoice } = require('../src/main/voice/live');
 const { LolFlow } = require('../src/main/services/gaming/lolflow');
 const { TarkovMaps } = require('../src/main/services/gaming/tarkovmaps');
 const { League } = require('../src/main/services/gaming/league');
 
 function deferred() { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; }
-function voiceHarness(connect) {
-  const messages = [], sessions = [], callbacks = [];
-  const s = {
-    bus: new EventEmitter(), settings: { get: () => ({}), update: () => {} },
-    conversations: { get: id => ({ id, privacy: 'gaming' }), history: () => [], add: (id, m) => messages.push({ id, ...m }) },
-    orchestrator: { declarations: () => [{ functionDeclarations: [] }], system: () => '', execute: async () => ({ response: { ok: true } }) },
-    gemini: { hasKey: () => true, policy: () => true, model: () => null, requireModel: () => 'test', liveUsage: () => ({}), liveEnd: () => {},
-      liveConnect: async (opts) => {
-        callbacks.push(opts.callbacks);
-        const session = { closed: false, responses: [], close() { this.closed = true; }, sendToolResponse(r) { this.responses.push(r); } };
-        sessions.push(session);
-        if (connect) await connect();
-        return { session, ledger: null };
-      } },
-  };
-  return { voice: new LiveVoice(s), s, messages, sessions, callbacks };
-}
-
-test('stopping a pending voice connection closes its late result without reopening audio', async () => {
-  const gate = deferred(); const { voice, sessions } = voiceHarness(() => gate.promise);
-  const pending = voice.start({ conversationId: 'a', cloudAudioApproved: true });
-  voice.stop(); gate.resolve(); await pending;
-  assert.equal(voice.state, 'off'); assert.equal(voice.session, null); assert.equal(sessions[0].closed, true);
-});
-
-test('callbacks from a replaced voice session cannot close or write into the next conversation', async () => {
-  const { voice, callbacks, sessions, messages } = voiceHarness();
-  try {
-    await voice.start({ conversationId: 'a', cloudAudioApproved: true });
-    voice.handle = 'old-private-context'; voice.stop({ standby: true });
-    await voice.start({ conversationId: 'b', cloudAudioApproved: true });
-    assert.equal(voice.handle, null);
-    callbacks[0].onclose({ code: 1000 });
-    callbacks[0].onmessage({ serverContent: { inputTranscription: { text: 'stale' }, turnComplete: true } });
-    assert.equal(voice.session, sessions[1]); assert.deepEqual(messages, []);
-  } finally { voice.stop(); }
-});
-
-test('a failing voice tool returns an error and does not swallow later tool responses', async () => {
-  const { voice, s, sessions } = voiceHarness();
-  s.orchestrator.execute = async name => { if (name === 'broken') throw Error('tool unavailable'); return { response: { ok: true } }; };
-  try {
-    await voice.start({ conversationId: 'a', cloudAudioApproved: true });
-    await voice.onToolCall([{ id: '1', name: 'broken' }, { id: '2', name: 'working' }]);
-    const responses = sessions[0].responses[0].functionResponses;
-    assert.equal(responses.length, 2); assert.ok(responses[0].response.error); assert.equal(responses[1].response.ok, true);
-    assert.equal(voice.pendingTools, 0);
-  } finally { voice.stop(); }
-});
-
-test('a tool finishing after a chat switch answers no new voice session', async () => {
-  const gate = deferred(); const { voice, s, sessions, messages } = voiceHarness();
-  s.orchestrator.execute = async () => { await gate.promise; return { card: { title: 'old' }, response: {} }; };
-  try {
-    await voice.start({ conversationId: 'a', cloudAudioApproved: true });
-    const pending = voice.onToolCall([{ id: '1', name: 'slow' }]);
-    voice.stop(); await voice.start({ conversationId: 'b', cloudAudioApproved: true });
-    gate.resolve(); await pending;
-    assert.deepEqual(sessions[1].responses, []); assert.equal(messages[0].id, 'a');
-  } finally { voice.stop(); }
-});
 
 test('LoL keeps game context across temporary API outages and reconnect before scheduling review', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
@@ -113,16 +51,6 @@ test('map imports deduplicate identical jobs but preserve different requested ma
   assert.deepEqual(seen, ['customs', 'woods']);
 });
 
-test('Gaming voice exposes usable LoL tools without the private system primer', () => {
-  const { voice, s } = voiceHarness();
-  voice.conversationId = 'a';
-  s.orchestrator.system = () => { throw Error('must not collect private memory'); };
-  s.orchestrator.declarations = () => [{ functionDeclarations: ['league_live', 'voice_standby', 'list_events'].map(name => ({ name })) }];
-  const config = voice.config();
-  const names = config.tools[0].functionDeclarations.map(t => t.name);
-  assert.ok(names.includes('league_live')); assert.ok(names.includes('voice_standby')); assert.ok(!names.includes('list_events'));
-});
-
 test('Gaming LoL tools execute, while private tools and Study access remain restricted', async () => {
   const { tempCore } = require('./helpers');
   const { core, cleanup } = tempCore();
@@ -158,41 +86,6 @@ test('automatic Wiki calibration rejects missing and non-finite quality evidence
   } finally { cleanup(); }
 });
 
-
-test('speaking forever cannot defer Standby past the original deadline', async () => {
-  const { voice } = voiceHarness();
-  await voice.start({ conversationId: 'a', cloudAudioApproved: true });
-  voice.setState('speaking');
-  assert.equal(voice.requestStandby({ quick: true }).ok, true);
-  assert.equal(voice.standbyPending, true);
-  voice.enterStandby(); // early callback while speaking: still allowed to finish
-  assert.equal(voice.standbyPending, true);
-  assert.equal(voice.state, 'speaking');
-  voice.standbyDeadline = Date.now() - 1; // the original deadline has elapsed
-  voice.enterStandby();
-  assert.equal(voice.state, 'standby');
-  assert.equal(voice.session, null);
-  assert.equal(voice.standbyPending, false);
-  assert.equal(voice.standbyTimer, null);
-  await voice.start({ conversationId: 'a', cloudAudioApproved: true });
-  assert.equal(voice.state, 'listening', 'a new session is not blocked by stale Standby');
-  voice.stop();
-});
-
-test('manual Voice stop discards pending standby and old callback state', async () => {
-  const { voice } = voiceHarness();
-  await voice.start({ conversationId: 'a', cloudAudioApproved: true });
-  voice.requestStandby({ quick: true });
-  voice.stop();
-  assert.equal(voice.standbyPending, false);
-  assert.equal(voice.standbyDeadline, 0);
-  voice.enterStandby();
-  assert.equal(voice.state, 'off');
-  await voice.start({ conversationId: 'b', cloudAudioApproved: true });
-  voice.enterStandby();
-  assert.equal(voice.state, 'listening');
-  voice.stop();
-});
 
 test('stopping League during in-flight phase response never schedules post-game review', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });

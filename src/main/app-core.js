@@ -20,7 +20,7 @@ const { Conversations } = require('./services/conversations');
 const { Gaming } = require('./services/gaming');
 const { System, briefing } = require('./services/system');
 const { Orchestrator } = require('./agent/orchestrator');
-const { LiveVoice } = require('./voice/live');
+const { VoiceControl } = require('./voice/voice-control');
 const { Scheduler } = require('./jobs/scheduler');
 const { ScreenVision } = require('./services/screen');
 const { Updater } = require('./services/updater');
@@ -134,7 +134,7 @@ function createCore(opts) {
   s.contextProviders = [() => s.exams.contextText()];
   s.screen = new ScreenVision(s);
   s.orchestrator = new Orchestrator(s);
-  s.voice = new LiveVoice(s);
+  s.voice = new VoiceControl(s);
   s.scheduler = new Scheduler(s);
   s.localLLM.isGaming = () => !!s.gaming?.context?.state?.().gaming;
   s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
@@ -146,12 +146,10 @@ function createCore(opts) {
     if (['gemini', 'omnivoice'].includes(s.settings.get('voice')?.tts?.engine)) s.settings.update({ voice: { tts: { engine: 'auto' } } });
     if (s.secrets.has('elevenlabs.api_key')) s.secrets.delete('elevenlabs.api_key');
   } catch { /* nicht kritisch */ }
-  // Lokaler Modus / Gemini Live aus: laufende Cloud-Sitzungen und -Aufrufe sofort beenden (Backend, nicht nur UI)
+  // Lokaler Modus: laufende Gemini-Aufrufe sofort beenden (Backend, nicht nur UI)
   bus.on('settings:changed', ({ keys }) => {
     if (!keys.includes('cloud')) return;
-    const c = s.gemini.cloudCfg();
-    if (c.mode === 'local' || c.features?.voice !== true) { if (s.voice.isOpen()) s.voice.stop(); }
-    if (c.mode === 'local') s.gemini.abortAll();
+    if (s.gemini.cloudCfg().mode === 'local') s.gemini.abortAll();
   });
 
   s.start = () => {
@@ -171,7 +169,7 @@ function createCore(opts) {
   };
   s.stop = () => {
     s.stopped = true;
-    try { clearTimeout(s._omniTimer); s.omnivoice?.stop(); clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.eftLogs.stop({ final: false }); s.gaming.eftRaid.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); s.voice.stop(); } catch { /* ignore */ }
+    try { clearTimeout(s._omniTimer); s.omnivoice?.stop(); clearTimeout(s._brainSyncTimer); clearTimeout(s._designTimer); clearTimeout(s.scheduler?._examT); s.birthdays.stop(); s.gaming.brainSync.flush(); s.scheduler.stop(); s.study.stop(); s.gaming.context.stop(); s.gaming.eftLogs.stop({ final: false }); s.gaming.eftRaid.stop(); s.gaming.lolflow.dispose(); s.gaming.playtime.stop(); s.gaming.cs2.stop(); s.gaming.ac.stop(); s.life.stop(); } catch { /* ignore */ }
     s.db.close();
   };
   return s;

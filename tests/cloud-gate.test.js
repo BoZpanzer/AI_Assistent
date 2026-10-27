@@ -39,8 +39,6 @@ test('Strict local mode: no request reaches the Gemini SDK on any path', async (
     await assert.rejects(core.gemini.ping(), /Lokaler Modus/);
     await assert.rejects(core.gemini.discover(), /Lokaler Modus/);
     await assert.rejects(core.gemini.generate({ feature: 'vision', contents: [{ role: 'user', parts: [{ text: 'x' }] }] }), /Lokaler Modus/);
-    core.settings.update({ cloud: { features: { voice: true } } });
-    await assert.rejects(core.voice.start({ conversationId: conv.id, cloudAudioApproved: true }), /Lokaler Modus/);
     assert.equal(fake.requests.filter((r) => !r.local).length, before, 'no cloud request at all');
   } finally { cleanup(); }
 });
@@ -138,37 +136,14 @@ test('Limited parallelism: background work is skipped while the cloud is busy; t
   } finally { cleanup(); }
 });
 
-test('Pause (cloud.setMode local) aborts running requests and stops Gemini Live', async () => {
+test('Pause (cloud.setMode local) aborts running requests', async () => {
   const { core, cleanup } = tempCore();
   try {
     await withKey(core);
     const running = core.gemini.cloud('games', (m, signal) => new Promise((_, rej) => signal.addEventListener('abort', () => rej(signal.reason))), { estUsd: 0.001 });
-    let stopped = 0; const orig = core.voice.stop.bind(core.voice); core.voice.stop = (...a) => { stopped++; return orig(...a); };
-    core.voice.session = { close() {} }; // simulate an open Live session
     await new Promise((r) => setTimeout(r, 5)); // request is now in flight
     core.settings.update({ cloud: { mode: 'local' } });
     await assert.rejects(running, /pausiert/);
-    assert.ok(stopped >= 1);
   } finally { cleanup(); }
 });
 
-test('Gemini Live: budget per voice session stops the session visibly; streamed minutes are counted', async () => {
-  const { core, cleanup } = tempCore();
-  try {
-    await withKey(core);
-    core.settings.update({ cloud: { features: { voice: true } }, voice: { cloudMaxEur: 0.01 }, aiBudget: { dailyEur: 5, sessionEur: 5 } });
-    let closed = 0;
-    core.gemini.liveConnect = async ({ model }) => ({ session: { close: () => { closed++; }, sendRealtimeInput: () => {}, sendClientContent: () => {} }, ledger: core.costGuard.reserve({ feature: 'voice', model, estUsd: 0.005 }) });
-    core.gemini.requireModel = () => 'gemini-3.8-live';
-    const conv = core.conversations.create('Spiel', 'gaming');
-    const states = []; core.bus.on('voice:state', (s) => states.push(s));
-    await core.voice.start({ conversationId: conv.id, cloudAudioApproved: true });
-    core.voice.sendAudio(Buffer.alloc(32000 * 60)); // one minute of PCM
-    await core.voice.onMessage({ usageMetadata: { promptTokenCount: 5000, promptTokensDetails: [{ modality: 'AUDIO', tokenCount: 5000 }], responseTokenCount: 200 } });
-    assert.equal(core.voice.isOpen(), false);
-    assert.ok(closed >= 1);
-    assert.ok(states.some((s) => s.state === 'error' && /Budget je Sprachsitzung/.test(s.error)));
-    const row = core.db.get("SELECT status, usd FROM ai_ledger WHERE feature='voice'");
-    assert.equal(row.status, 'done'); assert.ok(row.usd >= 0.005, 'at least the streamed audio minute is counted');
-  } finally { cleanup(); }
-});
