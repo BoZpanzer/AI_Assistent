@@ -33,15 +33,16 @@ function buildTools(s) {
     return null;
   };
 
-  def({ name: 'expense_buckets', mode: 'write', description: 'Buckets = geplantes Geld je Zweck und Monat. list (mit spent/remaining), save (anlegen/ändern), remove (freigeben), spend (Ausgabe in einen Bucket buchen – Teilbetrag, Bucket per id oder name), book (offenen Rest als bezahlt buchen).',
-    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'spend', 'book'] }, id: { type: 'string' }, name: { type: 'string', description: 'Bucket-Name (save; bei spend/book statt id)' }, amount: { type: 'number' }, note: { type: 'string', description: 'spend: wofür genau' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
+  def({ name: 'expense_buckets', mode: 'write', description: 'Buckets = geplantes Geld je Zweck und Monat. list (mit spent/remaining), save (anlegen/ändern; monthly=true → jeden Monat neu, z. B. „jeden Monat 100 € fürs Essen gehen“; forFuture=true → Änderung auch für kommende Monate), remove (diesen Monat freigeben), end (monatlichen Bucket ab nächstem Monat beenden), spend (Ausgabe in einen Bucket buchen – Teilbetrag, Bucket per id oder name), book (offenen Rest als bezahlt buchen).',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'end', 'spend', 'book'] }, id: { type: 'string' }, monthly: { type: 'boolean' }, forFuture: { type: 'boolean' }, name: { type: 'string', description: 'Bucket-Name (save; bei spend/book statt id)' }, amount: { type: 'number' }, note: { type: 'string', description: 'spend: wofür genau' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
     run: (p) => {
       if (p.action === 'list') return s.life.buckets(p.month);
-      if (p.action === 'save') return s.life.saveBucket(p);
+      if (p.action === 'save') return s.life.saveBucket({ ...p, month: p.month || s.life.ym() });
       const b = s.life.findBucket(p.id || p.name, p.month);
       if (!b) throw new Error('Bucket nicht gefunden – vorhandene: ' + (s.life.buckets().map((x) => x.name + ' (' + x.month + ')').join(', ') || 'keine'));
       if (p.action === 'spend') { const r = s.life.addExpense({ amount: p.amount, note: p.note || '', category: p.category, at: p.at, bucketId: b.id }); return { saved: true, amount: r.amount, bucket: r.bucket.name, spent: r.bucket.spent, planned: r.bucket.amount, remaining: r.bucket.remaining, over: r.bucket.over }; }
       if (p.action === 'book') return s.life.bookBucket(b.id, p.at);
+      if (p.action === 'end') return s.life.endSeries(b.id);
       return s.life.removeBucket(b.id);
     } });
   // ---------- Overview ----------

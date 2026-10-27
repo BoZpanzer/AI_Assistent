@@ -3,7 +3,7 @@ import { Wallet, ShoppingCart, Dumbbell, Gift, Refrigerator, Repeat, CookingPot,
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { guard, setState } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
-import { Panel, Spinner, Empty, Select, useNow, ask } from '../components/ui.jsx';
+import { Panel, Spinner, Empty, Select, useNow, ask, Toggle } from '../components/ui.jsx';
 import { fmtDateTime, ago, countdown } from '../lib/format.js';
 
 const eur = (v) => (v == null ? '–' : `${Number(v).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
@@ -272,8 +272,12 @@ function Buckets() {
     const v = spend[b.id] || {}; if (!v.amount) return;
     if (await guard(() => rpc('life.addExpense', { amount: v.amount, note: v.note || '', bucketId: b.id }), 'In „' + b.name + '“ gebucht')) setSpend({ ...spend, [b.id]: {} });
   };
-  return <Panel icon={Wallet} title="Buckets" sub="Geld je Zweck verplanen und Ausgaben direkt hineinbuchen. Der offene Rest wird im Monat vom freien Geld abgezogen.">
+  return <Panel icon={Wallet} title="Buckets" sub="Geld je Zweck verplanen – einmalig oder jeden Monat (↻) – und Ausgaben direkt hineinbuchen. Der offene Rest wird im Monat vom freien Geld abgezogen.">
     <div class="row wrap gap-s"><input class="inp grow" placeholder="Wofür? (z. B. Urlaub, Essen gehen)" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} /><input class="inp" style={{ width: 95 }} placeholder="Plan €" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp" type="month" value={f.month} onInput={(e) => setF({ ...f, month: e.currentTarget.value })} /><button class="btn sm" onClick={async () => { if (await guard(() => rpc('life.saveBucket', f))) { setMonth(f.month); setF({ ...blank, month: f.month }); } }}>{f.id ? 'Ändern' : 'Anlegen'}</button>{f.id && <button class="btn xs" onClick={() => setF(blank)}>Abbrechen</button>}</div>
+    <div class="row gap-s small mt" style={{ alignItems: 'center' }}>
+      {!f.id || !f.series_id ? <label class="row gap-s" style={{ alignItems: 'center', cursor: 'pointer' }}><Toggle checked={!!f.monthly} onChange={(v) => setF({ ...f, monthly: v })} /><span>jeden Monat (fester Bucket)</span></label>
+        : <label class="row gap-s" style={{ alignItems: 'center', cursor: 'pointer' }}><Toggle checked={!!f.forFuture} onChange={(v) => setF({ ...f, forFuture: v })} /><span>Änderung auch für alle kommenden Monate</span></label>}
+    </div>
     <div class="row gap-s mt" style={{ alignItems: 'center' }}>
       <button class="btn xs ghost" title="Vormonat" onClick={() => setMonth(shiftYm(month, -1))}>‹</button>
       <b style={{ minWidth: 130, textAlign: 'center' }}>{monthLabel(month)}</b>
@@ -284,11 +288,12 @@ function Buckets() {
     {!rows.length ? <Empty>Für {monthLabel(month)} ist noch kein Geld verplant.</Empty> : <BucketChart rows={rows} />}
     {rows.map((b) => <div class="bucket-row">
       <div class="row wrap small" style={{ alignItems: 'center' }}>
-        <span class="grow"><b>{b.name}</b> · {eur(b.spent)} / {eur(b.amount)} {b.over ? <span style={{ color: 'var(--red)' }}>· {eur(b.over)} drüber</span> : <span class="muted">· {eur(b.remaining)} übrig</span>}</span>
+        <span class="grow" style={{ minWidth: 230 }}><b>{b.name}</b>{b.monthly && <span class="muted" title="Fester Bucket – wird jeden Monat neu angelegt"> ↻</span>} · {eur(b.spent)} / {eur(b.amount)} {b.over ? <span style={{ color: 'var(--red)' }}>· {eur(b.over)} drüber</span> : <span class="muted">· {eur(b.remaining)} übrig</span>}</span>
         {b.bookings > 0 && <button class="btn xs ghost" onClick={() => setOpen(open === b.id ? '' : b.id)}>{b.bookings} Buchung{b.bookings === 1 ? '' : 'en'} {open === b.id ? '▴' : '▾'}</button>}
-        <button class="btn xs" onClick={() => setF({ id: b.id, name: b.name, amount: b.amount, month: b.month, category: b.category })}>Bearbeiten</button>
+        <button class="btn xs" onClick={() => setF({ id: b.id, name: b.name, amount: b.amount, month: b.month, category: b.category, series_id: b.series_id, forFuture: true })}>Bearbeiten</button>
+        {b.monthly && <button class="btn xs ghost" title="Ab nächstem Monat nicht mehr anlegen" onClick={async () => { if (await ask(`„${b.name}“ ab nächstem Monat nicht mehr anlegen? Dieser Monat bleibt.`, '', { confirmOnly: true, okLabel: 'Beenden' })) await guard(() => rpc('life.endSeries', { id: b.id }), 'Fester Bucket beendet'); }}>Beenden</button>}
         {b.remaining > 0 && <button class="btn xs" title="Den offenen Rest als bezahlt buchen" onClick={async () => { if (await ask(`${b.name}: offenen Rest von ${eur(b.remaining)} heute als Ausgabe buchen?`, '', { confirmOnly: true, okLabel: 'Buchen' })) await guard(() => rpc('life.bookBucket', { id: b.id })); }}>Rest bezahlt</button>}
-        <button class="btn xs ghost" title={b.bookings ? 'Bucket löschen – gebuchte Ausgaben bleiben erhalten' : 'Bucket löschen'} onClick={() => guard(() => rpc('life.removeBucket', { id: b.id }))}><Trash2 size={12} /></button>
+        <button class="btn xs ghost" title={b.monthly ? 'Nur diesen Monat entfernen (fester Bucket läuft weiter) – gebuchte Ausgaben bleiben erhalten' : b.bookings ? 'Bucket löschen – gebuchte Ausgaben bleiben erhalten' : 'Bucket löschen'} onClick={() => guard(() => rpc('life.removeBucket', { id: b.id }))}><Trash2 size={12} /></button>
       </div>
       <div class="row gap-s" style={{ marginTop: 6 }}>
         <input class="inp" style={{ width: 95 }} placeholder="Betrag €" value={spend[b.id]?.amount || ''} onInput={(e) => setSpend({ ...spend, [b.id]: { ...spend[b.id], amount: e.currentTarget.value } })} onKeyDown={(e) => e.key === 'Enter' && book(b)} />

@@ -1,5 +1,5 @@
 'use strict';
-const { id, nowIso, normText } = require('../core/util');
+const { id, nowIso, normText, safeJson } = require('../core/util');
 const log = require('../core/logger').scope('life');
 
 /**
@@ -61,35 +61,82 @@ class Life {
   cfg() { return this.s.settings.get('life') || {}; }
   emit() { this.s.bus.emit('life:data', {}); }
 
+  // ---------- Buckets (geplantes Geld je Zweck und Monat; auch monatlich wiederkehrend) ----------
+  series() { return this.db().all('SELECT * FROM bucket_series ORDER BY created_at').map((x) => ({ ...x, skip: safeJson(x.skip, []) })); }
+  /** Monatliche Buckets für diesen Monat anlegen (einmal je Serie und Monat; übersprungene/beendete nicht). */
+  ensureSeries(month) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) return;
+    for (const x of this.series()) {
+      if (x.start_month > month || (x.end_month && x.end_month < month) || x.skip.includes(month)) continue;
+      this.db().run(`INSERT OR IGNORE INTO expense_buckets(id,name,amount,month,category,created_at,series_id) VALUES(?,?,?,?,?,?,?)`, id('bucket'), x.name, x.amount, month, x.category, nowIso(), x.id);
+    }
+  }
   /** Buckets mit Plan (amount), bereits darin gebuchten Ausgaben (spent) und Rest (remaining, ≥ 0). */
   buckets(month) {
+    this.ensureSeries(month || this.ym());
     return this.db().all(`SELECT b.*, COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.bucket_id=b.id), 0) AS spent,
       (SELECT COUNT(*) FROM expenses e WHERE e.bucket_id=b.id) AS bookings FROM expense_buckets b` + (month ? ' WHERE b.month=?' : '') + ' ORDER BY b.month, b.created_at', ...(month ? [month] : []))
-      .map((b) => ({ ...b, spent: r2(b.spent), remaining: r2(Math.max(0, b.amount - b.spent)), over: r2(Math.max(0, b.spent - b.amount)) }));
+      .map((b) => ({ ...b, monthly: !!b.series_id, spent: r2(b.spent), remaining: r2(Math.max(0, b.amount - b.spent)), over: r2(Math.max(0, b.spent - b.amount)) }));
   }
   bucket(bid) { return bid ? this.buckets().find((b) => b.id === bid) || null : null; }
   /** Bucket per ID oder Name (Name: bevorzugt aktueller Monat). */
   findBucket(ref, month = null) {
     if (!ref) return null;
+    const ym = month || this.ym(); this.ensureSeries(ym);
     const all = this.buckets(); const byId = all.find((b) => b.id === ref); if (byId) return byId;
-    const q = normText(ref); const ym = month || this.ym();
+    const q = normText(ref);
     const hits = all.filter((b) => normText(b.name) === q || normText(b.name).includes(q));
     return hits.find((b) => b.month === ym) || hits.find((b) => b.month > ym) || hits.at(-1) || null;
   }
   ym(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
   bucketExpenses(bid) { return this.db().all('SELECT id,amount,category,note,at FROM expenses WHERE bucket_id=? ORDER BY at DESC', bid); }
-  saveBucket({ id: bid, name, amount, month, category = 'Sonstiges' } = {}) {
+  /**
+   * Bucket anlegen/ändern. monthly: true → monatlich wiederkehrend ab diesem Monat (Serie).
+   * Beim Ändern eines monatlichen Buckets gilt die Änderung für diesen Monat; mit forFuture auch für alle folgenden.
+   */
+  saveBucket({ id: bid, name, amount, month, category = 'Sonstiges', monthly = false, forFuture = false } = {}) {
     const a = Number(String(amount).replace(',', '.'));
     if (!String(name || '').trim() || !Number.isFinite(a) || a < 0.01 || a >= 100000 || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) throw new Error('Name, positiver Betrag und Monat (JJJJ-MM) nötig');
-    if (bid && !this.db().get('SELECT id FROM expense_buckets WHERE id=?', bid)) throw new Error('Bucket nicht gefunden');
+    const cur = bid ? this.db().get('SELECT * FROM expense_buckets WHERE id=?', bid) : null;
+    if (bid && !cur) throw new Error('Bucket nicht gefunden');
+    const nm = String(name).trim().slice(0, 120); const cat = CATEGORIES.includes(category) ? category : 'Sonstiges'; const amt = r2(a);
     const key = bid || id('bucket');
-    this.db().run(`INSERT INTO expense_buckets(id,name,amount,month,category,created_at) VALUES(?,?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name, amount=excluded.amount, month=excluded.month, category=excluded.category`, key, String(name).trim().slice(0,120), r2(a), month, CATEGORIES.includes(category) ? category : 'Sonstiges', nowIso());
+    this.db().tx(() => {
+      let series = cur?.series_id || null;
+      if (!cur && monthly) { series = id('bs'); this.db().run('INSERT INTO bucket_series(id,name,amount,category,start_month,created_at) VALUES(?,?,?,?,?,?)', series, nm, amt, cat, month, nowIso()); }
+      if (cur && !cur.series_id && monthly) { series = id('bs'); this.db().run('INSERT INTO bucket_series(id,name,amount,category,start_month,created_at) VALUES(?,?,?,?,?,?)', series, nm, amt, cat, month, nowIso()); }
+      if (cur?.series_id && forFuture) {
+        this.db().run('UPDATE bucket_series SET name=?, amount=?, category=? WHERE id=?', nm, amt, cat, cur.series_id);
+        // schon angelegte spätere Monate mitziehen
+        this.db().run('UPDATE expense_buckets SET name=?, amount=?, category=? WHERE series_id=? AND month>?', nm, amt, cat, cur.series_id, month);
+      }
+      this.db().run(`INSERT INTO expense_buckets(id,name,amount,month,category,created_at,series_id) VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, amount=excluded.amount, month=excluded.month, category=excluded.category, series_id=excluded.series_id`, key, nm, amt, month, cat, nowIso(), series);
+    });
     this.emit(); return this.bucket(key);
   }
-  /** Bucket löschen; darin gebuchte Ausgaben bleiben als normale Ausgaben erhalten. */
+  /** Monatlichen Bucket beenden: ab dem Folgemonat keine neuen mehr (dieser Monat bleibt). */
+  endSeries(bid) {
+    const b = this.db().get('SELECT * FROM expense_buckets WHERE id=?', bid);
+    if (!b?.series_id) throw new Error('Kein monatlicher Bucket');
+    this.db().tx(() => {
+      this.db().run('UPDATE bucket_series SET end_month=? WHERE id=?', b.month, b.series_id);
+      // bereits angelegte spätere Monate ohne Buchungen entfernen
+      this.db().run('DELETE FROM expense_buckets WHERE series_id=? AND month>? AND id NOT IN (SELECT bucket_id FROM expenses WHERE bucket_id IS NOT NULL)', b.series_id, b.month);
+    });
+    this.emit(); return true;
+  }
+  /** Bucket löschen; darin gebuchte Ausgaben bleiben als normale Ausgaben erhalten. Monatlich: nur dieser Monat (wird übersprungen). */
   removeBucket(bid) {
-    this.db().tx(() => { this.db().run('UPDATE expenses SET bucket_id=NULL WHERE bucket_id=?', bid); this.db().run('DELETE FROM expense_buckets WHERE id=?', bid); });
+    this.db().tx(() => {
+      const b = this.db().get('SELECT * FROM expense_buckets WHERE id=?', bid);
+      if (b?.series_id) {
+        const x = this.db().get('SELECT skip FROM bucket_series WHERE id=?', b.series_id);
+        const skip = [...new Set([...safeJson(x?.skip, []), b.month])].slice(-120);
+        this.db().run('UPDATE bucket_series SET skip=? WHERE id=?', JSON.stringify(skip), b.series_id);
+      }
+      this.db().run('UPDATE expenses SET bucket_id=NULL WHERE bucket_id=?', bid); this.db().run('DELETE FROM expense_buckets WHERE id=?', bid);
+    });
     this.emit(); return true;
   }
   /** „Bezahlt“: den noch offenen Rest als Ausgabe in den Bucket buchen. */

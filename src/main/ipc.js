@@ -356,6 +356,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'life.saveBucket': (p) => s.life.saveBucket(p),
     'life.removeBucket': ({ id }) => s.life.removeBucket(id),
     'life.bookBucket': ({ id, at }) => s.life.bookBucket(id, at),
+    'life.endSeries': ({ id }) => s.life.endSeries(id),
     'life.bucketExpenses': ({ id }) => s.life.bucketExpenses(id),
     'life.month': ({ month } = {}) => s.life.month(month || null),
     'life.addExpense': (a) => s.life.addExpense(a),
