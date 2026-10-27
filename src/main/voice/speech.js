@@ -18,13 +18,14 @@ const CACHE_MAX = 60 * 1024 * 1024;
 /** Aussprachehilfen für die lokale (deutsche) Stimme – englische Gaming-Begriffe lautschriftlich. */
 const LEXICON = [
   [/\bToplane\b/gi, 'Topp-Lehn'], [/\bMidlane\b/gi, 'Mitt-Lehn'], [/\bBotlane\b/gi, 'Bott-Lehn'], [/\bLanes?\b/gi, (m) => (m.endsWith('s') ? 'Lehns' : 'Lehn')],
-  [/\bLaning\b/gi, 'Lehning'], [/\bJungler\b/gi, 'Dschangler'], [/\bJungle\b/gi, 'Dschangel'], [/\bGanks?\b/gi, (m) => (m.endsWith('s') ? 'Gänks' : 'Gänk')],
+  [/\bLaning\b/gi, 'Lehning'], [/\bJungler\b/gi, 'Dschungler'], [/\bJungle\b/gi, 'Dschungel'], [/\bGanks?\b/gi, (m) => (m.endsWith('s') ? 'Gänks' : 'Gänk')],
   [/\bSupport\b/gi, 'Sapport'], [/\bADC\b/g, 'A D C'], [/\bTop\b/g, 'Topp'], [/\bMid\b/g, 'Mitt'], [/\bBot\b/g, 'Bott'],
   [/\bWards?\b/gi, (m) => (m.endsWith('s') ? 'Wohrds' : 'Wohrd')], [/\bControl\b/gi, 'Kontrol'], [/\bRecall\b/gi, 'Rikohl'], [/\bRoam(en|t)?\b/gi, (m) => 'Rohm' + m.slice(4)],
   [/\bTeamfights?\b/gi, (m) => (m.endsWith('s') ? 'Tiemfeits' : 'Tiemfeit')], [/\bItems?\b/gi, (m) => (m.endsWith('s') ? 'Eitems' : 'Eitem')], [/\bFarm(en)?\b/gi, (m) => 'Fahm' + m.slice(4)],
   [/\bPush(en)?\b/gi, (m) => 'Pusch' + m.slice(4)], [/\bSkillshots?\b/gi, 'Skillschott'], [/\bCooldowns?\b/gi, 'Kuhldaun'], [/\bSplitpush\b/gi, 'Splittpusch'],
   [/\bRaids?\b/gi, (m) => (m.endsWith('s') ? 'Reids' : 'Reid')], [/\bScavs?\b/gi, (m) => (m.endsWith('s') ? 'Skäffs' : 'Skäff')], [/\bQuests?\b/gi, (m) => (m.endsWith('s') ? 'Kwests' : 'Kwest')],
   [/\bLoot\b/gi, 'Luht'], [/\bExtract\b/gi, 'Ixtrakt'], [/\bRun-?Through\b/gi, 'Ran-Sruh'], [/\bFlea\b/gi, 'Flie'], [/\bHideout\b/gi, 'Heid-aut'],
+  [/\bUltimates?\b/gi, (m) => (m.endsWith('s') ? 'Altimets' : 'Altimet')], [/\bRecap\b/gi, 'Riekäp'],
   [/\bChampions?\b/gi, (m) => (m.endsWith('s') ? 'Tschämpiens' : 'Tschämpien')],
   [/\bMatchups?\b/gi, (m) => (m.endsWith('s') ? 'Mätschapps' : 'Mätschapp')], [/\bSummoner\b/gi, 'Sammoner'],
 ];
@@ -103,7 +104,14 @@ class Speech {
         return { ...r, pitch: cloudPitch, engine: 'elevenlabs', preset: c.preset };
       } catch (e) { log.info('ElevenLabs nicht genutzt: ' + e.message); }
     }
-    if (this.cloudOk(priv, engine)) {
+    if (['auto', 'omnivoice'].includes(engine) && this.s.omnivoice?.allowed()) {
+      try {
+        const said = localPronunciation(text);
+        const r = await this.cached(['o', c.preset, c.omniInstruct, c.omniSeed, c.speed ?? 1, said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref: `${c.preset}-${c.omniSeed}-${crypto.createHash('sha1').update(c.omniInstruct).digest('hex').slice(0, 8)}`, seed: c.omniSeed, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
+        return { ...r, pitch: 1, engine: 'omnivoice', preset: c.preset };
+      } catch (e) { log.info('Lokale KI-Stimme nicht genutzt: ' + e.message); }
+    }
+    if (engine !== 'omnivoice' && this.cloudOk(priv, engine)) {
       const voiceName = c.cloudVoice || 'Kore';
       try {
         const r = await this.cached(['g', voiceName, c.cloudStyle || '', String(text)], () => this.s.gemini.speak(text, { voiceName, style: c.cloudStyle || '' }));

@@ -3,7 +3,7 @@ import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpe
 import { rpc, useRpc } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar, UpdateModal } from '../components/Shell.jsx';
-import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask, FixText } from '../components/ui.jsx';
+import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask, FixText, useNow } from '../components/ui.jsx';
 import { audio, playStartSound } from '../lib/audio.js';
 import { ago } from '../lib/format.js';
 
@@ -57,6 +57,60 @@ function VoicePicker({ s }) {
   );
 }
 
+const OMNI_ATTR = 'Eigenschaften (Englisch, durch Komma): male/female · child/teenager/young adult/middle-aged/elderly · very low/low/moderate/high/very high pitch · whisper';
+/** Lokale KI-Stimme (OmniVoice) auf der Grafikkarte: Installation auf Klick, Stimme je Profil beschreiben/neu würfeln. */
+function OmniVoiceCard({ s }) {
+  const om = s.voice?.tts?.omni || {};
+  const [st, reload] = useRpc('omnivoice.status', {}, { initial: null, events: ['omnivoice:status'] });
+  const [pr] = useRpc('tts.presets', {}, { events: ['settings:changed'] });
+  const [busy, setBusy] = useState('');
+  const now = useNow(1000);
+  useEffect(() => { if (!st?.installing && !st?.starting) return; const id = setInterval(reload, 2000); return () => clearInterval(id); }, [st?.installing, st?.starting]);
+  if (!st) return null;
+  const set = (patch) => upd({ voice: { tts: { omni: patch } } });
+  const play = async (id) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id], { full: true, preview: true, override: { preset: id, engine: 'omnivoice' } }); } finally { setBusy(''); } };
+  const install = async () => {
+    if (!(await ask(`Lokale KI-Stimme installieren? Lädt ca. ${st.sizeGB} GB (Python, PyTorch, Stimmmodell) in den JARVIS-Datenordner. Dauert je nach Leitung 10–30 Minuten, du kannst JARVIS dabei normal nutzen.`, '', { confirmOnly: true, okLabel: 'Installieren' }))) return;
+    await guard(() => rpc('omnivoice.install')); reload();
+  };
+  const ins = st.installing;
+  return (
+    <Panel icon={Sparkles} title="Lokale KI-Stimme" sub="OmniVoice auf deiner Grafikkarte – natürlich, kostenlos, offline, auch für private Chats">
+      {!st.supported && <div class="notice tiny">Nur unter Windows verfügbar.</div>}
+      {st.supported && !st.installed && !ins && <>
+        <div class="small">Klingt deutlich natürlicher als die bisherige lokale Stimme. J.A.R.V.I.S. und Alya bekommen je eine eigene, <b>beschriebene</b> Stimme (keine echte Person). Englische Spielbegriffe werden eingedeutscht („Dschungler“, „Gänk“).</div>
+        <div class="tiny muted mt">Download ca. {st.sizeGB} GB, nur auf Klick · braucht am besten eine NVIDIA-Grafikkarte (ca. 2–3 GB Grafikspeicher), sonst langsam auf dem Prozessor · Modell: k2-fsa OmniVoice, Lizenz CC BY-NC (privat erlaubt).</div>
+        <div class="row gap-s mt"><button class="btn sm" onClick={install}><Download size={14} />Installieren (~{st.sizeGB} GB)</button></div>
+      </>}
+      {ins && <div class="col" style={{ gap: 6 }}>
+        <div class="small"><Spinner size={12} /> Schritt {ins.index + 1} von {ins.total}: <b>{ins.label}</b> · {Math.floor((now - ins.startedAt) / 60000)} min</div>
+        <div class="bar"><i style={{ width: `${Math.round(((ins.index + 0.5) / ins.total) * 100)}%` }} /></div>
+        {ins.detail && <div class="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.detail}</div>}
+      </div>}
+      {st.error && <div class="notice tiny mt"><FixText text={'Fehler: ' + st.error} /></div>}
+      {st.installed && !ins && <>
+        <Field label="Status"><span class="small">{!st.enabled ? 'aus' : st.running ? `läuft (${/cuda/.test(st.device) ? 'Grafikkarte' : 'Prozessor'})` : st.starting ? 'Modell wird geladen …' : st.allowed ? 'startet beim nächsten Satz' : 'pausiert – Spiel läuft'}</span></Field>
+        <Field label="Lokale KI-Stimme nutzen"><Toggle checked={st.enabled} onChange={(v) => set({ enabled: v })} /></Field>
+        <Field label="Beim Zocken" hint="Die Stimme belegt ca. 2–3 GB Grafikspeicher. Bei schweren Spielen übernimmt solange die Cloud-Stimme."><Select value={st.whileGaming} onChange={(v) => set({ whileGaming: v })} options={[{ value: 'light', label: 'Nur bei leichten Spielen (z. B. LoL)' }, { value: 'always', label: 'Immer' }, { value: 'never', label: 'Nie – beim Spielen pausieren' }]} /></Field>
+        <Field label="Beim Start vorladen" hint="Erster Satz kommt sofort, belegt dafür dauerhaft Grafikspeicher"><Toggle checked={om.preload !== false} onChange={(v) => set({ preload: v })} /></Field>
+        <div class="hr" />
+        {(pr?.presets || []).map((p) => (
+          <div class="col" style={{ gap: 4, padding: '4px 0' }}>
+            <div class="row gap-s" style={{ alignItems: 'center' }}>
+              <b class="small grow">{p.label}</b>
+              <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
+              <button class="btn xs ghost" title="Neue Stimme mit derselben Beschreibung" onClick={async () => { await guard(() => rpc('omnivoice.reroll', { preset: p.id })); play(p.id); }}><RefreshCw size={12} /> neu würfeln</button>
+            </div>
+            <input class="inp" title={OMNI_ATTR} placeholder={p.omni} value={(om.voices || {})[p.id] || ''} onChange={(e) => set({ voices: { [p.id]: e.currentTarget.value.trim().slice(0, 200) } })} />
+          </div>
+        ))}
+        <div class="tiny muted">{OMNI_ATTR}. Leer = Vorgabe. Gefällt dir eine Stimme, bleibt sie – „neu würfeln“ erzeugt eine andere mit derselben Beschreibung.</div>
+        <div class="row gap-s mt"><button class="btn xs ghost" onClick={() => guard(() => rpc('omnivoice.restart'), 'Neu gestartet')}>Neu starten</button><span class="grow" /><button class="btn xs ghost" onClick={async () => { if (await ask('Lokale KI-Stimme vollständig entfernen (gibt ca. 6 GB frei)?', '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) await guard(() => rpc('omnivoice.remove'), 'Entfernt'); }}><Trash2 size={12} />Entfernen</button></div>
+      </>}
+    </Panel>
+  );
+}
+
 /** Lokale Sprachausgabe: Piper-Stimmen (mitgeliefert/auf Klick), Stil, Tempo, Tonhöhe, Lautstärke, Hörprobe. */
 function SpeechOutput({ s }) {
   const t = s.voice?.tts || {};
@@ -77,7 +131,7 @@ function SpeechOutput({ s }) {
   return (
     <Panel icon={Volume2} title="Sprachausgabe" sub="Cloud-Stimme (günstig, gedeckelt) oder lokal – private Chats immer lokal">
       <Field label="Stimme">
-        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'Automatisch: Cloud-Stimme, sonst lokal (empfohlen)' }, { value: 'piper', label: 'Nur lokal (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
+        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'Automatisch: lokale KI-Stimme, sonst Cloud, sonst Piper (empfohlen)' }, { value: 'omnivoice', label: 'Nur lokal: KI-Stimme (OmniVoice), sonst Piper' }, { value: 'piper', label: 'Nur lokal (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
       </Field>
       {engine === 'auto' && <>
         <div class="notice tiny">Cloud-Stimme (Gemini-TTS): spricht englische Spielbegriffe und Namen richtig, ca. 1 Cent pro Minute Sprache (ab 2027 ca. 2 Cent), mit kostenlosem Zusatz-Schlüssel gratis bis zum Tageslimit. Fertige Sätze werden gespeichert und kosten danach nichts. Private Chats werden immer lokal vorgelesen. Bei Tagesgrenze oder offline: automatisch lokale Stimme.</div>
@@ -126,6 +180,7 @@ export function Settings() {
         <div class="settings-grid">
           <General s={s} />
           <VoicePicker s={s} />
+          <OmniVoiceCard s={s} />
           <Speech s={s} />
           <SpeechOutput s={s} />
           <LocalAI s={s} />

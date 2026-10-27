@@ -114,6 +114,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return { audio: r.wav.toString('base64'), pitch: r.pitch, engine: r.engine, preset: r.preset, fallback: !!r.fallback };
     },
     // Stimmprofile für Einstellungen → Stimme (ohne Schlüssel; nur ob einer hinterlegt ist)
+    'omnivoice.status': () => s.omnivoice.status(),
+    'omnivoice.install': () => s.omnivoice.install(),
+    'omnivoice.remove': () => s.omnivoice.remove(),
+    'omnivoice.reroll': ({ preset }) => s.omnivoice.reroll(require('./voice/voice-presets').presetId(preset)),
+    'omnivoice.restart': async () => { s.omnivoice.stop(); await s.omnivoice.start(); return s.omnivoice.status(); },
     'tts.presets': () => ({ presets: require('./voice/voice-presets').publicPresets(), elevenKey: !!s.secrets.get('elevenlabs.api_key') }),
     'tts.install': ({ id }) => s.tts.install(String(id || '')),
     'tts.remove': ({ id }) => s.tts.remove(String(id || '')),

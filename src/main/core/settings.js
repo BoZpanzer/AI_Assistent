@@ -70,10 +70,13 @@ const SCHEMA = {
       cloudMaxMinutes: { type: 'number', minimum: 1, maximum: 60 }, cloudMaxEur: { type: 'number', minimum: 0.01, maximum: 5 }, cloudVad: { type: 'boolean' },
       bargeIn: { type: 'boolean' }, idleDisconnectSeconds: { type: 'number', minimum: 10, maximum: 900 },
       tts: { type: 'object', properties: {
-        engine: { type: 'string', enum: ['auto', 'gemini', 'piper', 'windows'] }, cloudVoice: { type: 'string', maxLength: 40 }, preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] }, elevenModel: { type: 'string', maxLength: 60 }, elevenDailyChars: { type: 'integer', minimum: 0, maximum: 1000000 },
+        engine: { type: 'string', enum: ['auto', 'omnivoice', 'gemini', 'piper', 'windows'] }, cloudVoice: { type: 'string', maxLength: 40 }, preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] }, elevenModel: { type: 'string', maxLength: 60 }, elevenDailyChars: { type: 'integer', minimum: 0, maximum: 1000000 },
         elevenVoices: { type: 'object', properties: { standard: { type: 'string', maxLength: 64 }, jarvis: { type: 'string', maxLength: 64 }, alya: { type: 'string', maxLength: 64 } } }, voice: { type: 'string', maxLength: 80 }, style: { type: 'string', maxLength: 30 },
         speaker: { type: 'integer', minimum: 0, maximum: 500 }, speed: { type: 'number', minimum: 0.6, maximum: 1.6 }, pitch: { type: 'number', minimum: 0.8, maximum: 1.25 },
-        volume: { type: 'number', minimum: 0, maximum: 1.5 }, short: { type: 'boolean' }, windowsVoice: { type: 'string', maxLength: 200 }, piperExecutable: { type: 'string', maxLength: 1000 } } } } },
+        volume: { type: 'number', minimum: 0, maximum: 1.5 }, short: { type: 'boolean' }, windowsVoice: { type: 'string', maxLength: 200 }, piperExecutable: { type: 'string', maxLength: 1000 },
+        omni: { type: 'object', properties: { enabled: { type: 'boolean' }, preload: { type: 'boolean' }, whileGaming: { type: 'string', enum: ['light', 'always', 'never'] },
+          voices: { type: 'object', properties: { standard: { type: 'string', maxLength: 200 }, jarvis: { type: 'string', maxLength: 200 }, alya: { type: 'string', maxLength: 200 } } },
+          seeds: { type: 'object', properties: { standard: { type: 'integer', minimum: 1, maximum: 1000000 }, jarvis: { type: 'integer', minimum: 1, maximum: 1000000 }, alya: { type: 'integer', minimum: 1, maximum: 1000000 } } } } } } } } },
     // Google
     google: { type: 'object', properties: {
       clientId: { type: 'string', maxLength: 200 }, calendarSync: { type: 'boolean' }, exportLocalToGoogle: { type: 'boolean' },
@@ -151,7 +154,7 @@ const DEFAULTS = {
   cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, voice: false, tts: true, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', voiceName: 'Charon', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space', extendedThinking: false, bargeIn: true, idleDisconnectSeconds: 45,
-    tts: { engine: 'auto', preset: 'standard', elevenVoices: {}, elevenModel: 'eleven_flash_v2_5', elevenDailyChars: 10000, cloudVoice: 'Kore', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '' },
+    tts: { engine: 'auto', preset: 'standard', elevenVoices: {}, elevenModel: 'eleven_flash_v2_5', elevenDailyChars: 10000, cloudVoice: 'Kore', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '', omni: { enabled: true, preload: true, whileGaming: 'light', voices: {}, seeds: {} } },
     whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true, cloudMaxMinutes: 10, cloudMaxEur: 0.1, cloudVad: true },
   google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '', exportCalendars: {}, exportKinds: { termine: true, geburtstage: true, todos: true, erinnerungen: true, uni: true } },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },

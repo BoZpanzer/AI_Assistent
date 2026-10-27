@@ -11,17 +11,20 @@
 const PRESETS = Object.freeze({
   standard: {
     label: 'Standard', description: 'Bisherige Stimme mit deinen Einstellungen aus „Sprachausgabe“.',
+    omni: { instruct: 'male, young adult, moderate pitch' },
   },
   jarvis: {
     label: 'J.A.R.V.I.S.', description: 'Tief, ruhig, elegant, britisch anmutend – eine eigenständige KI-Butler-Stimme.',
     gemini: { voice: 'Charon', style: 'Sprich als ruhige, tiefe und elegante KI-Stimme mit dezent britisch anmutendem Tonfall – souverän, höflich, etwas trocken, nicht zu schnell, auf Deutsch' },
     piper: { voice: 'de_DE-thorsten-medium', pitch: 0.9, speed: 0.93 },
+    omni: { instruct: 'male, middle-aged, low pitch' },
     windows: { prefer: 'conrad|killian|stefan|florian|george|ryan|thomas', pitch: 0.85, speed: 0.95 },
   },
   alya: {
     label: 'Alya (Anime)', description: 'Natürlich, freundlich und weich – eine eigenständige, anime-inspirierte Stimme.',
     gemini: { voice: 'Leda', style: 'Sprich natürlich, freundlich und weich wie eine junge, lebhafte Anime-Begleiterin – warm, leicht verspielt, klar verständlich, auf Deutsch' },
     piper: { voice: 'de_DE-kerstin-low', pitch: 1.08, speed: 1.02 },
+    omni: { instruct: 'female, young adult, high pitch' },
     windows: { prefer: 'katja|amala|seraphina|hedda|louisa', pitch: 1.2, speed: 1.02 },
   },
 });
@@ -37,7 +40,9 @@ const presetId = (id) => (PRESET_IDS.includes(id) ? id : 'standard');
 function resolve(cfg = {}, { isInstalled = () => true } = {}) {
   const id = presetId(cfg.preset);
   const p = PRESETS[id];
-  const out = { ...cfg, preset: id, label: p.label, elevenVoiceId: (cfg.elevenVoices || {})[id] || '' };
+  const om = cfg.omni || {};
+  const out = { ...cfg, preset: id, label: p.label, elevenVoiceId: (cfg.elevenVoices || {})[id] || '',
+    omniInstruct: String((om.voices || {})[id] || p.omni?.instruct || PRESETS.standard.omni.instruct), omniSeed: Number((om.seeds || {})[id]) || 1 };
   if (id === 'standard') return out;
   if (p.gemini) { out.cloudVoice = p.gemini.voice; out.cloudStyle = p.gemini.style; }
   if (p.piper) {
@@ -50,7 +55,7 @@ function resolve(cfg = {}, { isInstalled = () => true } = {}) {
 
 /** Für die Oberfläche (keine Schlüssel): Profile mit Beschreibung und Windows-Vorlieben. */
 function publicPresets() {
-  return PRESET_IDS.map((id) => ({ id, label: PRESETS[id].label, description: PRESETS[id].description, windows: PRESETS[id].windows || null }));
+  return PRESET_IDS.map((id) => ({ id, label: PRESETS[id].label, description: PRESETS[id].description, windows: PRESETS[id].windows || null, omni: PRESETS[id].omni?.instruct || '' }));
 }
 
 /**
