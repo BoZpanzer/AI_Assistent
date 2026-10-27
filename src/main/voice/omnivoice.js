@@ -27,9 +27,22 @@ const SIZE_GB = 6;
 const STEPS = [['uv', 'Installationshelfer laden'], ['python', 'Python einrichten'], ['torch', 'PyTorch laden (größter Teil)'], ['omnivoice', 'OmniVoice installieren'], ['model', 'Stimmmodell laden und testen']];
 const exists = (f) => { try { fs.statSync(f); return true; } catch { return false; } };
 
+/** POST an den lokalen Stimmdienst (nur 127.0.0.1). Antwort: { status, body: Buffer }. */
+function localPost(port, urlPath, token, json, timeoutMs) {
+  const http = require('node:http');
+  return new Promise((resolve, reject) => {
+    const data = Buffer.from(JSON.stringify(json));
+    const req = http.request({ host: '127.0.0.1', port, path: urlPath, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': data.length, 'X-Token': token } }, (res) => {
+      const chunks = []; res.on('data', (c) => chunks.push(c)); res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) })); res.on('error', reject);
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Lokale KI-Stimme antwortet nicht (Zeitlimit)')));
+    req.on('error', reject); req.end(data);
+  });
+}
+
 class OmniVoice {
-  constructor(s, { run = spawn, platform = process.platform, uv = UV } = {}) {
-    this.s = s; this.run = run; this.platform = platform; this.uv = uv;
+  constructor(s, { run = spawn, platform = process.platform, uv = UV, httpPost = localPost } = {}) {
+    this.s = s; this.run = run; this.platform = platform; this.uv = uv; this.httpPost = httpPost;
     this.dir = path.join(s.paths.data, 'omnivoice');
     this.proc = null; this.port = 0; this.token = ''; this.device = ''; this.starting = null;
     this.installing = null; this.lastError = '';
@@ -210,12 +223,11 @@ class OmniVoice {
   synthesize(text, { instruct, ref = 'default', seed = 1, speed, refAudio, refText, timeoutMs } = {}) {
     const job = this.queue.then(async () => {
       const port = await this.start();
-      const r = await this.s.fetch(`http://127.0.0.1:${port}/tts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': this.token },
-        body: JSON.stringify({ text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined }), signal: AbortSignal.timeout(timeoutMs || (/cuda/.test(this.device) ? 120000 : 600000)),
-      });
-      if (!r.ok) throw new Error('Lokale KI-Stimme: ' + ((await r.text().catch(() => '')).slice(0, 200) || 'HTTP ' + r.status));
-      const wav = Buffer.from(await r.arrayBuffer());
+      // Direkt per node:http (ohne fetch-Zeitlimits) – ohne Grafikkarte kann ein Satz einige Minuten dauern
+      const r = await this.httpPost(port, '/tts', this.token, { text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined },
+        timeoutMs || (/cuda/.test(this.device) ? 120000 : 600000));
+      if (r.status !== 200) throw new Error('Lokale KI-Stimme: ' + (r.body.toString('utf8').slice(0, 200) || 'HTTP ' + r.status));
+      const wav = r.body;
       if (wav.length < 100) throw new Error('Lokale KI-Stimme hat kein Audio geliefert');
       return wav;
     });
@@ -243,4 +255,4 @@ class OmniVoice {
 const REF_TEXT = 'Okay, kurzer Recap: Du bist Support mit Malphite. Die Botlane ist gegen Caitlyn und Lux schwer, wart auf den Jungler für den Gank, hol dir Control Wards und spar dir dein Ultimate für den Teamfight am Drachen. Nach dem Recall roamst du Mid, aber pass auf Skillshots auf.';
 const BUNDLED = Object.freeze({ jarvis: 'jarvis.wav', alya: 'alya.wav' });
 
-module.exports = { OmniVoice, UV, PKG, STEPS, REF_TEXT, BUNDLED };
+module.exports = { OmniVoice, UV, PKG, STEPS, REF_TEXT, BUNDLED, localPost };

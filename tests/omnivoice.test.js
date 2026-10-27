@@ -33,13 +33,13 @@ test('OmniVoice: install only via uv with pinned checksum, CUDA PyTorch on NVIDI
   const posts = [];
   const fetch = async (url, init) => {
     if (url === uv.url) return new Response(zip);
-    if (String(url).startsWith('http://127.0.0.1:4567/tts')) { posts.push({ headers: init.headers, body: JSON.parse(init.body) }); return new Response(wav); }
     throw new Error('offline ' + url);
   };
   const { core, cleanup } = tempCore({ fetch });
   try {
     const calls = [];
-    const o = new OmniVoice(core, { run: fakeRun(calls), platform: 'win32', uv });
+    const httpPost = async (port, p, token, json) => { assert.equal(port, 4567); assert.equal(p, '/tts'); posts.push({ headers: { 'X-Token': token }, body: json }); return { status: 200, body: wav }; };
+    const o = new OmniVoice(core, { run: fakeRun(calls), platform: 'win32', uv, httpPost });
     core.omnivoice = o;
     assert.equal(o.allowed(), false, 'nicht installiert');
     o.install();
@@ -88,4 +88,18 @@ test('OmniVoice: wrong checksum aborts; other platforms are not offered; pronunc
     assert.throws(() => new OmniVoice(core, { platform: 'linux' }).install(), /nur unter Windows/);
     assert.equal(localPronunciation('Dein Ultimate im Jungle, Recap'), 'Dein Altimet im Dschungel, Riekäp');
   } finally { cleanup(); }
+});
+
+test('OmniVoice: local HTTP call has no 5-minute fetch limit, sends the token, honours its own timeout', async () => {
+  const http = require('node:http');
+  const { localPost } = require('../src/main/voice/omnivoice');
+  const srv = http.createServer((req, res) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => { if (JSON.parse(b).slow) return; setTimeout(() => { res.writeHead(req.headers['x-token'] === 'T' ? 200 : 403); res.end(req.headers['x-token'] === 'T' ? 'RIFFdata' : 'no'); }, 30); }); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const { port } = srv.address();
+    const ok = await localPost(port, '/tts', 'T', { text: 'x' }, 5000);
+    assert.equal(ok.status, 200); assert.equal(ok.body.toString(), 'RIFFdata');
+    assert.equal((await localPost(port, '/tts', 'falsch', { text: 'x' }, 5000)).status, 403);
+    await assert.rejects(localPost(port, '/tts', 'T', { slow: true }, 100), /Zeitlimit/);
+  } finally { srv.closeAllConnections?.(); srv.close(); }
 });
