@@ -72,7 +72,7 @@ const SCHEMA = {
         voice: { type: 'string', maxLength: 80 }, style: { type: 'string', maxLength: 30 },
         speaker: { type: 'integer', minimum: 0, maximum: 500 }, speed: { type: 'number', minimum: 0.6, maximum: 1.6 }, pitch: { type: 'number', minimum: 0.8, maximum: 1.25 },
         volume: { type: 'number', minimum: 0, maximum: 1.5 }, short: { type: 'boolean' }, windowsVoice: { type: 'string', maxLength: 200 }, piperExecutable: { type: 'string', maxLength: 1000 },
-        omni: { type: 'object', properties: { enabled: { type: 'boolean' }, preload: { type: 'boolean' },
+        omni: { type: 'object', properties: { enabled: { type: 'boolean' }, preload: { type: 'boolean' }, quality: { type: 'string', enum: ['turbo', 'fast', 'best'] },
           voices: { type: 'object', properties: { standard: { type: 'string', maxLength: 200 }, jarvis: { type: 'string', maxLength: 200 }, alya: { type: 'string', maxLength: 200 } } },
           seeds: { type: 'object', properties: { standard: { type: 'integer', minimum: 1, maximum: 1000000 }, jarvis: { type: 'integer', minimum: 1, maximum: 1000000 }, alya: { type: 'integer', minimum: 1, maximum: 1000000 } } } } } } } } },
     // Google
@@ -152,7 +152,7 @@ const DEFAULTS = {
   cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, features: { chat: true, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space',
-    tts: { engine: 'auto', preset: 'standard', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '', omni: { enabled: true, preload: true, voices: {}, seeds: {} } },
+    tts: { engine: 'auto', preset: 'standard', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '', omni: { enabled: true, preload: true, quality: 'fast', voices: {}, seeds: {} } },
     whisperExecutable: '', whisperModel: '', whisperThreads: 4, speakVoiceReplies: true },
   google: { clientId: '', calendarSync: true, exportLocalToGoogle: false, syncIntervalMinutes: 15, defaultCalendarId: '', account: '', exportCalendars: {}, exportKinds: { termine: true, geburtstage: true, todos: true, erinnerungen: true, uni: true } },
   study: { folder: '', source: 'drive', driveFolder: 'Goodnotes', driveFolderId: '', enabled: false, formats: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'], visionForHandwriting: 'on-demand', visionDailyLimit: 40, preferredTime: '16:00', maxSessionsPerDay: 2, linkLectures: true },

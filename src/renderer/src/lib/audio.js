@@ -19,6 +19,7 @@ class AudioEngine {
     // Lokale Aufnahme: automatisch beenden nach Sprechpause (für Wake-Word/Freihand beim Gaming)
     this.localHeard = 0; this.localSilentMs = 0;
     on('tts:speak', ({ text, private: priv }) => this.speakLocal(text, { private: !!priv }));
+    on('tts:stream', (d) => this.speakStream(d));
     this.tts = { gen: 0, ctx: null, src: null, speaking: false, warned: false };
   }
 
@@ -252,6 +253,55 @@ class AudioEngine {
     } finally { if (gen === this.tts.gen) { this.tts.speaking = false; setState({ outLevel: 0 }); } }
   }
 
+  /**
+   * Satzweises Vorlesen, während die Antwort noch entsteht (Ereignis „tts:stream“ je Satzblock).
+   * Der nächste Block wird schon berechnet, während der vorige läuft.
+   */
+  speakStream({ id, text, done }) {
+    if (this.mode.local || id === this.stoppedStream) return; // abgebrochen → Rest nicht mehr vorlesen
+    if (!this.sq || this.sq.id !== id) {
+      this.stopSpeech();
+      this.sq = { id, gen: this.tts.gen, queue: [], ended: false, chain: Promise.resolve(), wake: null, windows: '' };
+      this.runStream(this.sq);
+    }
+    const q = this.sq;
+    q.chain = q.chain.then(async () => {
+      if (q.gen !== this.tts.gen) return;
+      if (text) {
+        let parts;
+        try { parts = (await rpc('tts.prepare', { text, full: true })).parts; } catch { parts = [text]; }
+        q.queue.push(...parts.filter(Boolean));
+      }
+      if (done) q.ended = true;
+      q.wake?.(); q.wake = null;
+    });
+  }
+
+  async runStream(q) {
+    const st = getState().settings?.voice?.tts || {};
+    const next = () => new Promise((res) => { if (q.queue.length || q.ended || q.gen !== this.tts.gen) res(); else q.wake = res; });
+    if (st.engine === 'windows') { // Windows-Stimme: am Stück, wenn alles da ist
+      while (!q.ended && q.gen === this.tts.gen) await next();
+      if (q.gen === this.tts.gen && q.queue.length) this.windowsSpeak(q.queue.join(' '), await this.withPreset(st));
+      return;
+    }
+    const synth = (t) => { const p = rpc('tts.synthesize', { text: t }); p.catch(() => {}); return p; };
+    this.tts.speaking = true;
+    let pending = null;
+    try {
+      for (;;) {
+        if (q.gen !== this.tts.gen) return;
+        if (!pending) { await next(); if (q.gen !== this.tts.gen) return; if (!q.queue.length) break; pending = synth(q.queue.shift()); }
+        const cur = await pending; pending = null;
+        if (q.gen !== this.tts.gen) return;
+        if (q.queue.length) pending = synth(q.queue.shift()); // schon mal den nächsten berechnen
+        await this.playWav(cur.audio, cur.pitch, st.volume ?? 1, q.gen);
+      }
+    } catch (e) {
+      if (q.gen === this.tts.gen && !this.tts.warned) { this.tts.warned = true; toast('Stimme nicht verfügbar (' + (e.message || e) + ').', 'error'); }
+    } finally { if (q.gen === this.tts.gen) { this.tts.speaking = false; setState({ outLevel: 0 }); } if (this.sq === q) this.sq = null; }
+  }
+
   async playWav(b64, pitch = 1, volume = 1, gen) {
     if (!this.tts.ctx || this.tts.ctx.state === 'closed') {
       this.tts.ctx = new AudioContext({ latencyHint: 'playback' });
@@ -277,6 +327,7 @@ class AudioEngine {
 
   stopSpeech() {
     this.tts.gen++;
+    if (this.sq) { this.sq.wake?.(); this.stoppedStream = this.sq.id; this.sq = null; }
     try { this.tts.src?.stop(); } catch { /* ignore */ }
     this.tts.src = null; this.tts.speaking = false;
     try { speechSynthesis.cancel(); } catch { /* ignore */ }

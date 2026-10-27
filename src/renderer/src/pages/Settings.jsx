@@ -94,6 +94,11 @@ function VoiceSettings({ s }) {
             </div>
           ))}
           <div class="tiny muted">{OMNI_ATTR}. Leer = mitgelieferte Stimme.</div>
+          <Field label="Tempo / Qualität" hint="Turbo antwortet am schnellsten, Beste klingt am saubersten (ca. doppelt so langsam wie Schnell)">
+            <select class="inp" value={om.quality || 'fast'} onChange={(e) => setOmni({ quality: e.currentTarget.value })}>
+              <option value="turbo">Turbo</option><option value="fast">Schnell (empfohlen)</option><option value="best">Beste</option>
+            </select>
+          </Field>
           <Field label="Beim Start vorladen" hint="erster Satz kommt sofort, belegt dafür dauerhaft Grafikspeicher"><Toggle checked={om.preload !== false} onChange={(v) => setOmni({ preload: v })} /></Field>
           <div class="row gap-s"><button class="btn xs ghost" onClick={() => guard(() => rpc('omnivoice.restart'), 'Neu gestartet')}>KI-Stimme neu starten</button><span class="grow" /><button class="btn xs ghost" onClick={async () => { if (await ask('KI-Stimme vollständig entfernen (gibt ca. 6 GB frei)?', '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) await guard(() => rpc('omnivoice.remove'), 'Entfernt'); }}><Trash2 size={12} />KI-Stimme entfernen</button></div>
           <div class="hr" />

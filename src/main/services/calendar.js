@@ -402,7 +402,10 @@ class Calendar {
     }
     result.createdCalendars = created;
     result.at = nowIso();
-    if (result.failed) throw Object.assign(new Error('Google-Kalender-Übertragung: ' + result.failed + ' Eintrag/Einträge nicht übertragen'), { result });
+    if (result.failed) {
+      const top = Object.entries(result.reasons || {}).sort((a, b) => b[1] - a[1])[0];
+      throw Object.assign(new Error('Google-Kalender-Übertragung: ' + result.failed + ' Eintrag/Einträge nicht übertragen' + (top ? ` (Grund: ${top[0]})` : '')), { result });
+    }
     return result;
   }
 

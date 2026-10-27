@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 // Source of truth: JARVIS for local events, Campus Dual/ICS for subscribed events.
 // Google copies are tagged. Google edits to those copies are never silently overwritten.
 const MAX_EVENTS = 3000;
+const log = require('../core/logger').scope('calendar-export');
+const PACING = { ms: 120 }; // Abstand zwischen Schreibzugriffen (Google: Begrenzung pro Sekunde); in Tests 0
 const TASK_SOURCE = 'task';
 const HASH = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const httpStatus = (e) => Number(e?.status || e?.code) || (/(\b404\b|\b409\b)/.test(String(e?.message)) ? Number(String(e.message).match(/\b(404|409)\b/)[1]) : 0);
@@ -89,14 +91,18 @@ async function mirrorCalendar({ db, google, calendarId, items, from, to, pruneAl
   const remote = await google.listMirroredEvents(calendarId);
   if (!Array.isArray(remote)) throw new Error('Google-Antwort unvollständig');
   const mirrors = new Map(remote.filter(owned).map((ev) => [ev.id, ev]));
-  const result = { created: 0, updated: 0, unchanged: 0, deleted: 0, conflicts: 0, failed: 0, retained: 0 };
+  const result = { created: 0, updated: 0, unchanged: 0, deleted: 0, conflicts: 0, failed: 0, retained: 0, reasons: {} };
+  // Gründe sammeln (z. B. „403 Calendar usage limits exceeded“), damit ein Fehler nicht stumm bleibt
+  const fail = (e) => { result.failed++; const k = `${httpStatus(e) || ''} ${String(e?.message || e).slice(0, 140)}`.trim(); result.reasons[k] = (result.reasons[k] || 0) + 1; if (result.failed <= 3) log.warn('Google-Kalender: Eintrag nicht übertragen – ' + k); };
+  // Google begrenzt Schreibzugriffe pro Sekunde – bei vielen Einträgen kurz takten
+  const pace = items.size > 10 ? () => new Promise((r) => setTimeout(r, PACING.ms)) : async () => {};
 
   for (const [eventId, body] of items) {
     const tags = body.extendedProperties.private;
     let existing = mirrors.get(eventId);
     try {
       if (!existing) {
-        try { await google.insertEvent(calendarId, body); result.created++; continue; }
+        try { await pace(); await google.insertEvent(calendarId, body); result.created++; continue; }
         catch (e) {
           if (httpStatus(e) !== 409) throw e;
           // A concurrent writer or ID collision: verify ownership before patch.
@@ -110,9 +116,9 @@ async function mirrorCalendar({ db, google, calendarId, items, from, to, pruneAl
       if (contentHash(existing) === tags.jarvisFingerprint) {
         result.unchanged++; continue;
       }
-      await google.patchEvent(calendarId, eventId, body);
+      await pace(); await google.patchEvent(calendarId, eventId, body);
       result.updated++;
-    } catch (e) { result.failed++; }
+    } catch (e) { fail(e); }
   }
 
   const now = Date.now();
@@ -129,9 +135,9 @@ async function mirrorCalendar({ db, google, calendarId, items, from, to, pruneAl
       result.retained++; continue;
     }
     try {
-      await google.deleteEvent(calendarId, eventId);
+      await pace(); await google.deleteEvent(calendarId, eventId);
       result.deleted++;
-    } catch (e) { if (httpStatus(e) === 404) result.deleted++; else result.failed++; }
+    } catch (e) { if (httpStatus(e) === 404) result.deleted++; else fail(e); }
   }
   return result;
 }
@@ -272,7 +278,7 @@ async function exportByKind({ db, google, targets, kinds = KIND_IDS, from, to })
   if (!google?.isConnected()) throw new Error('Google Kalender ist nicht verbunden');
   if (!(Date.parse(from) < Date.parse(to))) throw new Error('Ungültiger Zeitraum');
   const all = collectByKind(db, from, to);
-  const total = emptyResult(); const byKind = {};
+  const total = emptyResult(); const byKind = {}; const reasons = {};
   for (const k of KIND_IDS) {
     const calendarId = targets?.[k];
     if (!calendarId) continue;
@@ -280,8 +286,9 @@ async function exportByKind({ db, google, targets, kinds = KIND_IDS, from, to })
     const r = await mirrorCalendar({ db, google, calendarId, items: enabled ? all.get(k) : new Map(), from, to, pruneAll: !enabled });
     byKind[k] = { ...r, entries: enabled ? all.get(k).size : 0 };
     for (const key of Object.keys(total)) total[key] += r[key];
+    for (const [why, n] of Object.entries(r.reasons || {})) reasons[why] = (reasons[why] || 0) + n;
   }
-  return { ...total, byKind };
+  return { ...total, byKind, reasons };
 }
 
 /**
@@ -299,5 +306,5 @@ async function cleanupLegacy({ db, google, calendarIds }) {
 
 module.exports = {
   eligible, googleId, contentHash, payload, owned, remoteUnchanged, freshSource, exportToGoogle, mirrorCalendar,
-  KINDS, KIND_IDS, eventKind, taskKind, taskEligible, taskPayload, collectByKind, ensureCalendars, exportByKind, cleanupLegacy,
+  KINDS, KIND_IDS, PACING, eventKind, taskKind, taskEligible, taskPayload, collectByKind, ensureCalendars, exportByKind, cleanupLegacy,
 };

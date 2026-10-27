@@ -231,6 +231,10 @@ class Orchestrator {
     const { stable, context } = isPrivateConv ? this.systemSplit(channel, text) : { stable: privacy.CLOUD_SYSTEM, context: '' };
     const lastUser = [...contents].reverse().find((c) => c.role === 'user');
     if (lastUser) lastUser.parts = [{ text: context }, ...lastUser.parts, ...(hint ? [{ text: hint }] : [])]; else contents.push({ role: 'user', parts: [{ text: context }] });
+    // Vorlesen startet schon beim ersten fertigen Satz (statt erst nach der ganzen Antwort)
+    const vs0 = this.s.settings.get('voice') || {};
+    const speak = (channel === 'voice' && vs0.speakVoiceReplies !== false) || (!isPrivateConv && vs0.speakReplies && channel === 'text');
+    const talk = speak ? new (require('../voice/sentence-stream').SentenceStream)({ id: msg.id, short: vs0.tts?.short !== false, emit: (e) => bus.emit('tts:stream', { ...e, private: isPrivateConv }) }) : null;
     const cards = []; const sources = []; const used = []; let full = routed.note ? `_(Lokal beantwortet – ${routed.note}.)_\n\n` : '';
     if (routed.note) bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: full });
     bus.emit('orb:state', { state: 'thinking' });
@@ -241,7 +245,7 @@ class Orchestrator {
         const r = await provider.stepStream({
           model, system: stable, contents, tools: [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => allowed.has(t.name)) }], signal: ac.signal, feature: images.length ? 'vision' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
           onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),
-          onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); },
+          onText: (d) => { full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); talk?.push(d); },
         });
         contents.push({ role: 'model', parts: r.parts.length ? r.parts : [{ text: r.text || '' }] });
         if (!r.functionCalls.length) break;
@@ -264,14 +268,13 @@ class Orchestrator {
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       // Brain selbstständig erweitern (Hintergrund; privat → lokales Modell, sonst Gemini-Sparmodell)
       if (!routed.note) setImmediate(() => this.s.learner?.learn({ cid, messageId: msg.id, userText: text, answer: final.content, scope: isLocal && scope !== 'private' ? 'private' : scope, sources, usedRemember: used.includes('remember') }).catch(() => {}));
-      const vs = this.s.settings.get('voice');
-      // Sprachausgabe lokal (Windows-Stimmen, keine Cloud): Sprach-Eingaben werden standardmäßig beantwortet.
-      if ((channel === 'voice' && vs.speakVoiceReplies !== false) || (!isPrivateConv && vs.speakReplies && channel === 'text')) bus.emit('tts:speak', { text: String(final.content || '').slice(0, 8000), private: isPrivateConv }); // Sprechfassung + Kürzung macht die Sprachausgabe
+      talk?.end(); // Rest der Antwort vorlesen (der Anfang läuft schon)
       return final;
     } catch (e) {
       // Lösungs-Marker → Markdown-Link (Chat rendert Markdown)
       const err = friendlyError(e).replace(/\s*⟨fix:([^|⟩]+)\|([^⟩]+)⟩/, (_, label, target) => (target.startsWith('https://') ? ` → [${label.trim()}](${target.trim()})` : ` → ${label.trim()}`));
       log.warn('Chat fehlgeschlagen', e);
+      talk?.end();
       conversations.update(msg.id, { content: (full ? full + '\n\n' : '') + `⚠️ ${err}`, meta: { streaming: false, error: true, cards, sources } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: err });
       return conversations.messages(cid, { limit: 1 })[0];

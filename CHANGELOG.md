@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.1.3 – Schnellere KI-Stimme, Sparmodell-Ausfall, Google-Kalender
+
+- **KI-Stimme deutlich schneller:** OmniVoice rechnet standardmäßig mit halb so vielen Schritten (rund doppelt so schnell, kaum hörbarer Unterschied) und wärmt sich beim Start auf. Unter Stimme → Erweitert → „Tempo / Qualität“ wählbar: Turbo, Schnell, Beste.
+- **Vorlesen beginnt beim ersten Satz:** JARVIS wartet nicht mehr, bis die ganze Antwort fertig geschrieben ist. Der erste Satz wird sofort gesprochen, während der nächste Abschnitt schon im Hintergrund berechnet wird.
+- **Gaming-Chats und Tipps gingen nicht mehr:** Google hat gemini-2.5-flash-lite für neue Nutzer abgeschaltet (Fehler 404). JARVIS nimmt jetzt zuerst gemini-3.1-flash-lite und merkt sich abgeschaltete Modelle: Meldet Google „no longer available“, wird derselbe Aufruf sofort mit dem nächsten passenden Modell wiederholt – auch bei künftigen Abschaltungen.
+- **Google Kalender – „X Einträge nicht übertragen“:** Google begrenzt, wie schnell Termine geschrieben werden dürfen, und meldet das als Fehler 403. JARVIS schreibt jetzt etwas langsamer, wartet bei „zu viele Anfragen“ und versucht es erneut. Bleibt doch etwas hängen, steht der Grund jetzt in der Meldung statt nur der Anzahl.
+
 ## 5.1.2 – Drive-Backup wieder da (verschlüsselt)
 
 - **Sicherung in Google Drive funktioniert wieder:** Seit der Umstellung auf private Daten war das Drive-Backup gesperrt – der Knopf tat stillschweigend nichts. Jetzt landen drei getrennte Dateien in Drive – Einstellungen (*.jarvis-settings), Schlüssel (*.jarvis-keys) und die komplette Sicherung (*.jarvisbak) –, alle vor dem Hochladen mit deinem Backup-Passwort verschlüsselt; Google sieht nur unlesbare Daten. Je Art werden die neuesten behalten. Einstellungen und Schlüssel lassen sich auch einzeln zurückholen („Einstellungen importieren…“, „Schlüssel importieren…“). Ohne Backup-Passwort sagt JARVIS klar, dass du erst eins festlegen musst. Wiederherstellen wie gewohnt über „Wiederherstellen…“ (fragt bei Bedarf nach dem Passwort).

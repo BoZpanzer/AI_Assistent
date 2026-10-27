@@ -68,7 +68,7 @@ class Speech {
         const said = localPronunciation(text);
         const custom = (c.omni?.voices || {})[c.preset];
         const ref = `${c.preset}-${c.omniSeed}-${crypto.createHash('sha1').update(c.omniInstruct).digest('hex').slice(0, 8)}`;
-        const r = await this.cached(['o', ref, c.speed ?? 1, said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref, seed: c.omniSeed, refAudio: this.s.omnivoice.bundledRef(c.preset, c.omniSeed, custom), refText: require('./omnivoice').REF_TEXT, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
+        const r = await this.cached(['o', ref, c.speed ?? 1, c.omni?.quality || 'fast', said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref, seed: c.omniSeed, refAudio: this.s.omnivoice.bundledRef(c.preset, c.omniSeed, custom), refText: require('./omnivoice').REF_TEXT, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
         return { ...r, pitch: 1, engine: 'omnivoice', preset: c.preset };
       } catch (e) { log.info('Lokale KI-Stimme nicht genutzt: ' + e.message); }
     }

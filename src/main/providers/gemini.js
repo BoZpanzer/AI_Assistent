@@ -13,9 +13,15 @@ const ROLE_PREFS = {
   vision: [/^gemini-3\.8-flash$/, /^gemini-3\.\d+-flash$/, /^gemini-flash-latest$/, /^gemini-2\.5-flash$/],
   embedding: [/^gemini-embedding-2$/, /^gemini-embedding-\d/, /^gemini-embedding/, /^text-embedding-004$/],
   // Sparmodell für kurze, strukturierte Aufgaben (Tipps, Karten, Empfehlungen): ältestes/günstigstes Flash-Lite zuerst
-  lite: [/^gemini-2\.5-flash-lite$/, /^gemini-3\.1-flash-lite$/, /^gemini-3\.5-flash-lite$/, /^gemini-flash-lite-latest$/, /flash-lite(?!.*(image|tts|live|audio|preview))/],
+  lite: [/^gemini-3\.1-flash-lite$/, /^gemini-2\.5-flash-lite$/, /^gemini-3\.5-flash-lite$/, /^gemini-flash-lite-latest$/, /flash-lite(?!.*(image|tts|live|audio|preview))/],
   // Sprachausgabe (Text → Sprache): günstigstes TTS-Modell zuerst
 };
+
+/** Google meldet ein abgeschaltetes Modell mit 404 („no longer available“ / „not found“). */
+function isRetired(e) {
+  const t = String(e?.message || '') + ' ' + String(e?.status || '') + ' ' + String(e?.code || '');
+  return /\b404\b|NOT_FOUND/.test(t) && /no longer available|not found for API version|is not found|not supported for generateContent|models\/[\w.-]+ is not/i.test(t);
+}
 
 function pickModel(role, available) {
   const names = available.map((m) => (typeof m === 'string' ? m : m.name)).map((n) => n.replace(/^models\//, ''));
@@ -176,9 +182,24 @@ class Gemini {
     return Math.min(16384, requested || (effort === 'high' ? base * 2 : base));
   }
 
-  model(role) {
+  /** Von Google abgeschaltete Modelle (404 „no longer available“) – werden bei der Auswahl übersprungen. */
+  retired() { try { return new Set(JSON.parse(this.db?.get("SELECT value FROM meta WHERE key='gemini:retired'")?.value || '[]')); } catch { return new Set(); } }
+  /** Modell als abgeschaltet merken; gibt das Ersatzmodell derselben Art zurück. */
+  retire(model) {
+    const name = String(model || '').replace(/^models\//, '');
+    if (!name) return '';
+    const set = this.retired(); set.add(name);
+    try { this.db?.run("INSERT OR REPLACE INTO meta(key,value) VALUES('gemini:retired',?)", JSON.stringify([...set].slice(-50))); } catch { /* egal */ }
     const m = this.settings.get('models') || {};
-    const all = this.settings.get('availableModels') || [];
+    const clear = Object.fromEntries(Object.entries(m).filter(([, v]) => v === name).map(([k]) => [k, '']));
+    if (Object.keys(clear).length) this.settings.update({ models: clear });
+    return this.model(/lite/.test(name) ? 'lite' : /pro/.test(name) ? 'reasoning' : 'fast');
+  }
+
+  model(role) {
+    const retired = this.retired();
+    const m = Object.fromEntries(Object.entries(this.settings.get('models') || {}).filter(([, v]) => !retired.has(v)));
+    const all = (this.settings.get('availableModels') || []).filter((n) => !retired.has(String(n).replace(/^models\//, '')));
     const anyFlash = all.map((n) => String(n).replace(/^models\//, '')).find((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|lite|omni)/.test(n));
     // Sparmodus: kein automatischer Wechsel zum teuren Pro-Modell; nur „Immer maximal“ nutzt es.
     if (role === 'reasoning' && (this.settings.get('aiCostMode') !== 'max' || this.guard?.braking())) return this.model('fast');
@@ -416,9 +437,15 @@ class Gemini {
    * Everything else (invalid request, key, daily quota, payment) fails immediately.
    */
   async withRetry(model, fn, { sleep = this.sleep || ((ms) => new Promise((res) => setTimeout(res, ms))), onWait } = {}) {
+    let swapped = false;
     for (let attempt = 0; ; attempt++) {
       try { return await fn(model); } catch (e) {
         if (/aborted|AbortError|TimeoutError/i.test(String(e?.name) + String(e?.message))) throw e;
+        // Modell von Google abgeschaltet („no longer available“) → merken und einmal mit dem nächsten passenden Modell
+        if (!swapped && isRetired(e)) {
+          const next = this.retire(model);
+          if (next && next !== model) { log.warn(`Modell ${model} nicht mehr verfügbar – weiter mit ${next}`); model = next; swapped = true; attempt--; continue; }
+        }
         if (attempt === 0 && isOverloaded(e)) { await sleep(1500); continue; }
         if (attempt === 0 && isQuota(e)) {
           const q = quotaInfo(e); const wait = retryDelayMs(e);
@@ -513,5 +540,5 @@ function friendlyError(e) {
   return innerMessage(msg.replace(fix, '')).slice(0, 360) + fix;
 }
 
-module.exports = { Gemini, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo, CloudBlocked, FEATURES, estimateTokens, isClientError, cloudScope, BudgetError };
+module.exports = { Gemini, isRetired, pickModel, friendlyError, ROLE_PREFS, isQuota, isOverloaded, isPayment, retryDelayMs, quotaInfo, CloudBlocked, FEATURES, estimateTokens, isClientError, cloudScope, BudgetError };
 
