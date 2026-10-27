@@ -500,3 +500,4 @@ a:hover { text-decoration: underline; }
 .bc-name { font-size: 12px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bc-sub { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .bucket-row { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.scope-tag { opacity: .8; }

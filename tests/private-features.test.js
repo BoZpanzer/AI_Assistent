@@ -10,10 +10,10 @@ const response = (text = 'Lokal erledigt') => ({ text, parts: [{ text }], functi
 const r = (v) => Math.round(v * 100) / 100;
 const ym = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
 
-test('Private default, local without API key, no cloud fallback on local failure', async () => {
+test('Private messages: local without API key, no cloud fallback on local failure (also on retry)', async () => {
   const { core: s, fake, cleanup } = tempCore();
   try {
-    const c = s.conversations.create(); assert.equal(c.privacy, 'private');
+    const c = s.conversations.create(); assert.equal(c.privacy, 'auto');
     s.localLLM.stepStream = async (o) => { o.onText('nur lokal'); return response('nur lokal'); };
     const m = await s.orchestrator.chat({ conversationId: c.id, text: 'Mein Gehalt' });
     assert.equal(m.content, 'nur lokal'); assert.equal(fake.requests.length, 0);
@@ -63,20 +63,32 @@ test('Buckets: book expenses into a bucket (partial, overspend), chart data, rem
   } finally { cleanup(); }
 });
 
-test('Cloud opt-in never includes personal primer; private message permanently taints whole conversation', async () => {
+test('Auto privacy per message: public → Gemini without personal primer or private history, private → local, switching back and forth', async () => {
   const { core: s, fake, cleanup } = tempCore();
   try {
     s.secrets.set('gemini.api_key', 'test'); s.settings.update({ models: { fast: 'gemini-3.8-flash' } });
     s.brain.add({ content: 'SECRET_FAMILY', domain: 'personal', pinned: true, tags: ['Private'] });
-    const c = s.conversations.create('Gaming', 'gaming');
-    await s.orchestrator.chat({ conversationId: c.id, text: 'Erkläre Tarkov' });
+    const c = s.conversations.create();
+    const a = await s.orchestrator.chat({ conversationId: c.id, text: 'Erkläre Tarkov' });
     assert.equal(fake.requests.length, 1); assert.ok(!JSON.stringify(fake.requests).includes('SECRET_FAMILY'));
-    s.localLLM.stepStream = async (o) => { o.onText('local'); return response('local'); };
-    await s.orchestrator.chat({ conversationId: c.id, text: '#Private mein besonderer Inhalt' });
-    await s.orchestrator.chat({ conversationId: c.id, text: 'Weiter mit Tarkov' });
-    assert.equal(s.conversations.get(c.id).privacy, 'private'); assert.equal(fake.requests.length, 1);
-    const denied = await s.orchestrator.execute('finance_overview', {}, { conversationId: s.conversations.create('Uni', 'study').id });
-    assert.match(denied.response.error, /privates/);
+    assert.equal(a.meta.scope, 'gaming');
+    let local = 0; s.localLLM.stepStream = async (o) => { local++; o.onText('local'); return response('local'); };
+    const p = await s.orchestrator.chat({ conversationId: c.id, text: '#Private mein besonderer Inhalt MEINGEHEIMNIS' });
+    assert.equal(p.meta.scope, 'private'); assert.equal(local, 1); assert.equal(fake.requests.length, 1);
+    const f = await s.orchestrator.chat({ conversationId: c.id, text: 'und morgen?' });
+    assert.equal(f.meta.scope, 'private', 'kurze Folgefrage bleibt privat'); assert.equal(local, 2);
+    await s.orchestrator.chat({ conversationId: c.id, text: 'Welche Munition für Tarkov-Raids?' });
+    assert.equal(fake.requests.length, 2, 'öffentliches Thema → wieder Gemini');
+    const sent = JSON.stringify(fake.requests[1]);
+    assert.ok(sent.includes('Erkläre Tarkov'), 'öffentlicher Verlauf bleibt'); assert.ok(!sent.includes('MEINGEHEIMNIS'), 'private Nachrichten nie an Gemini');
+    assert.equal(s.conversations.get(c.id).privacy, 'auto', 'Gespräch wird nicht dauerhaft umgestellt');
+    for (const t of ['Wann ist meine Klausur?', 'Erinner mich morgen an Mathe', 'Meine Miete ist zu hoch', 'Trag Training am Freitag ein']) assert.equal(s.orchestrator.classify(c.id, t), 'private', t);
+    for (const [t, sc] of [['Wie baue ich Malphite Support?', 'gaming'], ['Erklär mir Rekursion', 'study'], ['Wie funktioniert ein Elektroauto? Erzähl ausführlich über Batterien, Reichweite und Laden im Alltag, bitte mit Beispielen.', 'general']]) assert.equal(s.orchestrator.classify(c.id, t), sc, t);
+    const denied = await s.orchestrator.execute('finance_overview', {}, { conversationId: c.id, scope: 'study' });
+    assert.match(denied.response.error, /privat/);
+    // alte private Gespräche bleiben komplett lokal
+    const old = s.conversations.create('Alt', 'private');
+    assert.equal(s.orchestrator.classify(old.id, 'Erkläre Tarkov'), 'private');
   } finally { cleanup(); }
 });
 
