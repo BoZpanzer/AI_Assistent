@@ -37,4 +37,24 @@ function open(bundle, password) {
   return JSON.parse(txt);
 }
 
-module.exports = { seal, open, checkPassword, EXCLUDE };
+/** Ganze Sicherung (Datei-Inhalt) mit dem Backup-Passwort verschlüsseln: „JARVISBAK1“ + Salz + IV + Tag + Daten. */
+const MAGIC = Buffer.from('JARVISBAK1');
+function sealBuffer(buf, password) {
+  checkPassword(password);
+  const salt = crypto.randomBytes(16); const iv = crypto.randomBytes(12);
+  const key = crypto.scryptSync(password, salt, 32, KDF);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([c.update(buf), c.final()]);
+  return Buffer.concat([MAGIC, salt, iv, c.getAuthTag(), enc]);
+}
+const isSealed = (buf) => Buffer.isBuffer(buf) && buf.length > MAGIC.length + 44 && buf.subarray(0, MAGIC.length).equals(MAGIC);
+function openBuffer(buf, password) {
+  if (!isSealed(buf)) throw new Error('Keine verschlüsselte JARVIS-Sicherung');
+  if (typeof password !== 'string' || !password) throw new Error('Passwort fehlt');
+  let o = MAGIC.length; const salt = buf.subarray(o, o += 16); const iv = buf.subarray(o, o += 12); const tag = buf.subarray(o, o += 16);
+  const key = crypto.scryptSync(password, salt, 32, KDF);
+  const d = crypto.createDecipheriv('aes-256-gcm', key, iv); d.setAuthTag(tag);
+  try { return Buffer.concat([d.update(buf.subarray(o)), d.final()]); } catch { throw new Error('Falsches Backup-Passwort (oder Datei beschädigt).'); }
+}
+
+module.exports = { seal, open, checkPassword, EXCLUDE, sealBuffer, openBuffer, isSealed };

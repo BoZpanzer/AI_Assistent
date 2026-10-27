@@ -764,7 +764,7 @@ function Data() {
         <button class="btn xs" onClick={async () => {
           let r = await guard(() => rpc('system.restore', {}));
           if (r?.needsPassword) {
-            const pw = await ask(`Die Sicherung enthält ${r.keysInBackup} Schlüssel (passwortgeschützt). Backup-Passwort eingeben, um sie zu übernehmen:`, '', { password: true });
+            const pw = await ask(r.encrypted ? 'Die Sicherung ist verschlüsselt (Drive-Backup). Backup-Passwort eingeben:' : `Die Sicherung enthält ${r.keysInBackup} Schlüssel (passwortgeschützt). Backup-Passwort eingeben, um sie zu übernehmen:`, '', { password: true });
             if (!pw) return;
             r = await guard(() => rpc('system.restore', { file: r.file, password: pw }));
           }
@@ -805,7 +805,7 @@ function KeysBackupField() {
         <button class="btn xs" onClick={async () => { const p = st?.backupPassword ? '' : await ask('Passwort für die Schlüsseldatei (mind. 8 Zeichen):', '', { password: true }); if (p === null) return; const r = await guard(() => rpc('keys.export', { password: p })); if (r) toast(`${r.count} Schlüssel exportiert`); }}><Download size={12} />Schlüssel exportieren…</button>
         <button class="btn xs" onClick={async () => { const p = await ask('Passwort der Schlüsseldatei:', '', { password: true }); if (!p) return; const r = await guard(() => rpc('keys.import', { password: p })); if (r) { toast(`${r.count} Schlüssel übernommen`); setState({ secrets: r.secrets }); } }}><Upload size={12} />Schlüssel importieren…</button>
         <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('settings.export')); if (r) toast('Einstellungen exportiert'); }}><Download size={12} />Einstellungen exportieren…</button>
-        <button class="btn xs" onClick={async () => { const r = await guard(() => rpc('settings.import')); if (r) toast(`${r.count} Einstellungsbereiche übernommen`); }}><Upload size={12} />Einstellungen importieren…</button>
+        <button class="btn xs" onClick={async () => { let r = await guard(() => rpc('settings.import')); if (r?.needsPassword) { const pw = await ask('Die Einstellungen sind verschlüsselt (Drive-Backup). Backup-Passwort eingeben:', '', { password: true }); if (!pw) return; r = await guard(() => rpc('settings.import', { file: r.file, password: pw })); } if (r?.count) toast(`${r.count} Einstellungsbereiche übernommen`); }}><Upload size={12} />Einstellungen importieren…</button>
       </div>
     </div>
   );
@@ -816,16 +816,16 @@ function DriveBackupField({ s }) {
   const [busy, setBusy] = useState(false);
   const b = s.backupDrive || {};
   const connect = async () => { setBusy(true); const r = await guard(() => rpc('backup.driveConnect')); setBusy(false); if (r) { toast('Drive-Backup aktiv – erste Sicherung läuft'); setState({ google: await rpc('calendar.status') }); reload(); } };
-  const now = async () => { setBusy(true); const r = await guard(() => rpc('backup.driveRun')); setBusy(false); if (r?.ok) toast(`Gesichert: ${r.file}`); reload(); };
+  const now = async () => { setBusy(true); const r = await guard(() => rpc('backup.driveRun')); setBusy(false); if (r?.ok) toast(`Verschlüsselt in Drive gesichert: Einstellungen, Schlüssel und komplette Sicherung (${Math.round(r.size / 1024)} KB)`); else if (r?.skipped === 'running') toast('Sicherung läuft bereits.'); reload(); };
   return (
     <div class="mt" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-      <Field label="Automatisches Backup in Google Drive" hint="Täglich, nicht beim Zocken. JARVIS legt nur eigene Sicherungsdateien an und behält die neuesten."><Toggle checked={!!b.enabled && !!st?.granted} onChange={(v) => (v && !st?.granted ? connect() : upd({ backupDrive: { enabled: v } }))} /></Field>
+      <Field label="Automatisches Backup in Google Drive" hint="Täglich, nicht beim Zocken. Drei getrennte Dateien – Einstellungen, Schlüssel, komplette Sicherung –, alle vor dem Hochladen mit deinem Backup-Passwort verschlüsselt; Google sieht nur unlesbare Daten. JARVIS behält je Art die neuesten."><Toggle checked={!!b.enabled && !!st?.granted} onChange={(v) => (v && !st?.granted ? connect() : upd({ backupDrive: { enabled: v } }))} /></Field>
       <Field label="Drive-Ordner"><input class="inp" style={{ width: 180 }} value={b.folder || 'coding'} onChange={(e) => upd({ backupDrive: { folder: e.currentTarget.value.trim().replace(/^\/+|\/+$/g, '') || 'coding' } })} /></Field>
       <Field label="Anzahl behalten"><input class="inp" type="number" min="1" max="100" style={{ width: 90 }} value={b.keep || 14} onChange={(e) => upd({ backupDrive: { keep: Math.max(1, Math.min(100, Number(e.currentTarget.value) || 14)) } })} /></Field>
       <div class="row gap-s">
         {!st?.granted ? <button class="btn xs primary" disabled={busy} onClick={connect}>{busy ? <Spinner /> : <Link2 size={12} />}Drive-Backup aktivieren</button>
           : <button class="btn xs" disabled={busy || st?.running} onClick={now}>{busy || st?.running ? <Spinner /> : <Upload size={12} />}Jetzt in Drive sichern</button>}
-        <span class="tiny muted grow" style={{ color: st?.lastError ? 'var(--red)' : undefined }}>{st?.running ? 'Sichere …' : st?.lastError ? <FixText text={'Fehler: ' + st.lastError} /> : st?.lastSuccess ? `Zuletzt: ${ago(st.lastSuccess)} · ${st.lastFile} (${Math.round((st.lastSize || 0) / 1024)} KB) in „${st.folder}“` : st?.granted ? 'Noch keine Sicherung in Drive' : 'Braucht einmalig Schreibzugriff auf dein Google Drive (Google-Anmeldung)'}</span>
+        <span class="tiny muted grow" style={{ color: st?.lastError || (st?.granted && !st?.hasPassword) ? 'var(--red)' : undefined }}>{st?.running ? 'Sichere …' : st?.granted && !st?.hasPassword ? 'Erst ein Backup-Passwort festlegen (Einstellungen → Daten, Sicherung & Updates → Backup-Passwort) – damit wird verschlüsselt.' : st?.lastError ? <FixText text={'Fehler: ' + st.lastError} /> : st?.lastSuccess ? `Zuletzt: ${ago(st.lastSuccess)} · ${st.lastFiles?.length || 1} Dateien (${Math.round((st.lastSize || 0) / 1024)} KB) in „${st.folder}“` : st?.granted ? 'Noch keine Sicherung in Drive' : 'Braucht einmalig Schreibzugriff auf dein Google Drive (Google-Anmeldung)'}</span>
       </div>
     </div>
   );
