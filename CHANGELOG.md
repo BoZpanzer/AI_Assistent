@@ -2,6 +2,10 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.1.1 – Stimme an einem Ort
+
+- **Einstellungen → Stimme aufgeräumt:** Statt drei Bereichen (Stimme, Lokale KI-Stimme, Sprachausgabe) gibt es einen: Profil wählen mit Hörprobe, KI-Stimme installieren bzw. an/aus, Lautstärke und Tempo. Stimmen anpassen und die einfache Rückfall-Stimme stehen unter „Erweitert“. Der Bereich für das Mikrofon heißt jetzt „Spracheingabe“.
+
 ## 5.1.0 – Feste monatliche Buckets, Sprache komplett lokal
 
 - **Monatliche Buckets:** Beim Anlegen „jeden Monat (fester Bucket)“ einschalten – der Bucket (z. B. „Essen gehen 100 €“) wird ab diesem Monat automatisch jeden Monat neu angelegt und startet jeweils bei 0 €. Erkennbar am ↻. Ändern gilt wahlweise nur für diesen Monat oder auch für alle kommenden; einen Monat entfernen überspringt nur diesen; „Beenden“ stoppt ihn ab dem nächsten Monat. Geht auch per Chat („jeden Monat 50 € fürs Sparen“).

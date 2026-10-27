@@ -7,7 +7,7 @@
  */
 const PRESETS = Object.freeze({
   standard: {
-    label: 'Standard', description: 'Bisherige Stimme mit deinen Einstellungen aus „Sprachausgabe“.',
+    label: 'Standard', description: 'Neutrale, klare Stimme.',
     omni: { instruct: 'male, young adult, moderate pitch' },
   },
   jarvis: {
