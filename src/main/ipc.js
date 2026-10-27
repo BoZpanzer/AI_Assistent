@@ -136,7 +136,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'confirm.resolve': ({ token, approve }) => s.orchestrator.resolveConfirmation(token, !!approve),
     'confirm.list': () => s.confirmations.list(),
     'action.undo': ({ tool, args }) => s.orchestrator.runInternal(tool, args),
-    'dialog.pickFiles': ({ kind }) => pick({ properties: ['openFile', 'multiSelections'], filters: kind === 'image' ? [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] : kind === 'audio' ? [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }] : kind === 'backup' ? [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3'] }] : kind === 'whisper-cli' ? [{ name: 'Whisper executable', extensions: ['exe'] }] : kind === 'whisper-model' ? [{ name: 'Whisper GGML model', extensions: ['bin'] }] : [{ name: 'Dokumente', extensions: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'] }] }),
+    'dialog.pickFiles': ({ kind }) => pick({ properties: ['openFile', 'multiSelections'], filters: kind === 'image' ? [{ name: 'Bilder', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] : kind === 'audio' ? [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }] : kind === 'backup' ? [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3', 'jarvisbak'] }] : kind === 'whisper-cli' ? [{ name: 'Whisper executable', extensions: ['exe'] }] : kind === 'whisper-model' ? [{ name: 'Whisper GGML model', extensions: ['bin'] }] : [{ name: 'Dokumente', extensions: ['pdf', 'docx', 'pptx', 'txt', 'md', 'ipynb'] }] }),
     'dialog.pickFolder': async () => (await pick({ properties: ['openDirectory'] }))?.[0] || null,
 
     // --- tasks ---
@@ -632,18 +632,25 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       fs.writeFileSync(r.filePath, JSON.stringify({ app: 'JARVIS', kind: 'settings', version: s.version, exported: new Date().toISOString(), settings }, null, 2));
       return { file: r.filePath, count: Object.keys(settings).length };
     },
-    'settings.import': async () => {
-      const f = (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Einstellungen', extensions: ['json'] }] }))?.[0];
+    'settings.import': async ({ file, password } = {}) => {
+      const f = file || (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Einstellungen', extensions: ['json', 'jarvis-settings'] }] }))?.[0];
       if (!f) return null;
       if (fs.statSync(f).size > 2 * 1024 * 1024) throw new Error('Datei zu groß');
-      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      let raw = fs.readFileSync(f);
+      // verschlüsselte Einstellungen aus dem Drive-Backup
+      if (keyvault.isSealed(raw)) {
+        const pw = String(password || '') || s.secrets.get('backup.password');
+        if (!pw) return { needsPassword: true, file: f };
+        raw = keyvault.openBuffer(raw, pw);
+      }
+      const j = JSON.parse(raw.toString('utf8'));
       if (j?.app !== 'JARVIS' || j.kind !== 'settings' || typeof j.settings !== 'object') throw new Error('Keine JARVIS-Einstellungsdatei');
       const { availableModels, ...patch } = j.settings;
       s.settings.update(patch); // prüft jedes Feld gegen das Schema
       return { count: Object.keys(patch).length };
     },
     'system.restore': async ({ file, password } = {}) => {
-      const f = file || (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3'] }] }))?.[0];
+      const f = file || (await pick({ properties: ['openFile'], filters: [{ name: 'JARVIS-Sicherung', extensions: ['zip', 'sqlite3', 'jarvisbak'] }] }))?.[0];
       if (!f) return null;
       const r = s.system.stageRestore(f, { password: password ? String(password) : undefined });
       return r.needsPassword ? { ...r, file: f } : r;

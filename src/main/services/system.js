@@ -80,14 +80,14 @@ class System {
    * secrets=false (Drive): Schlüssel/Passwörter/Sitzungen bleiben auf dem PC – sie sind ohnehin nur mit
    * deinem Windows-Konto entschlüsselbar und hätten in der Cloud nur Risiko, keinen Nutzen.
    */
-  createBackup(dest, { secrets = true } = {}) {
+  createBackup(dest, { secrets = true, keys = true } = {}) {
     const tmp = this.s.db.snapshot('export');
     const files = { 'jarvis.sqlite3': new Uint8Array(fs.readFileSync(tmp)), 'manifest.json': Buffer.from(JSON.stringify({ app: 'JARVIS', version: this.s.version, schema: this.s.db.version, created: nowIso(), host: os.hostname() })) };
     const sec = path.join(this.s.paths.data, 'secrets.json');
     if (secrets && fs.existsSync(sec)) files['secrets.json'] = new Uint8Array(fs.readFileSync(sec));
     // Mit Backup-Passwort: alle Schlüssel zusätzlich passwortgeschützt (auf jedem PC wiederherstellbar)
     const bpw = this.s.secrets.get('backup.password');
-    if (bpw) { try { files['keys.jarvis.json'] = Buffer.from(JSON.stringify(seal(this.s.secrets.all(), bpw))); } catch (e) { log.warn('Schlüssel nicht gesichert', e); } }
+    if (bpw && keys) { try { files['keys.jarvis.json'] = Buffer.from(JSON.stringify(seal(this.s.secrets.all(), bpw))); } catch (e) { log.warn('Schlüssel nicht gesichert', e); } }
     const mapsDir = path.join(this.s.paths.data, 'maps');
     if (fs.existsSync(mapsDir)) {
       for (const g of fs.readdirSync(mapsDir)) for (const f of fs.readdirSync(path.join(mapsDir, g))) files[`maps/${g}/${f}`] = new Uint8Array(fs.readFileSync(path.join(mapsDir, g, f)));
@@ -124,7 +124,15 @@ class System {
 
   /** Validate a backup and stage it; applied on next start (before the DB opens). */
   stageRestore(file, { password } = {}) {
-    const buf = fs.readFileSync(file);
+    let buf = fs.readFileSync(file);
+    // Verschlüsselte Sicherung (Drive-Backup *.jarvisbak): erst mit dem Backup-Passwort entschlüsseln
+    const kv = require('../core/keyvault');
+    if (kv.isSealed(buf)) {
+      const pw = password || this.s.secrets.get('backup.password');
+      if (!pw) return { staged: false, needsPassword: true, encrypted: true };
+      buf = kv.openBuffer(buf, pw);
+      file = file.replace(/\.jarvisbak$/i, '') + '.zip';
+    }
     let dbBytes; let secrets = null; let keysBundle = null;
     if (file.endsWith('.zip')) {
       const z = unzipSync(new Uint8Array(buf));

@@ -2,6 +2,10 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.1.2 – Drive-Backup wieder da (verschlüsselt)
+
+- **Sicherung in Google Drive funktioniert wieder:** Seit der Umstellung auf private Daten war das Drive-Backup gesperrt – der Knopf tat stillschweigend nichts. Jetzt landen drei getrennte Dateien in Drive – Einstellungen (*.jarvis-settings), Schlüssel (*.jarvis-keys) und die komplette Sicherung (*.jarvisbak) –, alle vor dem Hochladen mit deinem Backup-Passwort verschlüsselt; Google sieht nur unlesbare Daten. Je Art werden die neuesten behalten. Einstellungen und Schlüssel lassen sich auch einzeln zurückholen („Einstellungen importieren…“, „Schlüssel importieren…“). Ohne Backup-Passwort sagt JARVIS klar, dass du erst eins festlegen musst. Wiederherstellen wie gewohnt über „Wiederherstellen…“ (fragt bei Bedarf nach dem Passwort).
+
 ## 5.1.1 – Stimme an einem Ort
 
 - **Einstellungen → Stimme aufgeräumt:** Statt drei Bereichen (Stimme, Lokale KI-Stimme, Sprachausgabe) gibt es einen: Profil wählen mit Hörprobe, KI-Stimme installieren bzw. an/aus, Lautstärke und Tempo. Stimmen anpassen und die einfache Rückfall-Stimme stehen unter „Erweitert“. Der Bereich für das Mikrofon heißt jetzt „Spracheingabe“.
