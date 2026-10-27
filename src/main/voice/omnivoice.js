@@ -6,7 +6,7 @@
  * - Ein kleiner Python-Dienst hält das Modell geladen (nur 127.0.0.1, Zufallstoken, beendet sich mit JARVIS).
  * - Stimmen werden beschrieben (z. B. „male, middle-aged, low pitch“), keine echte Person. Für eine gleichbleibende
  *   Stimme erzeugt der Dienst pro Profil einmal eine Referenz und klont diese danach.
- * - Beim Spielen: Standard nur bei leichten Spielen (LoL) aktiv, sonst wird der Dienst beendet (Grafikspeicher frei).
+ * - J.A.R.V.I.S. und Alya haben feste, mitgelieferte Stimmen (Vorlage wird geklont); „neu würfeln“ erzeugt eine neue.
  * Kein Text verlässt den PC.
  */
 const fs = require('node:fs');
@@ -24,8 +24,6 @@ const UV = Object.freeze({
 const PKG = Object.freeze({ python: '3.12', torch: '2.8.0', torchaudio: '2.8.0', omnivoice: '0.2.1', cuda: 'https://download.pytorch.org/whl/cu126', cpu: 'https://download.pytorch.org/whl/cpu' });
 const MODEL = 'k2-fsa/OmniVoice';
 const SIZE_GB = 6;
-/** Spiele, die wenig Grafikspeicher brauchen – dort darf die Stimme weiterlaufen. */
-const LIGHT_GAMES = new Set(['league', 'tft', 'hearthstone', 'stardew', 'osu']);
 const STEPS = [['uv', 'Installationshelfer laden'], ['python', 'Python einrichten'], ['torch', 'PyTorch laden (größter Teil)'], ['omnivoice', 'OmniVoice installieren'], ['model', 'Stimmmodell laden und testen']];
 const exists = (f) => { try { fs.statSync(f); return true; } catch { return false; } };
 
@@ -46,19 +44,12 @@ class OmniVoice {
   installed() { return exists(this.marker()) && exists(this.python()); }
   info() { try { return JSON.parse(fs.readFileSync(this.marker(), 'utf8')); } catch { return {}; } }
 
-  /** Darf die Stimme gerade laufen? (installiert, eingeschaltet, Spiel-Regel) */
-  allowed() {
-    if (!this.installed() || this.cfg().enabled === false) return false;
-    const rule = this.cfg().whileGaming || 'light';
-    const running = this.s.gaming?.context?.running || [];
-    if (!running.length || rule === 'always') return true;
-    if (rule === 'never') return false;
-    return running.every((id) => LIGHT_GAMES.has(id));
-  }
+  /** Darf die Stimme gerade laufen? (installiert und eingeschaltet – auch beim Zocken) */
+  allowed() { return this.installed() && this.cfg().enabled !== false; }
 
   status() {
     return {
-      supported: this.win(), installed: this.installed(), enabled: this.cfg().enabled !== false, whileGaming: this.cfg().whileGaming || 'light',
+      supported: this.win(), installed: this.installed(), enabled: this.cfg().enabled !== false,
       running: !!this.proc && !!this.port, starting: !!this.starting, device: this.device || this.info().device || '', allowed: this.allowed(),
       installing: this.installing, error: this.lastError, sizeGB: SIZE_GB, steps: STEPS.map(([id, label]) => ({ id, label })),
     };
@@ -203,19 +194,24 @@ class OmniVoice {
     this.emit();
   }
 
-  /** Bei Spielstart/-ende: Dienst je nach Regel beenden; danach startet er beim nächsten Satz von selbst. */
-  onGames() { if (this.proc && !this.allowed()) { log.info('Spiel läuft – lokale KI-Stimme pausiert (Grafikspeicher frei)'); this.stop(); } }
-
   /** Beim App-Start vorwärmen, damit der erste Satz schnell kommt. */
   warmup() { if (this.allowed() && this.cfg().preload !== false) this.start().catch((e) => { this.lastError = e.message; log.info('Vorwärmen fehlgeschlagen: ' + e.message); }); }
 
   /** Satz → WAV-Buffer. Ein Satz nach dem anderen. */
-  synthesize(text, { instruct, ref = 'default', seed = 1, speed } = {}) {
+  /** Pfad der mitgelieferten Vorlage für ein Profil (nur Startwert 1 und ohne eigene Beschreibung), sonst null. */
+  bundledRef(preset, seed, customInstruct) {
+    if (Number(seed) !== 1 || customInstruct || !BUNDLED[preset]) return null;
+    const dst = path.join(this.dir, 'refs', 'bundled-' + BUNDLED[preset]);
+    if (!exists(dst)) { fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.writeFileSync(dst, fs.readFileSync(path.join(__dirname, 'refs', BUNDLED[preset]))); }
+    return dst;
+  }
+
+  synthesize(text, { instruct, ref = 'default', seed = 1, speed, refAudio, refText } = {}) {
     const job = this.queue.then(async () => {
       const port = await this.start();
       const r = await this.s.fetch(`http://127.0.0.1:${port}/tts`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': this.token },
-        body: JSON.stringify({ text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de' }), signal: AbortSignal.timeout(120000),
+        body: JSON.stringify({ text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined }), signal: AbortSignal.timeout(120000),
       });
       if (!r.ok) throw new Error('Lokale KI-Stimme: ' + ((await r.text().catch(() => '')).slice(0, 200) || 'HTTP ' + r.status));
       const wav = Buffer.from(await r.arrayBuffer());
@@ -233,6 +229,17 @@ class OmniVoice {
     this.s.settings.update({ voice: { tts: { omni: { seeds } } } });
     return { seed: seeds[preset] };
   }
+  /** Zurück zur mitgelieferten Stimme. */
+  resetVoice(preset) {
+    const seeds = { ...(this.s.settings.get('voice')?.tts?.omni?.seeds || {}) }; seeds[preset] = 1;
+    const voices = { ...(this.s.settings.get('voice')?.tts?.omni?.voices || {}) }; voices[preset] = '';
+    this.s.settings.update({ voice: { tts: { omni: { seeds, voices } } } });
+    return { seed: 1 };
+  }
 }
 
-module.exports = { OmniVoice, UV, PKG, LIGHT_GAMES, STEPS };
+/** Mitgelieferte Stimmen (aus OmniVoice-Beschreibungen erzeugt, keine echte Person) – Text der Aufnahmen. */
+const REF_TEXT = 'Okay, kurzer Recap: Du bist Support mit Malphite. Die Botlane ist gegen Caitlyn und Lux schwer, wart auf den Jungler für den Gank, hol dir Control Wards und spar dir dein Ultimate für den Teamfight am Drachen. Nach dem Recall roamst du Mid, aber pass auf Skillshots auf.';
+const BUNDLED = Object.freeze({ jarvis: 'jarvis.wav', alya: 'alya.wav' });
+
+module.exports = { OmniVoice, UV, PKG, STEPS, REF_TEXT, BUNDLED };

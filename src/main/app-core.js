@@ -117,7 +117,6 @@ function createCore(opts) {
   bus.on('game:running', ({ started = [], stopped = [] }) => {
     if (started.includes('eft')) { s.gaming.eftLogs.start().catch(() => {}); setTimeout(() => !s.stopped && s.scheduler?.runNow('tarkovtracker'), 8000); }
     if (stopped.includes('eft')) s.gaming.eftLogs.stop();
-    s.omnivoice?.onGames();
   });
   // Unbekanntes Spiel wird gespielt/besprochen → eigene Seite gestalten (einmal, im Hintergrund)
   bus.on('game:context', (st) => { for (const x of [st?.active, st?.discussed]) if (x?.id) { clearTimeout(s._designTimer); s._designTimer = setTimeout(() => { if (!s.stopped) s.gaming.designer.maybeAuto(x.id); }, 1500); } });
@@ -141,12 +140,10 @@ function createCore(opts) {
   s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
   s.speech = new (require('./voice/speech').Speech)(s);
   s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
-  // Einmalig: bisherige Einstellung „nur lokale Stimme“ auf „automatisch“ (Cloud-Stimme, wenn erlaubt) umstellen
+  // 5.0: Stimme nur noch lokal (OmniVoice → Piper). Alte Cloud-/ElevenLabs-Einstellungen auf „automatisch“, Schlüssel entfernen.
   try {
-    if (!s.db.get("SELECT value FROM meta WHERE key='tts:auto-migrated'")) {
-      if ((s.settings.get('voice')?.tts?.engine || 'piper') === 'piper') s.settings.update({ voice: { tts: { engine: 'auto' } } });
-      s.db.run("INSERT OR REPLACE INTO meta(key,value) VALUES('tts:auto-migrated','1')");
-    }
+    if (['gemini', 'omnivoice'].includes(s.settings.get('voice')?.tts?.engine)) s.settings.update({ voice: { tts: { engine: 'auto' } } });
+    if (s.secrets.has('elevenlabs.api_key')) s.secrets.delete('elevenlabs.api_key');
   } catch { /* nicht kritisch */ }
   // Lokaler Modus / Gemini Live aus: laufende Cloud-Sitzungen und -Aufrufe sofort beenden (Backend, nicht nur UI)
   bus.on('settings:changed', ({ keys }) => {

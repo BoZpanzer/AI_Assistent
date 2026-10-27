@@ -1,11 +1,9 @@
 'use strict';
 /**
- * Sprachausgabe: wählt je Satz die Stimme.
- * - „auto“ (Standard): Cloud-Stimme (Gemini-TTS, spricht englische Spielbegriffe und Namen richtig) für
- *   nicht private Texte, solange erlaubt und unter der Tagesgrenze – sonst lokal (Piper).
- * - „gemini“: wie auto, aber ohne Rückfall-Hinweis; „piper“: immer lokal; „windows“ übernimmt die Oberfläche.
- * - Private Inhalte gehen NIE an die Cloud.
- * - Fertige Audios werden lokal zwischengespeichert (gleiche Sätze, z. B. Ansagen, kosten nichts erneut).
+ * Sprachausgabe – komplett lokal (Gemini liefert nur noch Text):
+ * - „auto“ (Standard): lokale KI-Stimme OmniVoice (falls installiert), sonst Piper.
+ * - „piper“: immer Piper; „windows“ übernimmt die Oberfläche.
+ * - Fertige Audios werden lokal zwischengespeichert (gleiche Sätze, z. B. Ansagen, sofort).
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -50,36 +48,6 @@ class Speech {
     } catch (e) { log.debug('cache', e); }
   }
 
-  /** Cloud-Stimme erlaubt für diesen Text? */
-  cloudOk(priv, engine = this.cfg().engine || 'auto') {
-    if (priv || !['auto', 'gemini'].includes(engine)) return false;
-    return this.s.gemini.cloudAllowed('tts', { freeOk: true });
-  }
-
-  /** ElevenLabs nur mit eigenem Schlüssel + Voice-ID, nicht privat, Cloud nicht aus, unter der Zeichengrenze. */
-  elevenOk(priv, engine, c) {
-    if (priv || !['auto', 'gemini'].includes(engine) || !c.elevenVoiceId || !this.s.secrets.get('elevenlabs.api_key')) return false;
-    const cc = this.s.settings.get('cloud') || {};
-    if (cc.mode === 'local' || cc.features?.tts === false) return false;
-    return this.elevenUsed() < (Number(c.elevenDailyChars) || 10000);
-  }
-  elevenDay() { const d = new Date(); return `tts:eleven:${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
-  elevenUsed() { return Number(this.s.db.get('SELECT value FROM meta WHERE key=?', this.elevenDay())?.value || 0); }
-
-  /** ElevenLabs Text→Sprache (PCM 24 kHz → WAV). Schlüssel bleibt im Hauptprozess. */
-  async eleven(text, c) {
-    require('../core/privacy').assertExternal();
-    const r = await this.s.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(c.elevenVoiceId)}?output_format=pcm_24000`, {
-      method: 'POST', headers: { 'xi-api-key': this.s.secrets.get('elevenlabs.api_key'), 'Content-Type': 'application/json', Accept: 'audio/pcm' },
-      body: JSON.stringify({ text: String(text).slice(0, 1500), model_id: c.elevenModel || 'eleven_flash_v2_5' }), signal: AbortSignal.timeout(30000),
-    });
-    if (!r.ok) throw new Error('ElevenLabs antwortet mit HTTP ' + r.status);
-    const pcm = Buffer.from(await r.arrayBuffer());
-    if (pcm.length < 200) throw new Error('ElevenLabs hat kein Audio geliefert');
-    this.s.db.run('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', this.elevenDay(), String(this.elevenUsed() + String(text).length));
-    return require('../providers/gemini').pcmToWav(pcm, 24000);
-  }
-
   cached(parts, make) {
     const key = crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
     const hit = this.fromCache(key);
@@ -88,35 +56,21 @@ class Speech {
   }
 
   /**
-   * Satz → WAV mit dem gewählten Stimmprofil (Standard / J.A.R.V.I.S. / Alya). Reihenfolge: eigene lizenzierte
-   * ElevenLabs-Stimme (falls Voice-ID + Schlüssel) → Cloud-Stimme (Gemini-TTS) → lokal (Piper). Keine LLM-Anfrage –
-   * gesprochen wird die fertige Antwort. Fertige Cloud-Audios und Hörproben werden gespeichert.
-   * override: Hörprobe mit anderem Profil/Engine (ändert nichts dauerhaft).
+   * Satz → WAV mit dem gewählten Stimmprofil (Standard / J.A.R.V.I.S. / Alya): OmniVoice → Piper.
+   * Keine KI-Anfrage – gesprochen wird die fertige Antwort. override: Hörprobe mit anderem Profil/Engine.
    */
-  async synthesize(text, { override = {}, private: priv = false, preview = false } = {}) {
+  async synthesize(text, { override = {}, preview = false } = {}) {
     const c = resolve({ ...this.cfg(), ...override }, { isInstalled: (v) => !!this.s.tts.voiceFile?.(v) });
-    const engine = c.engine || 'auto';
+    const engine = ['piper', 'windows'].includes(c.engine) ? c.engine : 'auto';
     const clamp = (x) => Math.max(0.8, Math.min(1.25, Number(x) || 1));
-    const cloudPitch = c.preset === 'standard' ? clamp(c.pitch) : 1; // Cloud-Stimmen der Profile klingen ohne Verstellung am natürlichsten
-    if (this.elevenOk(priv, engine, c)) {
-      try {
-        const r = await this.cached(['e', c.elevenVoiceId, c.elevenModel || '', String(text)], () => this.eleven(text, c));
-        return { ...r, pitch: cloudPitch, engine: 'elevenlabs', preset: c.preset };
-      } catch (e) { log.info('ElevenLabs nicht genutzt: ' + e.message); }
-    }
-    if (['auto', 'omnivoice'].includes(engine) && this.s.omnivoice?.allowed()) {
+    if (engine === 'auto' && this.s.omnivoice?.allowed()) {
       try {
         const said = localPronunciation(text);
-        const r = await this.cached(['o', c.preset, c.omniInstruct, c.omniSeed, c.speed ?? 1, said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref: `${c.preset}-${c.omniSeed}-${crypto.createHash('sha1').update(c.omniInstruct).digest('hex').slice(0, 8)}`, seed: c.omniSeed, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
+        const custom = (c.omni?.voices || {})[c.preset];
+        const ref = `${c.preset}-${c.omniSeed}-${crypto.createHash('sha1').update(c.omniInstruct).digest('hex').slice(0, 8)}`;
+        const r = await this.cached(['o', ref, c.speed ?? 1, said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref, seed: c.omniSeed, refAudio: this.s.omnivoice.bundledRef(c.preset, c.omniSeed, custom), refText: require('./omnivoice').REF_TEXT, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
         return { ...r, pitch: 1, engine: 'omnivoice', preset: c.preset };
       } catch (e) { log.info('Lokale KI-Stimme nicht genutzt: ' + e.message); }
-    }
-    if (engine !== 'omnivoice' && this.cloudOk(priv, engine)) {
-      const voiceName = c.cloudVoice || 'Kore';
-      try {
-        const r = await this.cached(['g', voiceName, c.cloudStyle || '', String(text)], () => this.s.gemini.speak(text, { voiceName, style: c.cloudStyle || '' }));
-        return { ...r, pitch: cloudPitch, engine: 'gemini', preset: c.preset };
-      } catch (e) { log.info('Cloud-Stimme nicht genutzt: ' + e.message); }
     }
     const local = { ...override, voice: c.voice, pitch: c.pitch, speed: c.speed, style: c.style, speaker: c.speaker };
     const run = () => this.s.tts.synthesize(localPronunciation(text), local);

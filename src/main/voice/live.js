@@ -107,7 +107,7 @@ class LiveVoice {
       responseModalities: ['AUDIO'],
       systemInstruction: privacy.CLOUD_SYSTEM + ' Antworte auf Deutsch, kurz und gut verständlich. Nutze die freigegebenen Werkzeuge für aktuelle Spielinformationen; erfinde keine Ergebnisse.',
       tools: decl,
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: require('./voice-presets').PRESETS[vs.tts?.preset]?.gemini?.voice || vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: require('./voice-presets').PRESETS[vs.tts?.preset]?.live || vs.voiceName || 'Charon' } }, languageCode: 'de-DE' },
       inputAudioTranscription: {}, outputAudioTranscription: {},
       // Im Sprachmodus berechnet Google bei JEDER Antwort den ganzen Sitzungsverlauf neu → Verlauf eng deckeln
       // (ab ~10k Token auf ~5k kürzen; älteres bleibt im Chatverlauf erhalten)

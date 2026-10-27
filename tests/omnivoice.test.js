@@ -52,13 +52,9 @@ test('OmniVoice: install only via uv with pinned checksum, CUDA PyTorch on NVIDI
     assert.equal(posts.length, 1, 'Testsatz nach der Installation'); assert.equal(posts[0].headers['X-Token'].length, 48);
     assert.equal(o.status().device, 'cuda:0');
 
-    // Spiel-Regel: LoL ok, Tarkov pausiert (Dienst wird beendet)
-    core.gaming.context.running = ['league']; assert.equal(o.allowed(), true);
-    core.gaming.context.running = ['eft']; assert.equal(o.allowed(), false);
-    o.onGames(); assert.equal(o.status().running, false);
-    core.settings.update({ voice: { tts: { omni: { whileGaming: 'always' } } } }); assert.equal(o.allowed(), true);
+    // auch beim Zocken an (Tarkov)
+    core.gaming.context.running = ['eft']; assert.equal(o.allowed(), true);
     core.gaming.context.running = [];
-
     // Sprachausgabe nutzt die lokale KI-Stimme mit Profilbeschreibung + Eindeutschung
     core.settings.update({ voice: { tts: { engine: 'auto', preset: 'jarvis' } } });
     const r = await core.speech.synthesize('Wart auf den Jungler für den Gank.');
@@ -66,10 +62,13 @@ test('OmniVoice: install only via uv with pinned checksum, CUDA PyTorch on NVIDI
     const last = posts.at(-1).body;
     assert.equal(last.text, 'Wart auf den Dschungler für den Gänk.');
     assert.equal(last.instruct, 'male, middle-aged, low pitch'); assert.match(last.ref, /^jarvis-1-/);
+    assert.match(last.ref_audio, /bundled-jarvis\.wav$/, 'mitgelieferte J.A.R.V.I.S.-Stimme'); assert.ok(fs.existsSync(last.ref_audio)); assert.match(last.ref_text, /Recap/);
     // neu würfeln → neue Referenz
     o.reroll('jarvis');
     await core.speech.synthesize('Noch ein Satz.');
-    assert.match(posts.at(-1).body.ref, /^jarvis-2-/);
+    assert.match(posts.at(-1).body.ref, /^jarvis-2-/); assert.equal(posts.at(-1).body.ref_audio, undefined, 'gewürfelt → aus Beschreibung');
+    o.resetVoice('jarvis'); await core.speech.synthesize('Wieder original.');
+    assert.match(posts.at(-1).body.ref_audio, /bundled-jarvis/);
     // private Texte bleiben lokal → dürfen die lokale KI-Stimme nutzen
     const p = await core.speech.synthesize('Mein Arzttermin ist morgen.', { private: true });
     assert.equal(p.engine, 'omnivoice');

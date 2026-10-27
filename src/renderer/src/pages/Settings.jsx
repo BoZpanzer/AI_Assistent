@@ -11,7 +11,6 @@ const VOICES = ['Charon', 'Puck', 'Kore', 'Fenrir', 'Aoede', 'Orus', 'Leda', 'Ze
 export const upd = (patch) => guard(() => rpc('settings.update', patch));
 
 const SAMPLE = 'Hallo, ich bin JARVIS. Du warst Support mit Malphite – achte in der Lane auf Sivirs Spellshield und warde den Jungle vor dem Drachen. Deine Überlebensrate in Tarkov liegt heute bei sechzig Prozent.';
-const CLOUD_VOICES = ['Kore', 'Charon', 'Puck', 'Aoede', 'Fenrir', 'Leda', 'Orus', 'Zephyr', 'Enceladus', 'Iapetus', 'Algieba', 'Despina', 'Sulafat', 'Achird'];
 
 const PRESET_SAMPLES = {
   standard: 'Hallo, ich bin JARVIS. So klinge ich mit deinen bisherigen Einstellungen.',
@@ -30,9 +29,6 @@ function VoicePicker({ s }) {
   const cur = t.preset || 'standard';
   const [busy, setBusy] = useState('');
   const play = async (id) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id], { full: true, preview: true, override: { preset: id } }); } finally { setBusy(''); } };
-  const ev = t.elevenVoices || {};
-  const [key, setKey] = useState('');
-  const saveKey = async (v) => { await guard(() => rpc('secrets.set', { key: 'elevenlabs.api_key', value: v }), v ? 'ElevenLabs-Schlüssel gespeichert' : 'ElevenLabs-Schlüssel entfernt'); setState({ secrets: await rpc('secrets.status') }); setKey(''); };
   return (
     <Panel icon={Mic} title="Stimme" sub="Wie JARVIS klingt – wirkt sofort für alle Sprachantworten">
       <Field label="Stimme"><Select value={cur} onChange={(x) => upd({ voice: { tts: { preset: x } } })} options={presets.map((p) => ({ value: p.id, label: p.label }))} /></Field>
@@ -43,16 +39,7 @@ function VoicePicker({ s }) {
           <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
         </div>
       ))}
-      <div class="tiny muted">J.A.R.V.I.S. und Alya sind eigenständige Stimmen mit ähnlicher Wirkung – keine Nachbildung echter Sprecher. Sie nutzen die Cloud-Stimme (falls an, siehe „Sprachausgabe“), sonst lokale Stimmen; fehlt eine Stimme, klingt es wie „Standard“.</div>
-      <details class="mt">
-        <summary class="small">Eigene lizenzierte Stimmen (ElevenLabs, optional)</summary>
-        <div class="tiny muted mb">Nur mit Stimmen, für die du die Rechte hast (z. B. eigene oder lizenzierte Voices in deinem ElevenLabs-Konto). Der Schlüssel bleibt verschlüsselt auf dem PC; ElevenLabs berechnet nach Zeichen.</div>
-        <Field label={<span><KeyRound size={12} /> ElevenLabs-Schlüssel</span>} hint={d?.elevenKey ? 'gespeichert' : 'elevenlabs.io → Profil → API Keys'}>
-          <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={d?.elevenKey ? '••••••••••••' : 'sk_…'} value={key} onInput={(e) => setKey(e.currentTarget.value)} /><button class="btn xs" disabled={!key} onClick={() => saveKey(key)}>Speichern</button>{d?.elevenKey && <button class="btn xs ghost" onClick={() => saveKey('')}>Entfernen</button>}</div>
-        </Field>
-        {presets.map((p) => <Field label={`Voice-ID · ${p.label}`}><input class="inp" placeholder="leer = nicht nutzen" value={ev[p.id] || ''} onChange={(e) => upd({ voice: { tts: { elevenVoices: { [p.id]: e.currentTarget.value.trim().slice(0, 64) } } } })} /></Field>)}
-        <Field label="Höchstens Zeichen pro Tag" hint="danach Cloud-/lokale Stimme"><input class="inp" type="number" min="0" max="1000000" step="1000" style={{ width: 110 }} value={t.elevenDailyChars ?? 10000} onChange={(e) => upd({ voice: { tts: { elevenDailyChars: Math.max(0, Math.round(Number(e.currentTarget.value) || 0)) } } })} /></Field>
-      </details>
+      <div class="tiny muted">J.A.R.V.I.S. und Alya sind eigenständige, von OmniVoice erzeugte Stimmen – keine Nachbildung echter Sprecher. Am besten klingen sie mit der lokalen KI-Stimme (unten); ohne sie spricht die einfache lokale Stimme. Sag einfach „Jarvis, Stimme auf Alya“.</div>
     </Panel>
   );
 }
@@ -78,7 +65,7 @@ function OmniVoiceCard({ s }) {
     <Panel icon={Sparkles} title="Lokale KI-Stimme" sub="OmniVoice auf deiner Grafikkarte – natürlich, kostenlos, offline, auch für private Chats">
       {!st.supported && <div class="notice tiny">Nur unter Windows verfügbar.</div>}
       {st.supported && !st.installed && !ins && <>
-        <div class="small">Klingt deutlich natürlicher als die bisherige lokale Stimme. J.A.R.V.I.S. und Alya bekommen je eine eigene, <b>beschriebene</b> Stimme (keine echte Person). Englische Spielbegriffe werden eingedeutscht („Dschungler“, „Gänk“).</div>
+        <div class="small">Klingt deutlich natürlicher als die bisherige lokale Stimme. J.A.R.V.I.S. und Alya haben feste, mitgelieferte Stimmen (von OmniVoice erzeugt, keine echte Person) – läuft auch beim Zocken (ca. 2–3 GB Grafikspeicher). Englische Spielbegriffe werden eingedeutscht („Dschungler“, „Gänk“).</div>
         <div class="tiny muted mt">Download ca. {st.sizeGB} GB, nur auf Klick · braucht am besten eine NVIDIA-Grafikkarte (ca. 2–3 GB Grafikspeicher), sonst langsam auf dem Prozessor · Modell: k2-fsa OmniVoice, Lizenz CC BY-NC (privat erlaubt).</div>
         <div class="row gap-s mt"><button class="btn sm" onClick={install}><Download size={14} />Installieren (~{st.sizeGB} GB)</button></div>
       </>}
@@ -89,9 +76,8 @@ function OmniVoiceCard({ s }) {
       </div>}
       {st.error && <div class="notice tiny mt"><FixText text={'Fehler: ' + st.error} /></div>}
       {st.installed && !ins && <>
-        <Field label="Status"><span class="small">{!st.enabled ? 'aus' : st.running ? `läuft (${/cuda/.test(st.device) ? 'Grafikkarte' : 'Prozessor'})` : st.starting ? 'Modell wird geladen …' : st.allowed ? 'startet beim nächsten Satz' : 'pausiert – Spiel läuft'}</span></Field>
+        <Field label="Status"><span class="small">{!st.enabled ? 'aus' : st.running ? `läuft (${/cuda/.test(st.device) ? 'Grafikkarte' : 'Prozessor'})` : st.starting ? 'Modell wird geladen …' : 'startet beim nächsten Satz'}</span></Field>
         <Field label="Lokale KI-Stimme nutzen"><Toggle checked={st.enabled} onChange={(v) => set({ enabled: v })} /></Field>
-        <Field label="Beim Zocken" hint="Die Stimme belegt ca. 2–3 GB Grafikspeicher. Bei schweren Spielen übernimmt solange die Cloud-Stimme."><Select value={st.whileGaming} onChange={(v) => set({ whileGaming: v })} options={[{ value: 'light', label: 'Nur bei leichten Spielen (z. B. LoL)' }, { value: 'always', label: 'Immer' }, { value: 'never', label: 'Nie – beim Spielen pausieren' }]} /></Field>
         <Field label="Beim Start vorladen" hint="Erster Satz kommt sofort, belegt dafür dauerhaft Grafikspeicher"><Toggle checked={om.preload !== false} onChange={(v) => set({ preload: v })} /></Field>
         <div class="hr" />
         {(pr?.presets || []).map((p) => (
@@ -100,11 +86,12 @@ function OmniVoiceCard({ s }) {
               <b class="small grow">{p.label}</b>
               <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
               <button class="btn xs ghost" title="Neue Stimme mit derselben Beschreibung" onClick={async () => { await guard(() => rpc('omnivoice.reroll', { preset: p.id })); play(p.id); }}><RefreshCw size={12} /> neu würfeln</button>
+              {p.id !== 'standard' && ((om.seeds || {})[p.id] > 1 || (om.voices || {})[p.id]) && <button class="btn xs ghost" title="Zurück zur mitgelieferten Stimme" onClick={async () => { await guard(() => rpc('omnivoice.resetVoice', { preset: p.id })); play(p.id); }}>Original</button>}
             </div>
             <input class="inp" title={OMNI_ATTR} placeholder={p.omni} value={(om.voices || {})[p.id] || ''} onChange={(e) => set({ voices: { [p.id]: e.currentTarget.value.trim().slice(0, 200) } })} />
           </div>
         ))}
-        <div class="tiny muted">{OMNI_ATTR}. Leer = Vorgabe. Gefällt dir eine Stimme, bleibt sie – „neu würfeln“ erzeugt eine andere mit derselben Beschreibung.</div>
+        <div class="tiny muted">{OMNI_ATTR}. Leer = mitgelieferte Stimme bzw. Vorgabe. „Neu würfeln“ erzeugt eine andere Stimme mit derselben Beschreibung, „Original“ holt die mitgelieferte zurück.</div>
         <div class="row gap-s mt"><button class="btn xs ghost" onClick={() => guard(() => rpc('omnivoice.restart'), 'Neu gestartet')}>Neu starten</button><span class="grow" /><button class="btn xs ghost" onClick={async () => { if (await ask('Lokale KI-Stimme vollständig entfernen (gibt ca. 6 GB frei)?', '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) await guard(() => rpc('omnivoice.remove'), 'Entfernt'); }}><Trash2 size={12} />Entfernen</button></div>
       </>}
     </Panel>
@@ -124,22 +111,16 @@ function SpeechOutput({ s }) {
   }, []);
   useEffect(() => { if (!st?.voices?.some((v) => v.downloading)) return; const id = setInterval(reload, 1000); return () => clearInterval(id); }, [st]);
   const set = (patch) => upd({ voice: { tts: patch } });
-  const engine = t.engine || 'piper';
+  const engine = ['piper', 'windows'].includes(t.engine) ? t.engine : 'auto';
   const cur = st?.voices?.find((v) => v.id === (t.voice || st?.voice)) || st?.voices?.[0];
-  const preview = (override = {}) => audio.speakLocal(SAMPLE, { full: true, override: { engine: engine === 'auto' && !override.engine ? 'piper' : undefined, ...override } });
+  const preview = (override = {}) => audio.speakLocal(SAMPLE, { full: true, override: { engine: override.voice ? 'piper' : undefined, ...override } });
   const install = async (id) => { setBusy(id); try { const p = rpc('tts.install', { id }); setTimeout(reload, 300); await guard(() => p, 'Stimme installiert'); await set({ voice: id }); } finally { setBusy(''); reload(); } };
   return (
-    <Panel icon={Volume2} title="Sprachausgabe" sub="Cloud-Stimme (günstig, gedeckelt) oder lokal – private Chats immer lokal">
+    <Panel icon={Volume2} title="Sprachausgabe" sub="Komplett lokal – keine Kosten, nichts verlässt den PC">
       <Field label="Stimme">
-        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'Automatisch: lokale KI-Stimme, sonst Cloud, sonst Piper (empfohlen)' }, { value: 'omnivoice', label: 'Nur lokal: KI-Stimme (OmniVoice), sonst Piper' }, { value: 'piper', label: 'Nur lokal (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
+        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'Automatisch: KI-Stimme (OmniVoice), sonst einfache Stimme (empfohlen)' }, { value: 'piper', label: 'Nur einfache Stimme (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
       </Field>
-      {engine === 'auto' && <>
-        <div class="notice tiny">Cloud-Stimme (Gemini-TTS): spricht englische Spielbegriffe und Namen richtig, ca. 1 Cent pro Minute Sprache (ab 2027 ca. 2 Cent), mit kostenlosem Zusatz-Schlüssel gratis bis zum Tageslimit. Fertige Sätze werden gespeichert und kosten danach nichts. Private Chats werden immer lokal vorgelesen. Bei Tagesgrenze oder offline: automatisch lokale Stimme.</div>
-        <Field label="Cloud-Stimme"><Select value={t.cloudVoice || 'Kore'} onChange={(x) => set({ cloudVoice: x })} options={CLOUD_VOICES.map((v) => ({ value: v, label: v }))} /></Field>
-        <Field label="Tagesgrenze Cloud-Stimme (€)" hint="danach lokale Stimme; zählt auch zum Tagesbudget"><input class="inp" type="number" min="0" max="5" step="0.01" style={{ width: 90 }} value={s.aiBudget?.ttsDailyEur ?? 0.05} onChange={(e) => upd({ aiBudget: { ttsDailyEur: Math.max(0, Math.min(5, Number(e.currentTarget.value) || 0)) } })} /></Field>
-        <div class="row gap-s"><button class="btn xs" onClick={() => preview({ engine: 'auto' })}><Play size={12} />Cloud-Stimme anhören</button><span class="tiny muted">Lokale Stimme für den Notfall:</span></div>
-      </>}
-      <Field label="Lokale Stimme" hint="wird genutzt, wenn die Cloud-Stimme aus/aufgebraucht ist">
+      <Field label="Einfache Stimme (Piper)" hint="wenn die KI-Stimme nicht installiert ist oder ausfällt">
         <span class="tiny muted">{cur?.label || '–'}</span>
       </Field>
       {engine !== 'windows' && !st?.available && <div class="notice tiny">Die natürliche Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion). JARVIS nutzt so lange die Windows-Stimme.</div>}
@@ -339,7 +320,7 @@ function BudgetField({ s }) {
 
 /**
  * Zweiter, kostenloser Schlüssel: Google-Projekt OHNE Abrechnung (Free Tier). JARVIS nutzt ihn zuerst für das Sparmodell
- * und die Cloud-Stimme; ist das Tageskontingent erschöpft, geht es mit dem normalen Schlüssel (Budget) weiter.
+ ; ist das Tageskontingent erschöpft, geht es mit dem normalen Schlüssel (Budget) weiter.
  */
 function FreeKey() {
   const secrets = useStore((x) => x.secrets) || {};
@@ -347,11 +328,11 @@ function FreeKey() {
   const has = !!secrets['gemini.free_api_key'];
   const save = async (v) => { await guard(() => rpc('secrets.set', { key: 'gemini.free_api_key', value: v }), v ? 'Kostenloser Schlüssel gespeichert' : 'Kostenloser Schlüssel entfernt'); setState({ secrets: await rpc('secrets.status') }); setK(''); };
   return <>
-    <Field label={<span><KeyRound size={12} /> Kostenloser Zusatz-Schlüssel (optional)</span>} hint={has ? 'gespeichert – wird zuerst für Sparmodell und Cloud-Stimme genutzt' : 'aistudio.google.com → neues Projekt ohne Abrechnung → API-Schlüssel'}>
+    <Field label={<span><KeyRound size={12} /> Kostenloser Zusatz-Schlüssel (optional)</span>} hint={has ? 'gespeichert – wird zuerst für das Sparmodell genutzt' : 'aistudio.google.com → neues Projekt ohne Abrechnung → API-Schlüssel'}>
       <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={has ? '••••••••••••' : 'AIza… (Projekt ohne Abrechnung)'} value={k} onInput={(e) => setK(e.currentTarget.value)} />
         <button class="btn xs" disabled={!k} onClick={() => save(k)}>Speichern</button>{has && <button class="btn xs ghost" onClick={() => save('')}>Entfernen</button>}</div>
     </Field>
-    <div class="tiny muted">Hinweis: Im kostenlosen Kontingent darf Google Eingaben und Antworten zur Verbesserung seiner Produkte verwenden. JARVIS schickt darüber nur Gaming-Tipps und vorzulesende Antworten aus Uni-/Gaming-Chats – nie private Inhalte.</div>
+    <div class="tiny muted">Hinweis: Im kostenlosen Kontingent darf Google Eingaben und Antworten zur Verbesserung seiner Produkte verwenden. JARVIS schickt darüber nur kurze Gaming-Aufgaben (Tipps, Kurzfassungen) – nie private Inhalte.</div>
   </>;
 }
 

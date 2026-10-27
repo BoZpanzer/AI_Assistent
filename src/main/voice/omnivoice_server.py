@@ -81,12 +81,21 @@ def synth(req):
     kw = {'text': text, 'language': language}
     if speed:
         kw['speed'] = max(0.6, min(1.6, float(speed)))
+    ref_audio = req.get('ref_audio'); ref_text = req.get('ref_text')
     with lock:
-        p = reference(ref, instruct, seed, language)
+        if ref_audio and ref_text and os.path.exists(str(ref_audio)):
+            # feste Vorlage (mitgelieferte Stimme) statt Beschreibung
+            if ref not in prompts:
+                try: prompts[ref] = model.create_voice_clone_prompt(ref_audio=str(ref_audio), ref_text=str(ref_text))
+                except Exception as e: log('clone prompt fallback', repr(e)[:200]); prompts[ref] = None
+            p = str(ref_audio)
+        else:
+            p = reference(ref, instruct, seed, language)
+            ref_text = REF_TEXT
         if prompts.get(ref) is not None:
             kw['voice_clone_prompt'] = prompts[ref]
         else:
-            kw['ref_audio'] = p; kw['ref_text'] = REF_TEXT
+            kw['ref_audio'] = p; kw['ref_text'] = ref_text
         t = time.time()
         a = model.generate(**kw)[0]
         log('synth', len(text), 'chars', round(time.time() - t, 2), 's')
