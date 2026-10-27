@@ -71,3 +71,23 @@ test('Voice presets: licensed ElevenLabs voice ID is used when configured (key s
     assert.equal((await core.speech.synthesize('Noch etwas.')).engine, 'piper');
   } finally { cleanup(); }
 });
+
+test('Voice switch by voice/text command: no AI call, persists, questions and plain mentions are ignored', async () => {
+  const { parseVoiceCommand } = require('../src/main/voice/voice-presets');
+  const yes = [['Stimme auf Alya', 'alya'], ['Jarvis, wechsel die Stimme zu Alya', 'alya'], ['Hey Jarvis nimm die Jarvis Stimme', 'jarvis'], ['sprich wieder normal', 'standard'],
+    ['stell deine Stimme auf Standard', 'standard'], ['Nimm die Anime-Stimme', 'alya'], ['Stimme J.A.R.V.I.S.', 'jarvis'], ['Jarvis, Stimme auf Alia', 'alya']];
+  for (const [t, id] of yes) assert.equal(parseVoiceCommand(t), id, t);
+  for (const t of ['Welche Stimme hast du gerade?', 'Jarvis, wie spät ist es?', 'Alya ist cool', 'Wie klingt die Alya Stimme?', 'Schreib eine lange Nachricht an Tim, dass ich morgen beim Training die normale Strecke laufe und meine Stimme heiser ist']) assert.equal(parseVoiceCommand(t), null, t);
+
+  const sdk = fakeSdk([]);
+  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk });
+  try {
+    core.secrets.set('gemini.api_key', 'K');
+    const conv = core.conversations.create('t');
+    const r = await core.orchestrator.chat({ conversationId: conv.id, text: 'Jarvis, Stimme auf Alya', channel: 'voice' });
+    assert.match(r.content, /Alya/); assert.equal(core.settings.get('voice').tts.preset, 'alya');
+    assert.equal(sdk.requests.length, 0, 'kein KI-Aufruf');
+    const t = await core.orchestrator.execute('set_voice', { preset: 'jarvis' }, { conversationId: conv.id, channel: 'voice' });
+    assert.equal(t.response.preset, 'jarvis'); assert.equal(core.settings.get('voice').tts.preset, 'jarvis');
+  } finally { cleanup(); }
+});

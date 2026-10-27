@@ -92,7 +92,8 @@ class Gemini {
     if (!this.hasKey()) throw new CloudBlocked('Kein Gemini-API-Schlüssel hinterlegt (Einstellungen → Gemini / KI).');
     return true;
   }
-  cloudAllowed(feature) { try { this.policy(feature); return !this.guard?.exceeded(); } catch { return false; } }
+  /** freeOk: Aufrufe über den kostenlosen Zusatz-Schlüssel kosten nichts → auch bei erreichtem Budget erlaubt. */
+  cloudAllowed(feature, { freeOk = false } = {}) { try { this.policy(feature); return (freeOk && this.freeAvailable()) || !this.guard?.exceeded(); } catch { return false; } }
 
   client() {
     if (!cloudScope.getStore()) throw new Error('Interner Fehler: Gemini-Aufruf außerhalb der zentralen Kostenkontrolle.');

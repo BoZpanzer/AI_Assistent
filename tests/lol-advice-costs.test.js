@@ -122,3 +122,16 @@ test('LoL: champion recommendation from own pool, own record vs these enemies, t
     assert.deepEqual(r2.candidates.map((c) => c.champion), ['Leona']);
   } finally { cleanup(); }
 });
+
+test('Cloud voice with the free key keeps working when the paid budget is used up', async () => {
+  const sdk = fakeSdk([], { models: MODELS });
+  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk });
+  try {
+    core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
+    core.gemini.guard.exceeded = () => 'daily';
+    assert.equal(core.speech.cloudOk(false, 'auto'), false, 'ohne Gratis-Schlüssel: Budget erreicht → lokal');
+    core.secrets.set('gemini.free_api_key', 'FREE');
+    assert.equal(core.speech.cloudOk(false, 'auto'), true, 'Gratis-Schlüssel kostet nichts → Cloud-Stimme bleibt');
+    assert.equal(core.speech.cloudOk(true, 'auto'), false, 'private Texte nie in die Cloud');
+  } finally { cleanup(); }
+});

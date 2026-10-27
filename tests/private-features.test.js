@@ -7,6 +7,7 @@ const { local } = require('../src/main/core/privacy');
 const { LocalLLM } = require('../src/main/providers/local');
 
 const response = (text = 'Lokal erledigt') => ({ text, parts: [{ text }], functionCalls: [] });
+const r = (v) => Math.round(v * 100) / 100;
 const ym = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
 
 test('Private default, local without API key, no cloud fallback on local failure', async () => {
@@ -22,6 +23,43 @@ test('Private default, local without API key, no cloud fallback on local failure
     assert.equal(failure.meta.error, true); assert.equal(fake.requests.length, 0);
     await s.orchestrator.retry({ conversationId: c.id, messageId: failure.id });
     assert.equal(fake.requests.length, 0);
+  } finally { cleanup(); }
+});
+
+test('Buckets: book expenses into a bucket (partial, overspend), chart data, removal keeps the expenses', async () => {
+  const { core: s, cleanup } = tempCore();
+  try {
+    s.life.addIncome({ amount: 1000 });
+    const urlaub = s.life.saveBucket({ name: 'Urlaub', amount: 300, month: ym() });
+    const essen = s.life.saveBucket({ name: 'Essen gehen', amount: 50, month: ym(), category: 'Essen & Trinken' });
+    s.life.addExpense({ amount: 120, note: 'Hotel', bucketId: urlaub.id });
+    s.life.addExpense({ amount: '30,5', bucketId: urlaub.id });
+    s.life.addExpense({ amount: 60, note: 'Sushi', bucketId: essen.id });
+    let [u, e] = [s.life.bucket(urlaub.id), s.life.bucket(essen.id)];
+    assert.deepEqual([u.spent, u.remaining, u.over, u.bookings], [150.5, 149.5, 0, 2]);
+    assert.deepEqual([e.spent, e.remaining, e.over], [60, 0, 10], 'überzogen');
+    assert.equal(s.life.bucketExpenses(urlaub.id).find((x) => !x.note.includes('Hotel')).note, 'Urlaub', 'ohne Notiz → Bucket-Name');
+    assert.equal(s.life.bucketExpenses(essen.id)[0].category, 'Essen & Trinken', 'Kategorie des Buckets');
+    let m = s.life.month();
+    assert.equal(m.total, 210.5); assert.equal(m.reserved, 149.5, 'nur der offene Rest ist reserviert');
+    assert.equal(m.balance, r(1000 - 210.5 - 149.5), 'nichts doppelt abgezogen');
+    // Rest bezahlt → Bucket voll, bleibt sichtbar
+    s.life.bookBucket(urlaub.id); u = s.life.bucket(urlaub.id);
+    assert.deepEqual([u.spent, u.remaining, u.bookings], [300, 0, 3]);
+    assert.throws(() => s.life.bookBucket(urlaub.id), /bereits gebucht/);
+    assert.throws(() => s.life.addExpense({ amount: 5, bucketId: 'nope' }), /Bucket nicht gefunden/);
+    // Name-Suche (für den Chat) und Löschen
+    assert.equal(s.life.findBucket('essen').id, essen.id);
+    s.life.removeBucket(essen.id);
+    assert.equal(s.life.month().total, 360, 'Ausgaben bleiben nach dem Löschen erhalten');
+    assert.equal(s.life.bucket(essen.id), null);
+    // Chat-Werkzeuge: „15 € aus dem Urlaub-Bucket“ / spend per Name
+    const ctx = { conversationId: 'x', channel: 'voice' };
+    const kino = s.life.saveBucket({ name: 'Kino', amount: 40, month: ym() });
+    const a = await s.orchestrator.execute('add_expense', { amount: 15, note: 'Popcorn', bucket: 'kino' }, ctx);
+    assert.equal(a.response.bucket, 'Kino'); assert.equal(a.response.bucketRemaining, 25);
+    const b = await s.orchestrator.execute('expense_buckets', { action: 'spend', name: 'Kino', amount: 12, note: 'Ticket' }, ctx);
+    assert.equal(b.response.remaining, 13); assert.equal(s.life.bucket(kino.id).bookings, 2);
   } finally { cleanup(); }
 });
 
@@ -102,7 +140,7 @@ test('Buckets reserve once, month scoping, editable, book atomically and reject 
     assert.throws(() => s.life.saveBucket({ name: 'x', amount: 1, month: '2026-13' }));
     assert.throws(() => s.life.saveBucket({ id: 'missing', name: 'x', amount: 1, month: ym() }));
     assert.equal(s.life.buckets('2099-01').length, 1);
-    s.life.removeBucket(s.life.buckets('2099-01')[0].id); assert.equal(s.life.buckets().length, 0);
+    s.life.removeBucket(s.life.buckets('2099-01')[0].id); assert.equal(s.life.buckets().length, 1, 'gebuchter Bucket bleibt als Plan sichtbar');
   } finally { cleanup(); }
 });
 

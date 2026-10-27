@@ -671,6 +671,24 @@
     "steamAppId": 2429640
   },
   {
+    "id": "aion2",
+    "name": "AION 2",
+    "short": "AION2",
+    "aliases": [
+      "aion 2",
+      "aion2",
+      "aion zwei"
+    ],
+    "processes": [
+      "Aion2.exe",
+      "AION2.exe",
+      "Aion2-Win64-Shipping.exe",
+      "AION2-Win64-Shipping.exe"
+    ],
+    "integration": "aion2",
+    "accent": "#7fb6ff"
+  },
+  {
     "id": "theforest",
     "name": "The Forest",
     "aliases": [

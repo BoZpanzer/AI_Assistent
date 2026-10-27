@@ -527,16 +527,33 @@ function LifeCard({ s }) {
   );
 }
 
+const GAMING_TABS = [['general', 'Allgemein'], ['lol', 'League of Legends'], ['eft', 'Tarkov'], ['other', 'Weitere Spiele']];
 function GamingCard({ s, secrets }) {
   const g = s.gaming;
   const [riotKey, setRiotKey] = useState('');
   const [pubgKey, setPubgKey] = useState('');
   const [installed, , st] = useRpc('game.installed', {}, { initial: [] });
+  const [tab, setTabRaw] = useState(() => { try { return localStorage.getItem('settings.gamingTab') || 'general'; } catch { return 'general'; } });
+  const setTab = (t) => { setTabRaw(t); try { localStorage.setItem('settings.gamingTab', t); } catch { /* egal */ } };
   return (
     <Panel icon={Gamepad2} title="Gaming" sub="Spiele und Integrationen">
+      <div class="tabs sm mb" style={{ flexWrap: 'wrap' }}>{GAMING_TABS.map(([k, l]) => <button class={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+      {tab === 'general' && <>
       <Field label="Spielerkennung aktivieren (Prozesse)"><Toggle checked={g.detection} onChange={(v) => upd({ gaming: { detection: v } })} /></Field>
       <Field label="Ressourcen beim Spielen reduzieren"><Toggle checked={g.reduceWhileGaming} onChange={(v) => upd({ gaming: { reduceWhileGaming: v } })} /></Field>
       <Field label="Erkannte Spiele"><span class="small muted" style={{ textAlign: 'right' }}>{st.loading ? '…' : installed.map((p) => p.short || p.name).join(', ') || 'keine'}</span></Field>
+      <Field label="„Wo war ich?“ beim Spielstart" hint="Kurzer Recap aus Notizen und Spielstand, wenn du ein Spiel ≥ 3 Tage nicht gespielt hast"><Toggle checked={g.gameRecap !== false} onChange={(v) => upd({ gaming: { gameRecap: v } })} /></Field>
+      <Field label="Pausen-Erinnerung (Minuten am Stück)" hint="0 = aus"><input class="inp" type="number" min="0" max="600" step="15" style={{ width: 90 }} value={g.breakReminderMin ?? 0} onChange={(e) => upd({ gaming: { breakReminderMin: Math.max(0, Math.round(Number(e.currentTarget.value) || 0)) } })} /></Field>
+      <Field label="Patch-Notes-Wächter" hint="Offizielle News deiner Spiele (Steam, LoL) alle 6 Stunden"><Toggle checked={g.patchNotes !== false} onChange={(v) => upd({ gaming: { patchNotes: v } })} /></Field>
+      <Field label="Patch-Notes: KI-Kurzfassung" hint="Nur für Spiele der letzten 14 Tage, höchstens 6 pro Tag"><Toggle checked={g.patchSummaries !== false} onChange={(v) => upd({ gaming: { patchSummaries: v } })} /></Field>
+      <div class="hr" />
+      <Field label="Steam: Game-Seiten automatisch anlegen" hint="Für jedes Steam-Spiel mit Spielzeit – stündlich geprüft, lokal aus Steam gelesen"><Toggle checked={g.steamAutoImport !== false} onChange={(v) => upd({ gaming: { steamAutoImport: v } })} /></Field>
+      <Field label="… ab Spielzeit (Minuten)"><input class="inp" type="number" min="0" style={{ width: 90 }} value={g.steamMinMinutes ?? 1} onChange={(e) => upd({ gaming: { steamMinMinutes: Math.max(0, Number(e.currentTarget.value) || 0) } })} /></Field>
+      <Field label="Steam-Ordner (nur falls nicht gefunden)"><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.steamDir || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) upd({ gaming: { steamDir: f } }); }}><FolderOpen size={14} /></button></div></Field>
+      <Field label="Steam-Wunschliste: Angebote melden" hint="Wunschliste muss öffentlich sein"><Toggle checked={g.wishlistAlerts !== false} onChange={(v) => upd({ gaming: { wishlistAlerts: v } })} /></Field>
+      <Field label="Ab Rabatt (%)"><input class="inp" type="number" min="0" max="100" step="5" style={{ width: 90 }} value={g.wishlistMinDiscount ?? 30} onChange={(e) => upd({ gaming: { wishlistMinDiscount: Math.min(100, Math.max(0, Math.round(Number(e.currentTarget.value) || 0))) } })} /></Field>
+      </>}
+      {tab === 'lol' && <>
       <div class="notice small">League of Legends: Matchhistorie und Rang werden aus dem laufenden League-Client gelesen – <b>kein API-Schlüssel nötig</b>. Riot-ID/Schlüssel unten nur, wenn du Daten auch ohne geöffneten Client willst.</div>
       <Field label="Eigene LoL-Matches im Gaming-Cloud-Chat verwenden" hint="Standard: aus. Bei Aktivierung können Matchdaten und Statistiken zur Beantwortung deiner League-Fragen an Gemini übertragen werden. Kein Audio, keine Riot-Zugangsdaten.">
         <Toggle checked={g.lolCloudShare === true} onChange={async (v) => {
@@ -550,41 +567,47 @@ function GamingCard({ s, secrets }) {
       <Field label="Riot-API-Schlüssel (optional)" hint={secrets['riot.api_key'] ? 'gespeichert' : 'nicht nötig, wenn der Client läuft'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['riot.api_key'] ? '••••••••' : 'RGAPI-…'} value={riotKey} onInput={(e) => setRiotKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'riot.api_key', value: riotKey }), 'Gespeichert'); setRiotKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
       </Field>
+      <div class="hr" />
       <Field label="LoL Live-Coach (deine Werte im Match)" hint="Nur Einordnung gegen deinen Schnitt und deine Ziele – keine Anweisungen, keine Gegner-Timer (Riot-Regeln). Notizen im Spiel: „Jarvis, notier: …“ – landen in der Nachbesprechung."><Toggle checked={g.lolLiveCoach} onChange={(v) => upd({ gaming: { lolLiveCoach: v } })} /></Field>
-      <Field label="Patch-Notes-Wächter" hint="Offizielle News deiner Spiele (Steam, LoL) alle 6 Stunden"><Toggle checked={g.patchNotes !== false} onChange={(v) => upd({ gaming: { patchNotes: v } })} /></Field>
-      <Field label="Patch-Notes: KI-Kurzfassung" hint="Nur für Spiele der letzten 14 Tage, höchstens 6 pro Tag"><Toggle checked={g.patchSummaries !== false} onChange={(v) => upd({ gaming: { patchSummaries: v } })} /></Field>
-      <Field label="„Wo war ich?“ beim Spielstart" hint="Kurzer Recap aus Notizen und Spielstand, wenn du ein Spiel ≥ 3 Tage nicht gespielt hast"><Toggle checked={g.gameRecap !== false} onChange={(v) => upd({ gaming: { gameRecap: v } })} /></Field>
-      <Field label="Pausen-Erinnerung (Minuten am Stück)" hint="0 = aus"><input class="inp" type="number" min="0" max="600" step="15" style={{ width: 90 }} value={g.breakReminderMin ?? 0} onChange={(e) => upd({ gaming: { breakReminderMin: Math.max(0, Math.round(Number(e.currentTarget.value) || 0)) } })} /></Field>
-      <Field label="PUBG-API-Schlüssel" hint={secrets['pubg.api_key'] ? 'gespeichert' : 'kostenlos auf developer.pubg.com – für die Match-Nachbesprechung'}>
-        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['pubg.api_key'] ? '••••••••' : 'eyJ…'} value={pubgKey} onInput={(e) => setPubgKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'pubg.api_key', value: pubgKey }), 'Gespeichert'); setPubgKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
-      </Field>
-      <Field label="PUBG-Spielername"><input class="inp" style={{ width: 200 }} value={g.pubgName || ''} onChange={(e) => upd({ gaming: { pubgName: e.currentTarget.value.trim() } })} /></Field>
-      <Field label="CS2: Spielzustand auswerten (Valve GSI)" hint="Einrichten auf der CS2-Seite"><Toggle checked={g.cs2Gsi !== false} onChange={(v) => upd({ gaming: { cs2Gsi: v } })} /></Field>
-      <Field label="Assetto Corsa: Telemetrie auswerten"><Toggle checked={g.acTelemetry !== false} onChange={(v) => upd({ gaming: { acTelemetry: v } })} /></Field>
-      <Field label="ARK: Prägungs-Intervall (Stunden)" hint="Standard 8 h, auf Servern mit anderen Raten anpassen"><input class="inp" type="number" min="0.1" max="48" step="0.25" style={{ width: 90 }} value={g.arkCuddleHours ?? 8} onChange={(e) => upd({ gaming: { arkCuddleHours: Math.max(0.1, Number(e.currentTarget.value) || 8) } })} /></Field>
-      <Field label="Steam-Wunschliste: Angebote melden" hint="Wunschliste muss öffentlich sein"><Toggle checked={g.wishlistAlerts !== false} onChange={(v) => upd({ gaming: { wishlistAlerts: v } })} /></Field>
-      <Field label="Ab Rabatt (%)"><input class="inp" type="number" min="0" max="100" step="5" style={{ width: 90 }} value={g.wishlistMinDiscount ?? 30} onChange={(e) => upd({ gaming: { wishlistMinDiscount: Math.min(100, Math.max(0, Math.round(Number(e.currentTarget.value) || 0))) } })} /></Field>
       <Field label="LoL Matchup-Karte (Championauswahl)" hint="Phasen, Win-Condition, deine Bilanz und Notizen zum Lane-Gegner – KI-Wissen einmal pro Matchup und Patch"><Toggle checked={g.lolMatchupCard !== false} onChange={(v) => upd({ gaming: { lolMatchupCard: v } })} /></Field>
       <Field label="LoL Tipps gegen die Gegner (auch im Overlay)" hint="Gefährlichste Fähigkeit + konkrete Konter-Tipps je gegnerischem Champion – vor dem Spiel erzeugt (Sparmodell, pro Patch gespeichert), ohne Cloud: Riots eigene Tipps"><Toggle checked={g.lolEnemyTips !== false} onChange={(v) => upd({ gaming: { lolEnemyTips: v } })} /></Field>
       <Field label="LoL Champion-Empfehlung in der Championauswahl" hint="Aus deinem eigenen Pool und deiner Bilanz gegen diese Gegner; optional kurze KI-Begründung (Sparmodell)"><Toggle checked={g.lolPickAdvice !== false} onChange={(v) => upd({ gaming: { lolPickAdvice: v } })} /></Field>
-      <Field label="LoL Pause-Hinweis nach Niederlagen" hint="Nur wenn deine eigene Statistik nach Niederlagen-Serien deutlich schlechter ist"><Toggle checked={g.lolBreakHint !== false} onChange={(v) => upd({ gaming: { lolBreakHint: v } })} /></Field>
-      <Field label="LoL Wochenbericht (montags)"><Toggle checked={g.lolWeekly !== false} onChange={(v) => upd({ gaming: { lolWeekly: v } })} /></Field>
+      <Field label="LoL Championauswahl: Matchup-Tipps" hint="Nur Champions, keine Spielerdaten"><Toggle checked={g.lolChampSelect !== false} onChange={(v) => upd({ gaming: { lolChampSelect: v } })} /></Field>
       <Field label="LoL Objective-Timer im Overlay" hint="Drache, Baron, Herold, Grubs, Atakhan – Respawns aus echten Kills"><Toggle checked={g.lolObjectives !== false} onChange={(v) => upd({ gaming: { lolObjectives: v } })} /></Field>
       {g.lolObjectives !== false && <Field label="Erste Spawnzeiten (Min.)" hint="Standardwerte; nach einem Patch hier anpassen">
         <div class="row gap-s" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>{[['dragon', 'Drache', 5], ['grubs', 'Grubs', 8], ['herald', 'Herold', 15], ['atakhan', 'Atakhan', 20], ['baron', 'Baron', 25]].map(([k, l, d]) => (
           <label class="tiny muted" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{l}<input class="inp" type="number" min="0" max="60" step="0.25" style={{ width: 58 }} value={(g.lolObjectiveTimes?.[k] ?? d * 60) / 60} onChange={(e) => upd({ gaming: { lolObjectiveTimes: { ...(g.lolObjectiveTimes || {}), [k]: Math.round(Math.max(0, Number(e.currentTarget.value) || 0) * 60) } } })} /></label>))}</div>
       </Field>}
-      <Field label="LoL Championauswahl: Matchup-Tipps" hint="Nur Champions, keine Spielerdaten"><Toggle checked={g.lolChampSelect !== false} onChange={(v) => upd({ gaming: { lolChampSelect: v } })} /></Field>
       <Field label="LoL Nachbesprechung nach jedem Spiel"><Toggle checked={g.lolReview !== false} onChange={(v) => upd({ gaming: { lolReview: v } })} /></Field>
       {g.lolReview !== false && <Field label="… mit KI-Zusammenfassung (Gemini)"><Toggle checked={g.lolReviewAi !== false} onChange={(v) => upd({ gaming: { lolReviewAi: v } })} /></Field>}
+      <Field label="LoL Pause-Hinweis nach Niederlagen" hint="Nur wenn deine eigene Statistik nach Niederlagen-Serien deutlich schlechter ist"><Toggle checked={g.lolBreakHint !== false} onChange={(v) => upd({ gaming: { lolBreakHint: v } })} /></Field>
+      <Field label="LoL Wochenbericht (montags)"><Toggle checked={g.lolWeekly !== false} onChange={(v) => upd({ gaming: { lolWeekly: v } })} /></Field>
+      </>}
+      {tab === 'eft' && <TarkovTrackerField />}
+      {tab === 'other' && <>
+      <Field label="PUBG-API-Schlüssel" hint={secrets['pubg.api_key'] ? 'gespeichert' : 'kostenlos auf developer.pubg.com – für die Match-Nachbesprechung'}>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['pubg.api_key'] ? '••••••••' : 'eyJ…'} value={pubgKey} onInput={(e) => setPubgKey(e.currentTarget.value)} /><button class="btn xs" onClick={async () => { await guard(() => rpc('secrets.set', { key: 'pubg.api_key', value: pubgKey }), 'Gespeichert'); setPubgKey(''); setState({ secrets: await rpc('secrets.status') }); }}>OK</button></div>
+      </Field>
+      <Field label="PUBG-Spielername"><input class="inp" style={{ width: 200 }} value={g.pubgName || ''} onChange={(e) => upd({ gaming: { pubgName: e.currentTarget.value.trim() } })} /></Field>
       <div class="hr" />
-      <Field label="Steam: Game-Seiten automatisch anlegen" hint="Für jedes Steam-Spiel mit Spielzeit – stündlich geprüft, lokal aus Steam gelesen"><Toggle checked={g.steamAutoImport !== false} onChange={(v) => upd({ gaming: { steamAutoImport: v } })} /></Field>
-      <Field label="… ab Spielzeit (Minuten)"><input class="inp" type="number" min="0" style={{ width: 90 }} value={g.steamMinMinutes ?? 1} onChange={(e) => upd({ gaming: { steamMinMinutes: Math.max(0, Number(e.currentTarget.value) || 0) } })} /></Field>
-      <Field label="Steam-Ordner (nur falls nicht gefunden)"><div class="row gap-s" style={{ width: '100%' }}><input class="inp" readOnly value={g.steamDir || ''} placeholder="automatisch" /><button class="btn icon xs" onClick={async () => { const f = await rpc('dialog.pickFolder'); if (f) upd({ gaming: { steamDir: f } }); }}><FolderOpen size={14} /></button></div></Field>
+      <Field label="CS2: Spielzustand auswerten (Valve GSI)" hint="Einrichten auf der CS2-Seite"><Toggle checked={g.cs2Gsi !== false} onChange={(v) => upd({ gaming: { cs2Gsi: v } })} /></Field>
+      <Field label="Assetto Corsa: Telemetrie auswerten"><Toggle checked={g.acTelemetry !== false} onChange={(v) => upd({ gaming: { acTelemetry: v } })} /></Field>
+      <Field label="ARK: Prägungs-Intervall (Stunden)" hint="Standard 8 h, auf Servern mit anderen Raten anpassen"><input class="inp" type="number" min="0.1" max="48" step="0.25" style={{ width: 90 }} value={g.arkCuddleHours ?? 8} onChange={(e) => upd({ gaming: { arkCuddleHours: Math.max(0.1, Number(e.currentTarget.value) || 8) } })} /></Field>
       <div class="hr" />
-      <TarkovTrackerField />
+      <Aion2Settings g={g} />
+      </>}
     </Panel>
   );
+}
+
+function Aion2Settings({ g }) {
+  const a = g.aion2 || {};
+  const days = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+  return <>
+    <Field label="AION 2: Server-Region" hint="für Event-Zeiten (Kaira, Belagerung) in Serverzeit"><Select value={a.region || 'eu'} onChange={(v) => upd({ gaming: { aion2: { region: v } } })} options={[{ value: 'eu', label: 'Europa' }, { value: 'na-east', label: 'NA Ost' }, { value: 'na-west', label: 'NA West' }]} /></Field>
+    <Field label="AION 2: täglicher Reset (Serverzeit)" hint="lässt sich auch auf der AION-2-Seite aus dem Countdown im Spiel übernehmen"><input class="inp" type="time" style={{ width: 110 }} value={a.resetTime || '05:00'} onChange={(e) => /^\d{2}:\d{2}$/.test(e.currentTarget.value) && upd({ gaming: { aion2: { resetTime: e.currentTarget.value } } })} /></Field>
+    <Field label="AION 2: wöchentlicher Reset"><Select value={a.weeklyDay ?? 3} onChange={(v) => upd({ gaming: { aion2: { weeklyDay: Number(v) } } })} options={days.map((d, i) => ({ value: i, label: d }))} /></Field>
+  </>;
 }
 
 function TarkovTrackerField() {

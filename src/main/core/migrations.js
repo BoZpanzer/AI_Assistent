@@ -238,5 +238,10 @@ module.exports = [
       dedupe TEXT UNIQUE, data TEXT NOT NULL DEFAULT '{}', deleted INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
     CREATE INDEX ix_game_stats ON game_stat_events(game, kind, day);
   `),
+  // v11 — Ausgaben in Buckets buchen (Teilbeträge; Bucket bleibt als Plan bestehen)
+  (db) => db.exec(`
+    ALTER TABLE expenses ADD COLUMN bucket_id TEXT;
+    CREATE INDEX ix_expenses_bucket ON expenses(bucket_id);
+  `),
 ];
 

@@ -10,7 +10,7 @@ const { redact } = require('../src/main/core/logger');
 
 test('Datenbank: Migration, Schema-Version, Backup vor Migration', () => {
   const { core, cleanup } = tempCore();
-  assert.equal(core.db.version, 10);
+  assert.equal(core.db.version, 11);
   const snap = core.db.snapshot('test');
   assert.ok(fs.existsSync(snap));
   cleanup();

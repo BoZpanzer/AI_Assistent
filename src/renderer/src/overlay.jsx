@@ -138,6 +138,7 @@ function App() {
       {live && live.objectives?.length > 0 && <Objectives live={live} now={now} />}
       {scan && now - scan.shownAt < 25000 && <Card icon={Sparkles} title="Item-Scan" accent="#facc15" onClose={() => setScan(null)}>{scan.state === 'running' ? <div class="ov-dim">Erkenne Item …</div> : scan.state === 'error' ? <div class="ov-dim">{scan.error}</div> : <OvScan s={scan} />}</Card>}
       {active?.id === 'eft' && raid && <EftRaidCard raid={raid} now={now} />}
+      {active?.id === 'aion2' && <Aion2Events now={now} />}
 
       {open.length > 0 && (
         <Card icon={Timer} title="Timer">
@@ -166,6 +167,17 @@ function App() {
       {interactive && <div class="ov-hint">Bedienmodus – endet automatisch nach 20 s</div>}
     </div>
   );
+}
+
+/** AION 2: nächste feste Events (Kaira, Belagerung, Executors) – Feldboss-Countdowns stehen in der Timer-Karte. */
+function Aion2Events({ now }) {
+  // jede Minute neu laden, damit der „nächste Termin“ nach einem Event weiterspringt
+  const [ev] = useRpc('aion2.events', {}, { events: ['game:data', 'settings:changed'], deps: [Math.floor(now / 60000)] });
+  const list = (ev?.events || []).filter((e) => e.running || Date.parse(e.start) - now < 6 * 3600000).slice(0, 3);
+  if (!list.length) return null;
+  return <Card icon={Timer} title="AION 2 · Events" accent="#7fb6ff">
+    {list.map((e) => <div class="ov-row"><span class="grow ov-ell">{e.name}</span><b class={e.running ? 'ok' : ''}>{e.running ? 'läuft' : countdown(e.start)}</b></div>)}
+  </Card>;
 }
 
 /** Tipps gegen die gegnerischen Champions (vor dem Spiel erzeugt; Lane-Gegner zuerst, klappbar). */

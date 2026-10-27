@@ -53,4 +53,18 @@ function publicPresets() {
   return PRESET_IDS.map((id) => ({ id, label: PRESETS[id].label, description: PRESETS[id].description, windows: PRESETS[id].windows || null }));
 }
 
-module.exports = { PRESETS, PRESET_IDS, presetId, resolve, publicPresets };
+/**
+ * Sprachbefehl „Stimme auf Alya“, „nimm die Jarvis-Stimme“, „sprich wieder normal“ → Profil-ID, sonst null.
+ * Ohne KI, damit der Wechsel sofort und kostenlos klappt. Die Anrede „(Hey) Jarvis,“ am Anfang zählt nicht.
+ */
+const WORDS = [['alya', /\b(?:alya|alja|alia|aliya|alyah|anime)\b/g], ['jarvis', /\b(?:j\.?a\.?r\.?v\.?i\.?s\.?|jarvis|dschawis|butler)\b/g], ['standard', /\b(?:standard|normal(?:e|en)?|default|alte|ursprüngliche|bisherige)\b/g]];
+function parseVoiceCommand(text) {
+  const t = String(text || '').toLowerCase().trim().replace(/^(?:hey|hi|hallo|ok(?:ay)?)?\s*j\.?a\.?r\.?v\.?i\.?s\.?[\s,!:.-]*/, '');
+  if (!t || t.length > 90 || !/\b(?:stimme|stimmen|stimmprofil|voice|sprich|sprech\w*|rede|klingen|klingst)\b/.test(t)) return null;
+  if (/\?$|\b(?:welche|was für|wie klingt|wie heißt)\b/.test(t)) return null; // Fragen, keine Befehle
+  let best = null;
+  for (const [id, re] of WORDS) for (const m of t.matchAll(re)) if (!best || m.index > best.at) best = { id, at: m.index };
+  return best?.id || null;
+}
+
+module.exports = { PRESETS, PRESET_IDS, presetId, resolve, publicPresets, parseVoiceCommand };

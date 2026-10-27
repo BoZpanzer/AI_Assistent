@@ -33,9 +33,17 @@ function buildTools(s) {
     return null;
   };
 
-  def({ name: 'expense_buckets', mode: 'write', description: 'Geplantes Geld reservieren, ändern, freigeben oder nach tatsächlicher Zahlung als Ausgabe buchen. Keine echte Ausgabe bis action=book.',
-    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'book'] }, id: { type: 'string' }, name: { type: 'string' }, amount: { type: 'number' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
-    run: (p) => p.action === 'list' ? s.life.buckets(p.month) : p.action === 'save' ? s.life.saveBucket(p) : p.action === 'book' ? s.life.bookBucket(p.id, p.at) : s.life.removeBucket(p.id) });
+  def({ name: 'expense_buckets', mode: 'write', description: 'Buckets = geplantes Geld je Zweck und Monat. list (mit spent/remaining), save (anlegen/ändern), remove (freigeben), spend (Ausgabe in einen Bucket buchen – Teilbetrag, Bucket per id oder name), book (offenen Rest als bezahlt buchen).',
+    schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: ['list', 'save', 'remove', 'spend', 'book'] }, id: { type: 'string' }, name: { type: 'string', description: 'Bucket-Name (save; bei spend/book statt id)' }, amount: { type: 'number' }, note: { type: 'string', description: 'spend: wofür genau' }, month: { type: 'string' }, category: { type: 'string' }, at: { type: 'string' } } },
+    run: (p) => {
+      if (p.action === 'list') return s.life.buckets(p.month);
+      if (p.action === 'save') return s.life.saveBucket(p);
+      const b = s.life.findBucket(p.id || p.name, p.month);
+      if (!b) throw new Error('Bucket nicht gefunden – vorhandene: ' + (s.life.buckets().map((x) => x.name + ' (' + x.month + ')').join(', ') || 'keine'));
+      if (p.action === 'spend') { const r = s.life.addExpense({ amount: p.amount, note: p.note || '', category: p.category, at: p.at, bucketId: b.id }); return { saved: true, amount: r.amount, bucket: r.bucket.name, spent: r.bucket.spent, planned: r.bucket.amount, remaining: r.bucket.remaining, over: r.bucket.over }; }
+      if (p.action === 'book') return s.life.bookBucket(b.id, p.at);
+      return s.life.removeBucket(b.id);
+    } });
   // ---------- Overview ----------
   def({ name: 'get_today_overview', mode: 'read', description: 'Tagesüberblick: heutige Termine, fällige/überfällige Aufgaben, laufende Spiel-Timer, ungelesene Benachrichtigungen. Für „was steht heute an?“.',
     schema: { type: 'object', properties: { day: { type: 'string', description: 'ISO-Datum, Standard heute' } } },
@@ -148,6 +156,10 @@ function buildTools(s) {
   def({ name: 'search_brain', mode: 'read', description: 'Langzeitgedächtnis (persönliche Infos, Projekte, Ideen, gespeicherte Quellen, Spielwissen) durchsuchen. Hybride Volltext- und semantische Suche.',
     schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' }, domains: { type: 'array', items: { type: 'string', enum: Object.keys(DOMAINS) } }, game: { type: 'string' } } },
     run: async ({ query, domains, game }) => { const r = await s.brain.search(query, { scope: 'knowledge', domains, game, limit: 8 }); return { results: r.results.map((x) => ({ id: x.id, title: x.title, text: x.snippet, domain: x.domainLabel, source: x.sourceType, url: x.sourceUrl, possiblyOutdated: x.stale || undefined, updated: x.updatedAt })) }; } });
+
+  def({ name: 'set_voice', mode: 'read', description: 'Stimme von JARVIS wechseln („nimm die Alya-Stimme“, „sprich wie Jarvis“, „wieder normale Stimme“). Profile: standard, jarvis, alya. Gilt sofort für alle Sprachantworten.',
+    schema: { type: 'object', required: ['preset'], properties: { preset: { type: 'string', enum: ['standard', 'jarvis', 'alya'] } } },
+    run: ({ preset }) => s.orchestrator.setVoice(preset) });
 
   def({ name: 'voice_standby', mode: 'read', description: 'Sprachmodus pausieren („geh in den Standby“, „Pause“, „schlaf“): Das Mikrofon hört nur noch auf das Wake-Word „Hey Jarvis“, bis der Nutzer es wieder sagt.',
     schema: { type: 'object', properties: {} },
@@ -394,9 +406,9 @@ function buildTools(s) {
     run: ({ id: did, done }) => ({ deadline: s.deadlines.setDone(did, done !== false) }) });
   // ---------- Alltag ----------
   def({ name: 'add_expense', mode: 'write', description: 'Ausgabe erfassen („12 € Döner“, „Tanken 45,20“). Kategorie wird aus der Notiz erkannt oder angegeben. Antwort: kurz bestätigen + was im Monat schon ausgegeben ist bzw. vom Budget übrig.',
-    schema: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, note: { type: 'string' }, category: { type: 'string', enum: require('../services/life').CATEGORIES }, at: { type: 'string', description: 'ISO-Datum, Standard jetzt' } } },
-    run: (a) => { const r = s.life.addExpense(a); return { saved: true, amount: r.amount, category: r.category, monthTotal: r.month.total, budgetLeft: r.month.left }; },
-    card: (a, r) => ({ icon: 'check', title: 'Ausgabe erfasst', lines: [`${Number(a.amount).toFixed(2).replace('.', ',')} € · ${r?.category}${a.note ? ' · ' + a.note : ''}`, r?.budgetLeft != null ? `Noch ${r.budgetLeft.toFixed(2).replace('.', ',')} € im Budget` : `Monat: ${r?.monthTotal?.toFixed(2).replace('.', ',')} €`] }) });
+    schema: { type: 'object', required: ['amount'], properties: { amount: { type: 'number' }, note: { type: 'string' }, category: { type: 'string', enum: require('../services/life').CATEGORIES }, at: { type: 'string', description: 'ISO-Datum, Standard jetzt' }, bucket: { type: 'string', description: 'Optional: Name des Buckets, in den die Ausgabe gebucht wird („aus dem Urlaub-Bucket“)' } } },
+    run: (a) => { const b = a.bucket ? s.life.findBucket(a.bucket) : null; if (a.bucket && !b) throw new Error('Bucket „' + a.bucket + '“ nicht gefunden'); const r = s.life.addExpense({ ...a, bucketId: b?.id || null }); return { saved: true, amount: r.amount, category: r.category, monthTotal: r.month.total, budgetLeft: r.month.left, ...(r.bucket ? { bucket: r.bucket.name, bucketSpent: r.bucket.spent, bucketPlanned: r.bucket.amount, bucketRemaining: r.bucket.remaining } : {}) }; },
+    card: (a, r) => ({ icon: 'check', title: 'Ausgabe erfasst', lines: [`${Number(a.amount).toFixed(2).replace('.', ',')} € · ${r?.category}${a.note ? ' · ' + a.note : ''}`, ...(r?.bucket ? [`Bucket ${r.bucket}: ${r.bucketSpent.toFixed(2).replace('.', ',')} von ${r.bucketPlanned.toFixed(2).replace('.', ',')} €`] : []), r?.budgetLeft != null ? `Noch ${r.budgetLeft.toFixed(2).replace('.', ',')} € im Budget` : `Monat: ${r?.monthTotal?.toFixed(2).replace('.', ',')} €`] }) });
   def({ name: 'finance_overview', mode: 'read', description: 'Geld-Übersicht eines Monats (Standard: aktuell): Einnahmen (fest + einmalig), Fixkosten, Abos, variable Ausgaben, Saldo (was bis Monatsende frei ist) und pro Tag, Budget-Rest, Prognose, Kategorien, letzte Ausgaben.',
     schema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM' } } },
     run: ({ month }) => ({ ...s.life.month(month || null), subscriptionList: s.life.subscriptions() }) });

@@ -38,8 +38,8 @@ export function Life() {
 
 function Finance() {
   const [m, reload] = useRpc('life.month', {}, { events: ['life:data'] });
-  const [f, setF] = useState({ amount: '', note: '' });
-  const add = async () => { if (!f.amount) return; if (await guard(() => rpc('life.addExpense', { amount: f.amount, note: f.note }))) { setF({ amount: '', note: '' }); reload(); } };
+  const [f, setF] = useState({ amount: '', note: '', bucketId: '' });
+  const add = async () => { if (!f.amount) return; if (await guard(() => rpc('life.addExpense', { amount: f.amount, note: f.note, bucketId: f.bucketId || null }))) { setF({ amount: '', note: '', bucketId: f.bucketId }); reload(); } };
   if (!m) return <Panel icon={Wallet} title="Ausgaben"><Spinner /></Panel>;
   const max = Math.max(1, ...m.categories.map((c) => c.sum));
   const pct = m.budget ? Math.min(100, Math.round((m.totalWithSubs + (m.reserved || 0)) / m.budget * 100)) : null;
@@ -51,8 +51,8 @@ function Finance() {
       {pct != null && <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, marginTop: 8 }}><div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: pct >= 100 ? 'var(--red, #e5484d)' : pct >= 80 ? 'var(--orange)' : 'var(--cyan)' }} /></div>}
       {!m.budget && <div class="tiny muted mt">Monatsbudget in den Einstellungen setzen, dann zeigt JARVIS, was übrig ist.</div>}
       <div class="col mt" style={{ gap: 3 }}>{m.categories.map((c) => <div class="row small" style={{ gap: 8 }}><span style={{ width: 130 }}>{c.category}</span><div class="grow" style={{ height: 8, background: 'var(--line)', borderRadius: 4 }}><div style={{ width: (c.sum / max) * 100 + '%', height: '100%', background: 'var(--cyan)', borderRadius: 4 }} /></div><span style={{ width: 80, textAlign: 'right' }}>{eur(c.sum)}</span></div>)}</div>
-      <div class="row gap-s mt"><input class="inp" style={{ width: 90 }} placeholder="€" inputmode="decimal" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp grow" placeholder="wofür? (z. B. Döner, Tanken)" value={f.note} onInput={(e) => setF({ ...f, note: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} /><button class="btn xs" onClick={add}><Plus size={12} /></button></div>
-      <div class="col mt" style={{ gap: 2, maxHeight: 160, overflow: 'auto' }}>{m.recent.map((x) => <div class="row small"><span class="tiny muted" style={{ width: 70 }}>{new Date(x.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span><span class="grow">{x.note || x.category}<span class="tiny muted"> · {x.category}</span></span><span>{eur(x.amount)}</span><button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeExpense', { id: x.id })).then(reload)}><X size={11} /></button></div>)}</div>
+      <div class="row gap-s mt"><input class="inp" style={{ width: 90 }} placeholder="€" inputmode="decimal" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp grow" placeholder="wofür? (z. B. Döner, Tanken)" value={f.note} onInput={(e) => setF({ ...f, note: e.currentTarget.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />{!!m.buckets?.length && <Select style={{ width: 150 }} value={f.bucketId} onChange={(v) => setF({ ...f, bucketId: v })} options={[{ value: '', label: 'ohne Bucket' }, ...m.buckets.map((b) => ({ value: b.id, label: '→ ' + b.name }))]} />}<button class="btn xs" onClick={add}><Plus size={12} /></button></div>
+      <div class="col mt" style={{ gap: 2, maxHeight: 160, overflow: 'auto' }}>{m.recent.map((x) => <div class="row small"><span class="tiny muted" style={{ width: 70 }}>{new Date(x.at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span><span class="grow">{x.note || x.category}<span class="tiny muted"> · {x.category}{x.bucketId && m.buckets?.find((b) => b.id === x.bucketId) ? ' · ' + m.buckets.find((b) => b.id === x.bucketId).name : ''}</span></span><span>{eur(x.amount)}</span><button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeExpense', { id: x.id })).then(reload)}><X size={11} /></button></div>)}</div>
     </Panel>
   );
 }
@@ -237,14 +237,65 @@ export function DeadlinesPanel() {
 }
 
 
+const ymOf = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const monthLabel = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }); };
+const shiftYm = (ym, n) => { const [y, m] = ym.split('-').map(Number); return ymOf(new Date(y, m - 1 + n, 1)); };
+
+/** Säulendiagramm: je Bucket eine Säule; Umriss = geplant, Füllung = schon ausgegeben (rot über dem Plan). */
+export function BucketChart({ rows }) {
+  if (!rows.length) return null;
+  const max = Math.max(...rows.map((b) => Math.max(b.amount, b.spent))) || 1;
+  const pct = (v) => `${Math.max(0, Math.min(100, (v / max) * 100))}%`;
+  return <div class="bucket-chart" role="img" aria-label={rows.map((b) => `${b.name}: ${eur(b.spent)} von ${eur(b.amount)}`).join('; ')}>
+    {rows.map((b) => <div class="bc-col" title={`${b.name}: ${eur(b.spent)} von ${eur(b.amount)} ausgegeben${b.over ? ` · ${eur(b.over)} drüber` : ` · ${eur(b.remaining)} übrig`}`}>
+      <div class={'bc-val' + (b.over ? ' over' : '')}>{eur(b.spent)}</div>
+      <div class="bc-track">
+        <div class="bc-plan" style={{ height: pct(b.amount) }} />
+        <div class={'bc-fill' + (b.over ? ' over' : '')} style={{ height: pct(b.spent) }} />
+      </div>
+      <div class="bc-name">{b.name}</div>
+      <div class="bc-sub">von {eur(b.amount)}</div>
+    </div>)}
+  </div>;
+}
+
 function Buckets() {
-  const now = new Date(); const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const [month, setMonth] = useState(ymOf());
   const blank = { name: '', amount: '', month };
   const [f, setF] = useState(blank);
-  const [rows] = useRpc('life.buckets', {}, { events: ['life:data'], initial: [] });
-  return <Panel icon={Wallet} title="Geplante Ausgaben · Buckets" sub="Reserviert, aber noch nicht ausgegeben. Wird im Zielmonat vom freien Geld abgezogen.">
-    <div class="row wrap gap-s"><input class="inp grow" placeholder="Wofür?" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} /><input class="inp" style={{ width: 95 }} placeholder="Betrag €" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp" type="month" value={f.month} onInput={(e) => setF({ ...f, month: e.currentTarget.value })} /><button class="btn sm" onClick={async () => { if (await guard(() => rpc('life.saveBucket', f))) setF(blank); }}>{f.id ? 'Ändern' : 'Reservieren'}</button>{f.id && <button class="btn xs" onClick={() => setF(blank)}>Abbrechen</button>}</div>
-    {!rows.length && <Empty>Noch kein Geld verplant.</Empty>}
-    {rows.map((b) => <div class="row wrap small mt"><span class="grow"><b>{b.name}</b> · {b.month} · {eur(b.amount)}</span><button class="btn xs" onClick={() => setF(b)}>Bearbeiten</button><button class="btn xs" onClick={async () => { if (await ask(`${b.name}: ${eur(b.amount)} heute als tatsächliche Ausgabe buchen?`, '', { confirmOnly: true, okLabel: 'Buchen' })) await guard(() => rpc('life.bookBucket', { id: b.id })); }}>Bezahlt → buchen</button><button class="btn xs ghost" onClick={() => guard(() => rpc('life.removeBucket', { id: b.id }))}>Freigeben</button></div>)}
+  const [spend, setSpend] = useState({});
+  const [open, setOpen] = useState('');
+  const [rows] = useRpc('life.buckets', { month }, { events: ['life:data'], initial: [], deps: [month] });
+  const [items] = useRpc('life.bucketExpenses', { id: open }, { events: ['life:data'], initial: [], deps: [open], enabled: !!open });
+  const planned = rows.reduce((a, b) => a + b.amount, 0); const spent = rows.reduce((a, b) => a + b.spent, 0);
+  const book = async (b) => {
+    const v = spend[b.id] || {}; if (!v.amount) return;
+    if (await guard(() => rpc('life.addExpense', { amount: v.amount, note: v.note || '', bucketId: b.id }), 'In „' + b.name + '“ gebucht')) setSpend({ ...spend, [b.id]: {} });
+  };
+  return <Panel icon={Wallet} title="Buckets" sub="Geld je Zweck verplanen und Ausgaben direkt hineinbuchen. Der offene Rest wird im Monat vom freien Geld abgezogen.">
+    <div class="row wrap gap-s"><input class="inp grow" placeholder="Wofür? (z. B. Urlaub, Essen gehen)" value={f.name} onInput={(e) => setF({ ...f, name: e.currentTarget.value })} /><input class="inp" style={{ width: 95 }} placeholder="Plan €" value={f.amount} onInput={(e) => setF({ ...f, amount: e.currentTarget.value })} /><input class="inp" type="month" value={f.month} onInput={(e) => setF({ ...f, month: e.currentTarget.value })} /><button class="btn sm" onClick={async () => { if (await guard(() => rpc('life.saveBucket', f))) { setMonth(f.month); setF({ ...blank, month: f.month }); } }}>{f.id ? 'Ändern' : 'Anlegen'}</button>{f.id && <button class="btn xs" onClick={() => setF(blank)}>Abbrechen</button>}</div>
+    <div class="row gap-s mt" style={{ alignItems: 'center' }}>
+      <button class="btn xs ghost" title="Vormonat" onClick={() => setMonth(shiftYm(month, -1))}>‹</button>
+      <b style={{ minWidth: 130, textAlign: 'center' }}>{monthLabel(month)}</b>
+      <button class="btn xs ghost" title="Nächster Monat" onClick={() => setMonth(shiftYm(month, 1))}>›</button>
+      <span class="grow" />
+      {!!rows.length && <span class="small muted">{eur(spent)} von {eur(planned)} ausgegeben</span>}
+    </div>
+    {!rows.length ? <Empty>Für {monthLabel(month)} ist noch kein Geld verplant.</Empty> : <BucketChart rows={rows} />}
+    {rows.map((b) => <div class="bucket-row">
+      <div class="row wrap small" style={{ alignItems: 'center' }}>
+        <span class="grow"><b>{b.name}</b> · {eur(b.spent)} / {eur(b.amount)} {b.over ? <span style={{ color: 'var(--red)' }}>· {eur(b.over)} drüber</span> : <span class="muted">· {eur(b.remaining)} übrig</span>}</span>
+        {b.bookings > 0 && <button class="btn xs ghost" onClick={() => setOpen(open === b.id ? '' : b.id)}>{b.bookings} Buchung{b.bookings === 1 ? '' : 'en'} {open === b.id ? '▴' : '▾'}</button>}
+        <button class="btn xs" onClick={() => setF({ id: b.id, name: b.name, amount: b.amount, month: b.month, category: b.category })}>Bearbeiten</button>
+        {b.remaining > 0 && <button class="btn xs" title="Den offenen Rest als bezahlt buchen" onClick={async () => { if (await ask(`${b.name}: offenen Rest von ${eur(b.remaining)} heute als Ausgabe buchen?`, '', { confirmOnly: true, okLabel: 'Buchen' })) await guard(() => rpc('life.bookBucket', { id: b.id })); }}>Rest bezahlt</button>}
+        <button class="btn xs ghost" title={b.bookings ? 'Bucket löschen – gebuchte Ausgaben bleiben erhalten' : 'Bucket löschen'} onClick={() => guard(() => rpc('life.removeBucket', { id: b.id }))}><Trash2 size={12} /></button>
+      </div>
+      <div class="row gap-s" style={{ marginTop: 6 }}>
+        <input class="inp" style={{ width: 95 }} placeholder="Betrag €" value={spend[b.id]?.amount || ''} onInput={(e) => setSpend({ ...spend, [b.id]: { ...spend[b.id], amount: e.currentTarget.value } })} onKeyDown={(e) => e.key === 'Enter' && book(b)} />
+        <input class="inp grow" placeholder={'Wofür? (optional, sonst „' + b.name + '“)'} value={spend[b.id]?.note || ''} onInput={(e) => setSpend({ ...spend, [b.id]: { ...spend[b.id], note: e.currentTarget.value } })} onKeyDown={(e) => e.key === 'Enter' && book(b)} />
+        <button class="btn sm" onClick={() => book(b)}><Plus size={13} /> Ausgabe</button>
+      </div>
+      {open === b.id && items.map((x) => <div class="row small muted" style={{ paddingLeft: 8, marginTop: 4 }}><span class="grow">{dmy(x.at.slice(0, 10))} · {x.note || b.name}</span><span>{eur(x.amount)}</span><button class="btn xs ghost" title="Buchung löschen" onClick={() => guard(() => rpc('life.removeExpense', { id: x.id }))}><X size={12} /></button></div>)}
+    </div>)}
   </Panel>;
 }

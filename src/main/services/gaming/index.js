@@ -51,6 +51,9 @@ const WIDGETS = {
   servers: { title: 'Server-Status', params: {} },
   deals: { title: 'Wunschliste im Angebot', params: {} },
   'rok-speedups': { title: 'Speedup-Rechner', params: {} },
+  'aion2-bosses': { title: 'Boss- & Event-Timer', params: {} },
+  'aion2-resets': { title: 'Daily/Weekly & Regeneration', params: {} },
+  'aion2-calc': { title: 'Upgrade- & Crafting-Rechner', params: {} },
   'ark-breeding': { title: 'Zucht & Prägung', params: {} },
   'cs2-matches': { title: 'Match-Nachbesprechung', params: {} },
   'racing-laps': { title: 'Rundenanalyse', params: {} },
@@ -81,6 +84,7 @@ function extrasFor(p) {
   if (p.integration === 'league') return ['game-stats', 'lol-game', 'lol-coach', 'lol-progress', 'playtime', 'news'];
   if (p.integration === 'tarkov') return ['game-stats', 'tarkov-economy', 'tarkov-ammo', 'playtime'];
   if (p.integration === 'rok') return ['rok-speedups', 'playtime'];
+  if (p.integration === 'aion2') return ['aion2-calc', 'playtime'];
   return [...(GAME_EXTRAS[p.id] || []), 'wiki-lists', 'playtime',
     ...(p.steamAppId ? ['news'] : []),
     ...(SERVER_GAMES.has(p.id) ? ['servers'] : []),
@@ -90,6 +94,7 @@ const LAYOUTS = {
   tarkov: [{ type: 'map' }, { type: 'tarkov-raidplan' }, { type: 'tarkov-companion' }, { type: 'tarkov-needed' }, { type: 'tarkov-hideout' }, { type: 'tarkov-raid' }, { type: 'tarkov-quests' }, { type: 'progress' }, { type: 'tarkov-item', params: { keysOnly: true } }, { type: 'checklist', params: { name: 'Raid-Checkliste' } }, { type: 'other-games' }],
   league: [{ type: 'lol-overview' }, { type: 'lol-champselect' }, { type: 'lol-review' }, { type: 'lol-game' }, { type: 'lol-mistakes' }, { type: 'lol-coach' }, { type: 'lol-champions' }, { type: 'lol-matches' }, { type: 'lol-coaching' }, { type: 'lol-live' }, { type: 'lol-goals' }, { type: 'other-games' }],
   rok: [{ type: 'progress' }, { type: 'timers', params: { kinds: ['build', 'research', 'training', 'custom'] } }, { type: 'rok-planner' }, { type: 'game-research', params: { query: '' } }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
+  aion2: [{ type: 'aion2-bosses' }, { type: 'aion2-resets' }, { type: 'game-research', params: { query: '' } }, { type: 'aion2-calc' }, { type: 'map' }, { type: 'timers', params: { kinds: ['event', 'crafting', 'custom'] } }, { type: 'progress' }, { type: 'links' }, { type: 'notes' }, { type: 'sources' }, { type: 'other-games' }],
   generic: [{ type: 'ask' }, { type: 'progress' }, { type: 'game-research', params: { query: '' } }, { type: 'wiki' }, { type: 'notes' }, { type: 'timers' }, { type: 'sources' }, { type: 'other-games' }],
 };
 
