@@ -74,6 +74,11 @@ Historische Abrechnungsdaten liegen in dieser Umgebung nicht vor, deshalb lassen
 
 Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update zeigt „Kosten letzte 7 Tage“ die tatsächliche Verteilung.
 
+## Kostenlose Anbieter (ab 5.2.0)
+
+- **Groq (Text):** Öffentliche Fragen gehen zuerst an Groq (Free-Plan, Modell `openai/gpt-oss-120b`, ca. 1 000 Anfragen bzw. 200 000 Token pro Tag, Stand Okt. 2026). Ist das Kontingent leer (HTTP 429) oder Groq gestört, beantwortet Gemini dieselbe Frage (mit Budget), danach das lokale Modell. Private Nachrichten gehen nie an Groq. Groq kann Anfragen bis zu 30 Tage speichern.
+- **Google Cloud Text-to-Speech (Stimme beim Zocken):** Chirp 3 HD, kostenlos bis 1 Mio. Zeichen pro Monat. JARVIS zählt mit und hört bei 950 000 Zeichen auf (einstellbar), danach spricht Piper. Private Antworten werden beim Zocken nicht gesprochen, sondern nur im Overlay angezeigt.
+
 ## Datenflüsse
 
 | Daten | Aufnahme | Ziel | Speicherung | Abschalten |

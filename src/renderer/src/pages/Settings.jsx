@@ -20,6 +20,38 @@ const PRESET_SAMPLES = {
 const OMNI_ATTR = 'Eigenschaften (Englisch, durch Komma): male/female · child/teenager/young adult/middle-aged/elderly · very low/low/moderate/high/very high pitch · whisper';
 
 /**
+/**
+ * Stimme beim Zocken: OmniVoice braucht die Grafikkarte – darum spricht dann standardmäßig die Google-Stimme
+ * (Chirp 3 HD, gratis bis 1 Mio. Zeichen/Monat, JARVIS hört vorher auf). Private Antworten kommen dann nur ins Overlay.
+ */
+function GamingVoice({ t }) {
+  const c = t.cloud || {};
+  const mode = c.whileGaming || 'cloud';
+  const secrets = useStore((x) => x.secrets) || {};
+  const [st, reload] = useRpc('cloudtts.status', {}, { events: ['settings:changed'] });
+  const [k, setK] = useState('');
+  const save = async (v) => { await guard(() => rpc('secrets.set', { key: 'google.tts_api_key', value: v }), v ? 'Schlüssel gespeichert' : 'Schlüssel entfernt'); setState({ secrets: await rpc('secrets.status') }); setK(''); reload(); };
+  const test = async () => { await guard(() => rpc('cloudtts.test'), 'Google-Stimme funktioniert'); reload(); };
+  const pct = st ? Math.min(100, Math.round((st.used / Math.max(1, st.limit)) * 100)) : 0;
+  return <>
+    <Field label="Beim Zocken spricht" hint={mode === 'cloud' ? 'Google rechnet die Stimme – dein PC bleibt frei fürs Spiel. Private Antworten kommen dann nur als Text ins Overlay.' : mode === 'piper' ? 'einfache Offline-Stimme, braucht kaum Leistung' : 'KI-Stimme lokal – braucht 2–3 GB Grafikspeicher neben dem Spiel'}>
+      <Select value={mode} onChange={(v) => upd({ voice: { tts: { cloud: { whileGaming: v } } } }).then(reload)} options={[{ value: 'cloud', label: 'Google-Stimme (gratis)' }, { value: 'piper', label: 'Einfache Stimme (offline)' }, { value: 'omnivoice', label: 'KI-Stimme (OmniVoice)' }]} />
+    </Field>
+    {mode === 'cloud' && <div class="col" style={{ gap: 6, marginBottom: 6 }}>
+      {st && <div class="tiny muted">Diesen Monat {st.used.toLocaleString('de-DE')} von {st.limit.toLocaleString('de-DE')} Gratis-Zeichen · danach spricht bis Monatsende die einfache Stimme</div>}
+      {st && <div class="bar"><i style={{ width: pct + '%' }} /></div>}
+      <Field label={<span><KeyRound size={12} /> Google-Cloud-Schlüssel</span>} hint={secrets['google.tts_api_key'] ? 'eigener Schlüssel gespeichert' : st?.hasKey ? 'nutzt deinen Gemini-Schlüssel – falls „nicht freigeschaltet“ kommt: eigenen Schlüssel eintragen' : 'console.cloud.google.com → „Cloud Text-to-Speech API“ aktivieren → API-Schlüssel'}>
+        <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['google.tts_api_key'] ? '••••••••••••' : 'AIza… (optional)'} value={k} onInput={(e) => setK(e.currentTarget.value)} />
+          <button class="btn xs" disabled={!k} onClick={() => save(k)}>Speichern</button>{secrets['google.tts_api_key'] && <button class="btn xs ghost" onClick={() => save('')}>Entfernen</button>}
+          <button class="btn xs ghost" disabled={!st?.hasKey} onClick={test}>Testen</button></div>
+      </Field>
+      {st?.lastError && <div class="notice tiny">{st.lastError}</div>}
+      <div class="tiny muted">Stimmen: J.A.R.V.I.S. = Charon, Alya = Leda, Standard = Achird (Google Chirp 3 HD). Gesprochene Sätze werden gemerkt und kosten beim zweiten Mal nichts.</div>
+    </div>}
+  </>;
+}
+
+/**
  * Einstellungen → Stimme (alles an einem Ort): Profil (Standard / J.A.R.V.I.S. / Alya) mit Hörprobe, KI-Stimme
  * (OmniVoice) installieren/Status, Lautstärke und Tempo. Seltenes (Stimmen anpassen, Rückfall-Stimme) unter „Erweitert“.
  */
@@ -75,6 +107,7 @@ function VoiceSettings({ s }) {
       </div>}
       {om_?.error && <div class="notice tiny mt"><FixText text={'KI-Stimme: ' + om_.error} /></div>}
       {om_?.installed && !ins && <Field label="KI-Stimme (OmniVoice)" hint={!om_.enabled ? 'aus – es spricht die einfache Stimme' : om_.running ? `bereit (${/cuda/.test(om_.device) ? 'Grafikkarte' : 'Prozessor'})` : om_.starting ? 'wird geladen …' : 'startet beim nächsten Satz'}><Toggle checked={om_.enabled} onChange={(v) => setOmni({ enabled: v })} /></Field>}
+      <GamingVoice t={t} />
       <Field label={`Lautstärke · ${Math.round((t.volume ?? 1) * 100)} %`}><input class="range" type="range" min="0.2" max="1.5" step="0.05" value={t.volume ?? 1} onChange={(e) => set({ volume: Number(e.currentTarget.value) })} /></Field>
       <Field label={`Tempo · ${Math.round((t.speed ?? 1) * 100)} %`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={t.speed ?? 1} onChange={(e) => set({ speed: Number(e.currentTarget.value) })} /></Field>
       <Field label="Lange Antworten kurz vorlesen" hint="liest die ersten Sätze, Rest steht im Chat"><Toggle checked={t.short !== false} onChange={(x) => set({ short: x })} /></Field>
@@ -307,6 +340,30 @@ function FreeKey() {
   </>;
 }
 
+/**
+ * Groq (kostenlos): öffentliche Fragen zuerst dort – sehr schnell, Free-Plan ca. 1 000 Anfragen/Tag. Ist das Kontingent
+ * leer oder Groq gestört, übernimmt Gemini (Budget), danach das lokale Modell. Private Nachrichten nie.
+ */
+function GroqKey({ s }) {
+  const secrets = useStore((x) => x.secrets) || {};
+  const [k, setK] = useState('');
+  const [st, reload] = useRpc('groq.status', {}, { events: ['settings:changed', 'cloud:usage'] });
+  const has = !!secrets['groq.api_key'];
+  const save = async (v) => {
+    if (v) await guard(() => rpc('groq.test', { key: v }));
+    await guard(() => rpc('secrets.set', { key: 'groq.api_key', value: v }), v ? 'Groq-Schlüssel gespeichert' : 'Groq-Schlüssel entfernt');
+    setState({ secrets: await rpc('secrets.status') }); setK(''); reload();
+  };
+  const g = s.cloud?.groq || {};
+  return <>
+    <Field label={<span><KeyRound size={12} /> Groq – kostenlos & schnell</span>} hint={has ? (g.enabled === false ? 'aus' : `aktiv · heute ${st?.today ?? 0} Anfragen${st?.pausedUntil ? ' · Kontingent gerade leer, Gemini übernimmt' : ''}`) : 'console.groq.com → API Keys (kostenlos, ohne Kreditkarte)'}>
+      <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={has ? '••••••••••••' : 'gsk_…'} value={k} onInput={(e) => setK(e.currentTarget.value)} />
+        <button class="btn xs" disabled={!k} onClick={() => save(k.trim())}>Speichern</button>{has && <button class="btn xs ghost" onClick={() => save('')}>Entfernen</button>}</div>
+    </Field>
+    {has && <Field label="Öffentliche Fragen zuerst über Groq" hint="Reihenfolge: Groq → Gemini (Budget) → lokales Modell. Private Nachrichten bleiben immer lokal."><Toggle checked={g.enabled !== false} onChange={(v) => upd({ cloud: { groq: { enabled: v } } }).then(reload)} /></Field>}
+  </>;
+}
+
 /** Modus lokal/hybrid und einzelne Cloud-Funktionen – durchgesetzt im Hauptprozess (Gemini-Provider). */
 function CloudControl({ s }) {
   const [st, reload] = useRpc('cloud.status', {}, { events: ['settings:changed', 'cloud:state', 'cloud:usage'] });
@@ -325,8 +382,9 @@ function CloudControl({ s }) {
         ))}
       </details>}
       {!local && <>
-        <Field label="Sparmodell für kurze Aufgaben" hint="Tipps, Matchup-Karten, Empfehlungen, Kurzfassungen mit gemini-2.5-flash-lite (ca. 8× günstiger als Flash)"><Toggle checked={c.economy !== false} onChange={(v) => upd({ cloud: { economy: v } }).then(reload)} /></Field>
+        <Field label="Sparmodell für kurze Aufgaben" hint="Tipps, Matchup-Karten, Empfehlungen, Kurzfassungen mit Flash-Lite (deutlich günstiger als Flash)"><Toggle checked={c.economy !== false} onChange={(v) => upd({ cloud: { economy: v } }).then(reload)} /></Field>
         <Field label="Gaming-Chats mit dem Sparmodell" hint="„gründlich/analysiere …“-Fragen und Bilder nutzen weiter Flash"><Toggle checked={c.liteGamingChat !== false} onChange={(v) => upd({ cloud: { liteGamingChat: v } }).then(reload)} /></Field>
+        <GroqKey s={s} />
         <FreeKey />
       </>}
       {st && <div class="tiny muted mt">{local ? 'Cloud-KI aus.' : `Cloud-KI an · ${st.active || 0} Aufruf(e) laufen gerade`}</div>}

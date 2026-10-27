@@ -211,7 +211,11 @@ class OmniVoice {
   }
 
   /** Beim App-Start vorwärmen, damit der erste Satz schnell kommt. */
-  warmup() { if (this.allowed() && this.cfg().preload !== false) this.start().catch((e) => { this.lastError = e.message; log.info('Vorwärmen fehlgeschlagen: ' + e.message); }); }
+  warmup() {
+    // Beim Zocken nicht vorladen (Grafikspeicher bleibt fürs Spiel), außer OmniVoice soll ausdrücklich auch dann sprechen
+    if (this.s.localLLM?.isGaming?.() && (this.s.cloudTts?.gamingMode?.() || 'cloud') !== 'omnivoice') return;
+    if (this.allowed() && this.cfg().preload !== false) this.start().catch((e) => { this.lastError = e.message; log.info('Vorwärmen fehlgeschlagen: ' + e.message); });
+  }
 
   /** Satz → WAV-Buffer. Ein Satz nach dem anderen. */
   /** Pfad der mitgelieferten Vorlage für ein Profil (nur Startwert 1 und ohne eigene Beschreibung), sonst null. */

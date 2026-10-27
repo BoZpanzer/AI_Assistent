@@ -78,6 +78,7 @@ function createCore(opts) {
   s.secrets = new Secrets(path.join(data, 'secrets.json'), opts.cipher || memoryCipher);
   s.confirmations = new Confirmations(bus);
   s.gemini = new Gemini({ ...s, genaiSdk: opts.genaiSdk });
+  s.groq = new (require('./providers/groq').Groq)(s);
   s.google = new GoogleClient(s);
   s.notifications = new Notifications(s);
   s.tasks = new Tasks(s);
@@ -140,6 +141,15 @@ function createCore(opts) {
   s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
   s.speech = new (require('./voice/speech').Speech)(s);
   s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
+  s.cloudTts = new (require('./voice/cloud-tts').CloudTts)(s);
+  // Spiel läuft → OmniVoice entladen (Grafikspeicher fürs Spiel), danach wieder vorladen
+  bus.on('game:running', ({ running = [] } = {}) => {
+    try {
+      if (s.cloudTts.gamingMode() === 'omnivoice') return;
+      if (running.length) { if (s.omnivoice.status().running || s.omnivoice.starting) { s.omnivoice.stop(); require('./core/logger').scope('voice').info('Spiel läuft – KI-Stimme entladen, Grafikkarte frei'); } }
+      else s.omnivoice.warmup();
+    } catch { /* nie das Spiel stören */ }
+  });
   s.learner = new (require('./agent/learner').Learner)(s);
   // 5.0: Stimme nur noch lokal (OmniVoice → Piper). Alte Cloud-/ElevenLabs-Einstellungen auf „automatisch“, Schlüssel entfernen.
   try {

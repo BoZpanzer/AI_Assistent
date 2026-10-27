@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.2.0 – Gratis-Stimme beim Zocken, Groq für schnelle Antworten
+
+- **Stimme beim Zocken ohne Grafikkarte:** Sobald ein Spiel läuft, entlädt JARVIS die KI-Stimme (OmniVoice) und gibt den Grafikspeicher frei. Gesprochen wird dann mit Googles Stimme (Chirp 3 HD: J.A.R.V.I.S. = Charon, Alya = Leda), die auf Googles Servern läuft. Kostenlos bis 1 Mio. Zeichen im Monat – JARVIS zählt mit und wechselt bei 950 000 Zeichen auf die einfache Offline-Stimme; schon gesprochene Sätze kosten nichts. Nach dem Spiel lädt die KI-Stimme wieder. Einstellbar unter Stimme → „Beim Zocken spricht“ (Google / einfache Stimme / KI-Stimme).
+- **Private Antworten beim Zocken nur im Overlay:** Sie gehen nicht an Google, sondern erscheinen als Text im Overlay.
+- **Groq – kostenlos und sehr schnell:** Mit einem kostenlosen Groq-Schlüssel (Einstellungen → Gemini / KI) beantwortet JARVIS öffentliche Fragen zuerst dort. Ist das Tageskontingent leer oder Groq gestört, übernimmt Gemini dieselbe Frage nahtlos, danach das lokale Modell. Auch das automatische Lernen ins Brain nutzt zuerst Groq. Private Nachrichten bleiben lokal.
+
 ## 5.1.3 – Schnellere KI-Stimme, Sparmodell-Ausfall, Google-Kalender
 
 - **KI-Stimme deutlich schneller:** OmniVoice rechnet standardmäßig mit halb so vielen Schritten (rund doppelt so schnell, kaum hörbarer Unterschied) und wärmt sich beim Start auf. Unter Stimme → Erweitert → „Tempo / Qualität“ wählbar: Turbo, Schnell, Beste.

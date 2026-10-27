@@ -59,11 +59,22 @@ class Speech {
    * Satz → WAV mit dem gewählten Stimmprofil (Standard / J.A.R.V.I.S. / Alya): OmniVoice → Piper.
    * Keine KI-Anfrage – gesprochen wird die fertige Antwort. override: Hörprobe mit anderem Profil/Engine.
    */
-  async synthesize(text, { override = {}, preview = false } = {}) {
+  async synthesize(text, { override = {}, preview = false, private: priv = false } = {}) {
     const c = resolve({ ...this.cfg(), ...override }, { isInstalled: (v) => !!this.s.tts.voiceFile?.(v) });
     const engine = ['piper', 'windows'].includes(c.engine) ? c.engine : 'auto';
     const clamp = (x) => Math.max(0.8, Math.min(1.25, Number(x) || 1));
-    if (engine === 'auto' && this.s.omnivoice?.allowed()) {
+    // Beim Zocken bleibt die Grafikkarte fürs Spiel: Google-Stimme (gratis bis 1 Mio. Zeichen/Monat) oder Piper statt OmniVoice
+    const gaming = !!this.s.localLLM?.isGaming?.();
+    const gmode = this.s.cloudTts?.gamingMode() || 'omnivoice';
+    if (engine === 'auto' && gaming && gmode === 'cloud' && !priv) {
+      const said = localPronunciation(text);
+      const voice = this.s.cloudTts.voiceFor(c.preset);
+      try {
+        const r = await this.cached(['g', voice, c.speed ?? 1, said], () => this.s.cloudTts.synthesize(said, { preset: c.preset, speed: c.speed }));
+        return { ...r, pitch: 1, engine: 'cloud', preset: c.preset };
+      } catch (e) { log.info('Google-Stimme nicht genutzt: ' + e.message); }
+    }
+    if (engine === 'auto' && !(gaming && gmode !== 'omnivoice') && this.s.omnivoice?.allowed()) {
       try {
         const said = localPronunciation(text);
         const custom = (c.omni?.voices || {})[c.preset];
