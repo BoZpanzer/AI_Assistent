@@ -215,13 +215,13 @@ function Speech({ s }) {
     try { const stop = await audio.meter(setLevel, v.inputDeviceId); setTimeout(() => { stop(); setLevel(null); }, 5000); } catch (e) { toast('Mikrofon nicht verfügbar: ' + e.message, 'error'); setLevel(null); }
   };
   return (
-    <Panel icon={Globe} title="Sprache" sub="Offline-Spracherkennung für Private · Gemini Live nur mit Cloud-Freigabe">
+    <Panel icon={Globe} title="Sprache" sub="Spracherkennung lokal (Whisper) · Gemini Live nur mit Cloud-Freigabe">
       <Field label="Oberflächensprache"><Select value="de-DE" onChange={() => {}} options={[{ value: 'de-DE', label: 'Deutsch (DE)' }]} /></Field>
       <Field label="Stimme (Gemini Live)"><Select value={v.voiceName} onChange={(x) => upd({ voice: { voiceName: x } })} options={VOICES} /></Field>
       <Field label="Mikrofon"><Select value={v.inputDeviceId} onChange={(x) => upd({ voice: { inputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.in.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Mikrofon' }))]} /></Field>
       <Field label="Lautsprecher"><Select value={v.outputDeviceId} onChange={(x) => upd({ voice: { outputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
       <Field label="Mikrofon testen">{level === null ? <button class="btn xs" onClick={test}><Mic size={12} />Pegel testen</button> : <div class="meter" style={{ width: '100%' }}><i style={{ width: `${level * 100}%` }} /></div>}</Field>
-      <div class="notice tiny">🔒 <b>Private – lokale Spracheingabe:</b> In der normalen Windows-Version sind Whisper und ein mehrsprachiges deutschtaugliches Modell enthalten. Mikrofon einmal drücken, sprechen und erneut drücken – keine Cloud, kein zusätzlicher Download am PC. ☁ Uni/Gaming: Vor jeder Gemini-Live-Sitzung ist deine Zustimmung für die Audioübertragung an Google nötig.</div>
+      <div class="notice tiny">🔒 <b>Lokale Spracheingabe:</b> Whisper ist in der Windows-Version enthalten. Mikrofon drücken, sprechen – das Audio bleibt auf dem PC; der erkannte Text wird wie getippter Text eingeordnet (privat → lokales Modell). ☁ Gemini Live (optional): Vor jeder Sitzung ist deine Zustimmung für die Audioübertragung an Google nötig.</div>
       <div class="row gap-s mt">
         <span class="small">{voiceLocal?.ready ? (voiceLocal.bundled ? '● Whisper bereits im JARVIS-Installer enthalten – einsatzbereit' : '● Eigenes Whisper installiert – einsatzbereit') : '○ Whisper nicht gefunden: ' + (voiceLocal?.error || 'Verfügbarkeit wird geprüft …')}</span>
         <button class="btn xs" onClick={refreshVoiceLocal}>Spracherkennung prüfen</button>

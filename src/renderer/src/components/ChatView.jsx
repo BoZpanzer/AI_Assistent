@@ -73,7 +73,7 @@ export function Message({ m, tool }) {
     <div class={`msg ${user ? 'user' : ''}`}>
       <div class="who">{user ? initial() : <Spark />}</div>
       <div class="bubble" style={user ? undefined : { flex: 1 }}>
-        <span class="time">{m.channel === 'voice' && <Mic size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}{fmtTime(m.createdAt)}{m.meta?.scope && <span class="scope-tag" title={m.meta.scope === 'private' ? 'Privat – nur das lokale Modell, bleibt auf dem PC' : 'Nicht privat – von Gemini beantwortet (ohne deine privaten Nachrichten)'}>{m.meta.scope === 'private' || (!user && m.meta.local) ? ' · 🔒 lokal' : ' · ☁ Gemini'}</span>}</span>
+        <span class="time">{m.channel === 'voice' && <Mic size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}{fmtTime(m.createdAt)}{!user && m.meta?.scope && <span class="scope-tag" title={m.meta.scope === 'private' ? 'Privat – nur das lokale Modell, bleibt auf dem PC' : 'Nicht privat – von Gemini beantwortet (ohne deine privaten Nachrichten)'}>{m.meta.scope === 'private' || m.meta.local ? ' · 🔒 lokal' : ' · ☁ Gemini'}</span>}</span>
         {m.content ? <div class="msg-body selectable" onClick={(e) => onMarkdownClick(e, rpc)} dangerouslySetInnerHTML={{ __html: html }} /> : streaming ? <div class="typing"><i /><i /><i /></div> : null}
         {streaming && m.content && <span class="cursor" />}
         {tool && <div class="tool-trace"><Wrench size={12} /> {TOOL_LABEL[tool] || tool} …</div>}

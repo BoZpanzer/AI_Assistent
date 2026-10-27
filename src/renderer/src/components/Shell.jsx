@@ -320,7 +320,7 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
             onInput={(e) => { setText(e.currentTarget.value); e.currentTarget.style.height = '52px'; e.currentTarget.style.height = Math.min(140, e.currentTarget.scrollHeight) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
           {liveVoiceOn && <button class="mic" style={muted ? { color: 'var(--red)' } : undefined} onClick={() => audio.setMuted(!muted)} title={muted ? 'Stummschaltung aufheben' : 'Mikrofon stummschalten'}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</button>}
-          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Offline-Aufnahme stoppen und privat senden' : liveVoiceOn ? 'Cloud-Sprachmodus beenden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : privateMode ? '🔒 Offline-Spracherkennung (whisper.cpp)' : '☁ Gemini Live (Zustimmung erforderlich)'}>
+          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Aufnahme stoppen und senden' : liveVoiceOn ? 'Cloud-Sprachmodus beenden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : '🔒 Spracheingabe (lokal erkannt, privat bleibt lokal)'}>
             {voiceOn ? <CircleStop size={22} /> : <Mic size={22} />}
           </button>
           <button class="send" onClick={send} title="Senden (Enter)"><SendHorizontal size={24} /></button>
