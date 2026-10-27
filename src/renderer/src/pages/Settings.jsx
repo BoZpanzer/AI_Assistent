@@ -17,133 +17,109 @@ const PRESET_SAMPLES = {
   alya: 'Hey, schön, dass du da bist! Sollen wir gleich mit deiner nächsten Aufgabe loslegen?',
 };
 
-/**
- * Einstellungen → Stimme: Profil wählen (Standard / J.A.R.V.I.S. / Alya), je Profil eine Hörprobe.
- * Wirkt sofort für alle Sprachantworten, ohne Neustart und ohne KI-Anfrage. Hörproben werden lokal gespeichert.
- */
-function VoicePicker({ s }) {
-  const t = s.voice?.tts || {};
-  const [d] = useRpc('tts.presets', {}, { events: ['settings:changed'] });
-  const presets = d?.presets || [];
-  const cur = t.preset || 'standard';
-  const [busy, setBusy] = useState('');
-  const play = async (id) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id], { full: true, preview: true, override: { preset: id } }); } finally { setBusy(''); } };
-  return (
-    <Panel icon={Mic} title="Stimme" sub="Wie JARVIS klingt – wirkt sofort für alle Sprachantworten">
-      <Field label="Stimme"><Select value={cur} onChange={(x) => upd({ voice: { tts: { preset: x } } })} options={presets.map((p) => ({ value: p.id, label: p.label }))} /></Field>
-      {presets.map((p) => (
-        <div class="row gap-s" style={{ padding: '5px 0', alignItems: 'center' }}>
-          <input type="radio" name="voice-preset" checked={cur === p.id} onChange={() => upd({ voice: { tts: { preset: p.id } } })} />
-          <span class="grow small" style={{ cursor: 'pointer' }} onClick={() => upd({ voice: { tts: { preset: p.id } } })}><b>{p.label}</b><div class="tiny muted">{p.description}</div></span>
-          <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
-        </div>
-      ))}
-      <div class="tiny muted">J.A.R.V.I.S. und Alya sind eigenständige, von OmniVoice erzeugte Stimmen – keine Nachbildung echter Sprecher. Am besten klingen sie mit der lokalen KI-Stimme (unten); ohne sie spricht die einfache lokale Stimme. Sag einfach „Jarvis, Stimme auf Alya“.</div>
-    </Panel>
-  );
-}
-
 const OMNI_ATTR = 'Eigenschaften (Englisch, durch Komma): male/female · child/teenager/young adult/middle-aged/elderly · very low/low/moderate/high/very high pitch · whisper';
-/** Lokale KI-Stimme (OmniVoice) auf der Grafikkarte: Installation auf Klick, Stimme je Profil beschreiben/neu würfeln. */
-function OmniVoiceCard({ s }) {
-  const om = s.voice?.tts?.omni || {};
-  const [st, reload] = useRpc('omnivoice.status', {}, { initial: null, events: ['omnivoice:status'] });
-  const [pr] = useRpc('tts.presets', {}, { events: ['settings:changed'] });
-  const [busy, setBusy] = useState('');
-  const now = useNow(1000);
-  useEffect(() => { if (!st?.installing && !st?.starting) return; const id = setInterval(reload, 2000); return () => clearInterval(id); }, [st?.installing, st?.starting]);
-  if (!st) return null;
-  const set = (patch) => upd({ voice: { tts: { omni: patch } } });
-  const play = async (id) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id], { full: true, preview: true, override: { preset: id, engine: 'omnivoice' } }); } finally { setBusy(''); } };
-  const install = async () => {
-    if (!(await ask(`Lokale KI-Stimme installieren? Lädt ca. ${st.sizeGB} GB (Python, PyTorch, Stimmmodell) in den JARVIS-Datenordner. Dauert je nach Leitung 10–30 Minuten, du kannst JARVIS dabei normal nutzen.`, '', { confirmOnly: true, okLabel: 'Installieren' }))) return;
-    await guard(() => rpc('omnivoice.install')); reload();
-  };
-  const ins = st.installing;
-  return (
-    <Panel icon={Sparkles} title="Lokale KI-Stimme" sub="OmniVoice auf deiner Grafikkarte – natürlich, kostenlos, offline, auch für private Chats">
-      {!st.supported && <div class="notice tiny">Nur unter Windows verfügbar.</div>}
-      {st.supported && !st.installed && !ins && <>
-        <div class="small">Klingt deutlich natürlicher als die bisherige lokale Stimme. J.A.R.V.I.S. und Alya haben feste, mitgelieferte Stimmen (von OmniVoice erzeugt, keine echte Person) – läuft auch beim Zocken (ca. 2–3 GB Grafikspeicher). Englische Spielbegriffe werden eingedeutscht („Dschungler“, „Gänk“).</div>
-        <div class="tiny muted mt">Download ca. {st.sizeGB} GB, nur auf Klick · braucht am besten eine NVIDIA-Grafikkarte (ca. 2–3 GB Grafikspeicher), sonst langsam auf dem Prozessor · Modell: k2-fsa OmniVoice, Lizenz CC BY-NC (privat erlaubt).</div>
-        <div class="row gap-s mt"><button class="btn sm" onClick={install}><Download size={14} />Installieren (~{st.sizeGB} GB)</button></div>
-      </>}
-      {ins && <div class="col" style={{ gap: 6 }}>
-        <div class="small"><Spinner size={12} /> Schritt {ins.index + 1} von {ins.total}: <b>{ins.label}</b> · {Math.floor((now - ins.startedAt) / 60000)} min</div>
-        <div class="bar"><i style={{ width: `${Math.round(((ins.index + 0.5) / ins.total) * 100)}%` }} /></div>
-        {ins.detail && <div class="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.detail}</div>}
-      </div>}
-      {st.error && <div class="notice tiny mt"><FixText text={'Fehler: ' + st.error} /></div>}
-      {st.installed && !ins && <>
-        <Field label="Status"><span class="small">{!st.enabled ? 'aus' : st.running ? `läuft (${/cuda/.test(st.device) ? 'Grafikkarte' : 'Prozessor'})` : st.starting ? 'Modell wird geladen …' : 'startet beim nächsten Satz'}</span></Field>
-        <Field label="Lokale KI-Stimme nutzen"><Toggle checked={st.enabled} onChange={(v) => set({ enabled: v })} /></Field>
-        <Field label="Beim Start vorladen" hint="Erster Satz kommt sofort, belegt dafür dauerhaft Grafikspeicher"><Toggle checked={om.preload !== false} onChange={(v) => set({ preload: v })} /></Field>
-        <div class="hr" />
-        {(pr?.presets || []).map((p) => (
-          <div class="col" style={{ gap: 4, padding: '4px 0' }}>
-            <div class="row gap-s" style={{ alignItems: 'center' }}>
-              <b class="small grow">{p.label}</b>
-              <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
-              <button class="btn xs ghost" title="Neue Stimme mit derselben Beschreibung" onClick={async () => { await guard(() => rpc('omnivoice.reroll', { preset: p.id })); play(p.id); }}><RefreshCw size={12} /> neu würfeln</button>
-              {p.id !== 'standard' && ((om.seeds || {})[p.id] > 1 || (om.voices || {})[p.id]) && <button class="btn xs ghost" title="Zurück zur mitgelieferten Stimme" onClick={async () => { await guard(() => rpc('omnivoice.resetVoice', { preset: p.id })); play(p.id); }}>Original</button>}
-            </div>
-            <input class="inp" title={OMNI_ATTR} placeholder={p.omni} value={(om.voices || {})[p.id] || ''} onChange={(e) => set({ voices: { [p.id]: e.currentTarget.value.trim().slice(0, 200) } })} />
-          </div>
-        ))}
-        <div class="tiny muted">{OMNI_ATTR}. Leer = mitgelieferte Stimme bzw. Vorgabe. „Neu würfeln“ erzeugt eine andere Stimme mit derselben Beschreibung, „Original“ holt die mitgelieferte zurück.</div>
-        <div class="row gap-s mt"><button class="btn xs ghost" onClick={() => guard(() => rpc('omnivoice.restart'), 'Neu gestartet')}>Neu starten</button><span class="grow" /><button class="btn xs ghost" onClick={async () => { if (await ask('Lokale KI-Stimme vollständig entfernen (gibt ca. 6 GB frei)?', '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) await guard(() => rpc('omnivoice.remove'), 'Entfernt'); }}><Trash2 size={12} />Entfernen</button></div>
-      </>}
-    </Panel>
-  );
-}
 
-/** Lokale Sprachausgabe: Piper-Stimmen (mitgeliefert/auf Klick), Stil, Tempo, Tonhöhe, Lautstärke, Hörprobe. */
-function SpeechOutput({ s }) {
-  const t = s.voice?.tts || {};
-  const [st, reload] = useRpc('tts.status', {}, { initial: null });
+/**
+ * Einstellungen → Stimme (alles an einem Ort): Profil (Standard / J.A.R.V.I.S. / Alya) mit Hörprobe, KI-Stimme
+ * (OmniVoice) installieren/Status, Lautstärke und Tempo. Seltenes (Stimmen anpassen, Rückfall-Stimme) unter „Erweitert“.
+ */
+function VoiceSettings({ s }) {
+  const t = s.voice?.tts || {}; const om = t.omni || {};
+  const set = (patch) => upd({ voice: { tts: patch } });
+  const setOmni = (patch) => upd({ voice: { tts: { omni: patch } } });
+  const [pr] = useRpc('tts.presets', {}, { events: ['settings:changed'] });
+  const presets = pr?.presets || [];
+  const cur = t.preset || 'standard';
+  const [om_, reloadOmni] = useRpc('omnivoice.status', {}, { initial: null, events: ['omnivoice:status'] });
+  const [pip, reloadPiper] = useRpc('tts.status', {}, { initial: null });
   const [busy, setBusy] = useState('');
   const [winVoices, setWinVoices] = useState([]);
+  const now = useNow(1000);
   useEffect(() => {
     const load = () => setWinVoices(speechSynthesis.getVoices().filter((x) => x.localService && x.lang?.startsWith('de')).map((x) => x.name));
     load(); speechSynthesis.addEventListener?.('voiceschanged', load);
     return () => speechSynthesis.removeEventListener?.('voiceschanged', load);
   }, []);
-  useEffect(() => { if (!st?.voices?.some((v) => v.downloading)) return; const id = setInterval(reload, 1000); return () => clearInterval(id); }, [st]);
-  const set = (patch) => upd({ voice: { tts: patch } });
+  useEffect(() => { if (!om_?.installing && !om_?.starting) return; const id = setInterval(reloadOmni, 2000); return () => clearInterval(id); }, [om_?.installing, om_?.starting]);
+  useEffect(() => { if (!pip?.voices?.some((v) => v.downloading)) return; const id = setInterval(reloadPiper, 1000); return () => clearInterval(id); }, [pip]);
+  const play = async (id, override = {}) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id] || SAMPLE, { full: true, preview: true, override: { preset: id, ...override } }); } finally { setBusy(''); } };
+  const installOmni = async () => {
+    if (!(await ask(`KI-Stimme installieren? Lädt ca. ${om_.sizeGB} GB (Python, PyTorch, Stimmmodell) in den JARVIS-Datenordner. Dauert je nach Leitung 10–30 Minuten, du kannst JARVIS dabei normal nutzen.`, '', { confirmOnly: true, okLabel: 'Installieren' }))) return;
+    await guard(() => rpc('omnivoice.install')); reloadOmni();
+  };
+  const installPiper = async (id) => { setBusy(id); try { const p = rpc('tts.install', { id }); setTimeout(reloadPiper, 300); await guard(() => p, 'Stimme installiert'); await set({ voice: id }); } finally { setBusy(''); reloadPiper(); } };
   const engine = ['piper', 'windows'].includes(t.engine) ? t.engine : 'auto';
-  const cur = st?.voices?.find((v) => v.id === (t.voice || st?.voice)) || st?.voices?.[0];
-  const preview = (override = {}) => audio.speakLocal(SAMPLE, { full: true, override: { engine: override.voice ? 'piper' : undefined, ...override } });
-  const install = async (id) => { setBusy(id); try { const p = rpc('tts.install', { id }); setTimeout(reload, 300); await guard(() => p, 'Stimme installiert'); await set({ voice: id }); } finally { setBusy(''); reload(); } };
+  const piperCur = pip?.voices?.find((v) => v.id === (t.voice || pip?.voice)) || pip?.voices?.[0];
+  const ins = om_?.installing;
+  const omniOn = om_?.installed && om_?.enabled && engine === 'auto';
   return (
-    <Panel icon={Volume2} title="Sprachausgabe" sub="Komplett lokal – keine Kosten, nichts verlässt den PC">
-      <Field label="Stimme">
-        <Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'Automatisch: KI-Stimme (OmniVoice), sonst einfache Stimme (empfohlen)' }, { value: 'piper', label: 'Nur einfache Stimme (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} />
-      </Field>
-      <Field label="Einfache Stimme (Piper)" hint="wenn die KI-Stimme nicht installiert ist oder ausfällt">
-        <span class="tiny muted">{cur?.label || '–'}</span>
-      </Field>
-      {engine !== 'windows' && !st?.available && <div class="notice tiny">Die natürliche Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion). JARVIS nutzt so lange die Windows-Stimme.</div>}
-      {engine !== 'windows' && st?.voices && <>
-        {st.voices.map((v) => (
-          <div class="row gap-s" style={{ padding: '4px 0', alignItems: 'center' }}>
-            <input type="radio" name="tts-voice" disabled={!v.installed} checked={cur?.id === v.id} onChange={() => set({ voice: v.id })} />
-            <span class="grow small">{v.label}<span class="tiny muted"> · {v.quality} · {v.license}{v.bundled ? ' · mitgeliefert' : ` · ${v.sizeMB} MB`}</span></span>
-            {v.installed
-              ? <><button class="btn xs" title="Hörprobe" onClick={() => preview({ voice: v.id })}><Play size={12} /></button>
-                {v.removable && <button class="btn xs ghost" title="Stimme entfernen" onClick={() => guard(() => rpc('tts.remove', { id: v.id })).then(reload)}><Trash2 size={12} /></button>}</>
-              : v.downloading ? <span class="tiny">{Math.round((v.downloading.progress || 0) * 100)} %</span>
-                : <button class="btn xs" disabled={!!busy} onClick={() => install(v.id)}><Download size={12} />Laden</button>}
-          </div>
-        ))}
-        {cur?.styles && <Field label="Stimmung"><Select value={t.style || 'neutral'} onChange={(x) => set({ style: x })} options={cur.styles.map((x) => ({ value: x.id, label: x.label }))} /></Field>}
-        {cur?.speakers && <Field label={`Sprecher · ${(t.speaker ?? 0) + 1} von ${cur.speakers}`}><input class="range" type="range" min="0" max={cur.speakers - 1} step="1" value={t.speaker ?? 0} onChange={(e) => set({ speaker: Number(e.currentTarget.value) })} /></Field>}
-      </>}
-      {engine === 'windows' && <Field label="Windows-Stimme" hint="Stimmen hinzufügen: Windows-Einstellungen → Zeit und Sprache → Sprache → Deutsch → Sprachoptionen"><Select value={t.windowsVoice || ''} onChange={(x) => set({ windowsVoice: x })} options={[{ value: '', label: 'Automatisch (beste installierte)' }, ...winVoices.map((n) => ({ value: n, label: n }))]} /></Field>}
-      <Field label={`Tempo · ${Math.round((t.speed ?? 1) * 100)} %`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={t.speed ?? 1} onChange={(e) => set({ speed: Number(e.currentTarget.value) })} /></Field>
-      <Field label={`Tonhöhe · ${(t.pitch ?? 1) > 1 ? 'höher' : (t.pitch ?? 1) < 1 ? 'tiefer' : 'normal'}`}><input class="range" type="range" min="0.85" max="1.2" step="0.05" value={t.pitch ?? 1} onChange={(e) => set({ pitch: Number(e.currentTarget.value) })} /></Field>
+    <Panel icon={Volume2} title="Stimme" sub="Wie JARVIS klingt – komplett lokal, wirkt sofort. Auch per Sprache: „Jarvis, Stimme auf Alya“.">
+      {presets.map((p) => (
+        <div class="row gap-s" style={{ padding: '5px 0', alignItems: 'center' }}>
+          <input type="radio" name="voice-preset" checked={cur === p.id} onChange={() => set({ preset: p.id })} />
+          <span class="grow small" style={{ cursor: 'pointer' }} onClick={() => set({ preset: p.id })}><b>{p.label}</b><div class="tiny muted">{p.description}</div></span>
+          <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
+        </div>
+      ))}
+      <div class="hr" />
+      {/* KI-Stimme (OmniVoice) */}
+      {om_ && !om_.supported && <div class="tiny muted">KI-Stimme nur unter Windows – es spricht die einfache Stimme.</div>}
+      {om_?.supported && !om_.installed && !ins && <div class="notice tiny">
+        <div class="row gap-s" style={{ alignItems: 'center' }}><span class="grow"><b>KI-Stimme fehlt noch</b> – ohne sie klingen alle Profile wie die einfache Stimme. Natürlich, auch beim Zocken (ca. 2–3 GB Grafikspeicher), Download ca. {om_.sizeGB} GB.</span>
+          <button class="btn sm" onClick={installOmni}><Download size={14} />Installieren</button></div>
+      </div>}
+      {ins && <div class="col" style={{ gap: 6 }}>
+        <div class="small"><Spinner size={12} /> KI-Stimme · Schritt {ins.index + 1} von {ins.total}: <b>{ins.label}</b> · {Math.floor((now - ins.startedAt) / 60000)} min</div>
+        <div class="bar"><i style={{ width: `${Math.round(((ins.index + 0.5) / ins.total) * 100)}%` }} /></div>
+        {ins.detail && <div class="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.detail}</div>}
+      </div>}
+      {om_?.error && <div class="notice tiny mt"><FixText text={'KI-Stimme: ' + om_.error} /></div>}
+      {om_?.installed && !ins && <Field label="KI-Stimme (OmniVoice)" hint={!om_.enabled ? 'aus – es spricht die einfache Stimme' : om_.running ? `bereit (${/cuda/.test(om_.device) ? 'Grafikkarte' : 'Prozessor'})` : om_.starting ? 'wird geladen …' : 'startet beim nächsten Satz'}><Toggle checked={om_.enabled} onChange={(v) => setOmni({ enabled: v })} /></Field>}
       <Field label={`Lautstärke · ${Math.round((t.volume ?? 1) * 100)} %`}><input class="range" type="range" min="0.2" max="1.5" step="0.05" value={t.volume ?? 1} onChange={(e) => set({ volume: Number(e.currentTarget.value) })} /></Field>
-      <Field label="Lange Antworten kurz vorlesen" hint="liest die ersten Sätze, Rest steht im Chat · „Vorlesen“ am Chat liest immer alles"><Toggle checked={t.short !== false} onChange={(x) => set({ short: x })} /></Field>
-      <div class="row gap-s mt"><button class="btn sm" onClick={() => preview({ engine })}><Play size={14} />Hörprobe</button><button class="btn sm ghost" onClick={() => audio.stopSpeech()}>Stopp</button></div>
+      <Field label={`Tempo · ${Math.round((t.speed ?? 1) * 100)} %`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={t.speed ?? 1} onChange={(e) => set({ speed: Number(e.currentTarget.value) })} /></Field>
+      <Field label="Lange Antworten kurz vorlesen" hint="liest die ersten Sätze, Rest steht im Chat"><Toggle checked={t.short !== false} onChange={(x) => set({ short: x })} /></Field>
+
+      <details class="mt">
+        <summary class="small">Erweitert</summary>
+        {om_?.installed && <>
+          <div class="hud-label mt">KI-Stimmen anpassen</div>
+          {presets.map((p) => (
+            <div class="col" style={{ gap: 4, padding: '4px 0' }}>
+              <div class="row gap-s" style={{ alignItems: 'center' }}>
+                <b class="small grow">{p.label}</b>
+                <button class="btn xs ghost" title="Neue Stimme mit derselben Beschreibung" onClick={async () => { await guard(() => rpc('omnivoice.reroll', { preset: p.id })); play(p.id); }}><RefreshCw size={12} /> neu würfeln</button>
+                {p.id !== 'standard' && ((om.seeds || {})[p.id] > 1 || (om.voices || {})[p.id]) && <button class="btn xs ghost" title="Zurück zur mitgelieferten Stimme" onClick={async () => { await guard(() => rpc('omnivoice.resetVoice', { preset: p.id })); play(p.id); }}>Original</button>}
+              </div>
+              <input class="inp" title={OMNI_ATTR} placeholder={p.omni} value={(om.voices || {})[p.id] || ''} onChange={(e) => setOmni({ voices: { [p.id]: e.currentTarget.value.trim().slice(0, 200) } })} />
+            </div>
+          ))}
+          <div class="tiny muted">{OMNI_ATTR}. Leer = mitgelieferte Stimme.</div>
+          <Field label="Beim Start vorladen" hint="erster Satz kommt sofort, belegt dafür dauerhaft Grafikspeicher"><Toggle checked={om.preload !== false} onChange={(v) => setOmni({ preload: v })} /></Field>
+          <div class="row gap-s"><button class="btn xs ghost" onClick={() => guard(() => rpc('omnivoice.restart'), 'Neu gestartet')}>KI-Stimme neu starten</button><span class="grow" /><button class="btn xs ghost" onClick={async () => { if (await ask('KI-Stimme vollständig entfernen (gibt ca. 6 GB frei)?', '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) await guard(() => rpc('omnivoice.remove'), 'Entfernt'); }}><Trash2 size={12} />KI-Stimme entfernen</button></div>
+          <div class="hr" />
+        </>}
+        <div class="hud-label mt">Einfache Stimme (Rückfall)</div>
+        <Field label="Sprechen mit"><Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'KI-Stimme, sonst einfache Stimme' }, { value: 'piper', label: 'Immer einfache Stimme (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} /></Field>
+        {engine !== 'windows' && !pip?.available && <div class="notice tiny">Die einfache Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion).</div>}
+        {engine !== 'windows' && pip?.voices && <>
+          {pip.voices.map((v) => (
+            <div class="row gap-s" style={{ padding: '3px 0', alignItems: 'center' }}>
+              <input type="radio" name="tts-voice" disabled={!v.installed} checked={piperCur?.id === v.id} onChange={() => set({ voice: v.id })} />
+              <span class="grow small">{v.label}<span class="tiny muted"> · {v.quality}{v.bundled ? '' : ` · ${v.sizeMB} MB`}</span></span>
+              {v.installed
+                ? <><button class="btn xs" title="Hörprobe" onClick={() => play('standard', { engine: 'piper', voice: v.id })}><Play size={12} /></button>
+                  {v.removable && <button class="btn xs ghost" title="Stimme entfernen" onClick={() => guard(() => rpc('tts.remove', { id: v.id })).then(reloadPiper)}><Trash2 size={12} /></button>}</>
+                : v.downloading ? <span class="tiny">{Math.round((v.downloading.progress || 0) * 100)} %</span>
+                  : <button class="btn xs" disabled={!!busy} onClick={() => installPiper(v.id)}><Download size={12} />Laden</button>}
+            </div>
+          ))}
+          {piperCur?.styles && <Field label="Stimmung"><Select value={t.style || 'neutral'} onChange={(x) => set({ style: x })} options={piperCur.styles.map((x) => ({ value: x.id, label: x.label }))} /></Field>}
+          {piperCur?.speakers && <Field label={`Sprecher · ${(t.speaker ?? 0) + 1} von ${piperCur.speakers}`}><input class="range" type="range" min="0" max={piperCur.speakers - 1} step="1" value={t.speaker ?? 0} onChange={(e) => set({ speaker: Number(e.currentTarget.value) })} /></Field>}
+          <Field label={`Tonhöhe (einfache Stimme) · ${(t.pitch ?? 1) > 1 ? 'höher' : (t.pitch ?? 1) < 1 ? 'tiefer' : 'normal'}`}><input class="range" type="range" min="0.85" max="1.2" step="0.05" value={t.pitch ?? 1} onChange={(e) => set({ pitch: Number(e.currentTarget.value) })} /></Field>
+        </>}
+        {engine === 'windows' && <Field label="Windows-Stimme" hint="Stimmen hinzufügen: Windows-Einstellungen → Zeit und Sprache → Sprache → Deutsch → Sprachoptionen"><Select value={t.windowsVoice || ''} onChange={(x) => set({ windowsVoice: x })} options={[{ value: '', label: 'Automatisch (beste installierte)' }, ...winVoices.map((n) => ({ value: n, label: n }))]} /></Field>}
+        {!omniOn && <div class="tiny muted mt">Hinweis: Ohne KI-Stimme klingen J.A.R.V.I.S. und Alya nur annähernd (einfache Stimme mit anderer Tonlage).</div>}
+      </details>
     </Panel>
   );
 }
@@ -159,10 +135,8 @@ export function Settings() {
       <div class="page-body scroll-y">
         <div class="settings-grid">
           <General s={s} />
-          <VoicePicker s={s} />
-          <OmniVoiceCard s={s} />
+          <VoiceSettings s={s} />
           <Speech s={s} />
-          <SpeechOutput s={s} />
           <LocalAI s={s} />
           <Ai s={s} secrets={secrets} />
           <Google s={s} />
@@ -214,7 +188,7 @@ function Speech({ s }) {
     try { const stop = await audio.meter(setLevel, v.inputDeviceId); setTimeout(() => { stop(); setLevel(null); }, 5000); } catch (e) { toast('Mikrofon nicht verfügbar: ' + e.message, 'error'); setLevel(null); }
   };
   return (
-    <Panel icon={Globe} title="Sprache" sub="Spracherkennung komplett lokal (Whisper) – Audio verlässt nie den PC">
+    <Panel icon={Mic} title="Spracheingabe" sub="Spracherkennung komplett lokal (Whisper) – Audio verlässt nie den PC">
       <Field label="Oberflächensprache"><Select value="de-DE" onChange={() => {}} options={[{ value: 'de-DE', label: 'Deutsch (DE)' }]} /></Field>
       <Field label="Mikrofon"><Select value={v.inputDeviceId} onChange={(x) => upd({ voice: { inputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.in.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Mikrofon' }))]} /></Field>
       <Field label="Lautsprecher"><Select value={v.outputDeviceId} onChange={(x) => upd({ voice: { outputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
@@ -240,8 +214,8 @@ function Speech({ s }) {
       <Field label="„Hey Jarvis“ (lokal, offline)" hint="Mikrofon bleibt lokal – nichts wird übertragen, bis das Wake-Word erkannt wird"><Toggle checked={v.wakeWord} onChange={(x) => upd({ voice: { wakeWord: x } })} /></Field>
       {v.wakeWord && <Field label="Empfindlichkeit"><input class="range" type="range" min="0.2" max="0.9" step="0.05" value={v.wakeSensitivity} onChange={(e) => upd({ voice: { wakeSensitivity: Number(e.currentTarget.value) } })} /></Field>}
       <Field label="Push-to-Talk-Taste (global)"><input class="inp" value={v.pushToTalkKey} onChange={(e) => upd({ voice: { pushToTalkKey: e.currentTarget.value } })} /></Field>
-      <Field label="Textantworten vorlesen" hint="Stimme siehe „Sprachausgabe“"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
-      <Field label="Antworten auf Spracheingaben vorlesen" hint="Stimme siehe „Sprachausgabe“"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
+      <Field label="Textantworten vorlesen" hint="Stimme siehe „Stimme“"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
+      <Field label="Antworten auf Spracheingaben vorlesen" hint="Stimme siehe „Stimme“"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
       <Field label="CPU-Threads für Spracherkennung" hint="beim Spielen automatisch höchstens 2, mit niedriger Priorität"><Select value={String(v.whisperThreads || 4)} onChange={(x) => upd({ voice: { whisperThreads: Number(x) } })} options={['2', '4', '6', '8'].map((n) => ({ value: n, label: n }))} /></Field>
     </Panel>
   );
