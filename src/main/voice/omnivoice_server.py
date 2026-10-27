@@ -78,7 +78,9 @@ def synth(req):
     ref = str(req.get('ref') or 'default')
     seed = int(req.get('seed') or 1)
     speed = req.get('speed')
-    kw = {'text': text, 'language': language}
+    # Diffusionsschritte: 32 = beste Qualität, 16 = etwa doppelt so schnell (Standard), 10 = sehr schnell
+    steps = max(6, min(32, int(req.get('steps') or 16)))
+    kw = {'text': text, 'language': language, 'num_step': steps}
     if speed:
         kw['speed'] = max(0.6, min(1.6, float(speed)))
     ref_audio = req.get('ref_audio'); ref_text = req.get('ref_text')
@@ -98,7 +100,8 @@ def synth(req):
             kw['ref_audio'] = p; kw['ref_text'] = ref_text
         t = time.time()
         a = model.generate(**kw)[0]
-        log('synth', len(text), 'chars', round(time.time() - t, 2), 's')
+        dt = time.time() - t; secs = len(a) / SR
+        log('synth', len(text), 'chars', steps, 'steps', round(dt, 2), 's for', round(secs, 1), 's audio, RTF', round(dt / max(0.1, secs), 2))
     return to_wav(a)
 
 
@@ -150,6 +153,12 @@ def main():
     if not TOKEN:
         log('JARVIS_TTS_TOKEN fehlt'); sys.exit(2)
     load()
+    # Aufwärmen: erste Berechnung lädt/kompiliert GPU-Kernel – lieber jetzt als beim ersten echten Satz
+    try:
+        t = time.time(); model.generate(text='Hallo.', language='de', instruct='male, moderate pitch', num_step=8)
+        log('warmup', round(time.time() - t, 2), 's')
+    except Exception as e:
+        log('warmup failed', repr(e)[:200])
     srv = ThreadingHTTPServer(('127.0.0.1', 0), H)
     print('READY', srv.server_address[1], DEVICE, flush=True)
     # Beendet sich, wenn JARVIS weg ist (stdin geschlossen)

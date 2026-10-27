@@ -24,6 +24,8 @@ const UV = Object.freeze({
 const PKG = Object.freeze({ python: '3.12', torch: '2.8.0', torchaudio: '2.8.0', omnivoice: '0.2.1', cuda: 'https://download.pytorch.org/whl/cu126', cpu: 'https://download.pytorch.org/whl/cpu' });
 const MODEL = 'k2-fsa/OmniVoice';
 const SIZE_GB = 6;
+/** Qualität ↔ Tempo: Diffusionsschritte je Satz (32 = beste Qualität, 16 ≈ doppelt so schnell). */
+const QUALITY_STEPS = { fast: 16, best: 32, turbo: 10 };
 const STEPS = [['uv', 'Installationshelfer laden'], ['python', 'Python einrichten'], ['torch', 'PyTorch laden (größter Teil)'], ['omnivoice', 'OmniVoice installieren'], ['model', 'Stimmmodell laden und testen']];
 const exists = (f) => { try { fs.statSync(f); return true; } catch { return false; } };
 
@@ -220,11 +222,11 @@ class OmniVoice {
     return dst;
   }
 
-  synthesize(text, { instruct, ref = 'default', seed = 1, speed, refAudio, refText, timeoutMs } = {}) {
+  synthesize(text, { instruct, ref = 'default', seed = 1, speed, refAudio, refText, timeoutMs, steps } = {}) {
     const job = this.queue.then(async () => {
       const port = await this.start();
       // Direkt per node:http (ohne fetch-Zeitlimits) – ohne Grafikkarte kann ein Satz einige Minuten dauern
-      const r = await this.httpPost(port, '/tts', this.token, { text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined },
+      const r = await this.httpPost(port, '/tts', this.token, { text: String(text).slice(0, 1500), instruct, ref, seed, speed, steps: steps || QUALITY_STEPS[this.cfg().quality || 'fast'] || 16, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined },
         timeoutMs || (/cuda/.test(this.device) ? 120000 : 600000));
       if (r.status !== 200) throw new Error('Lokale KI-Stimme: ' + (r.body.toString('utf8').slice(0, 200) || 'HTTP ' + r.status));
       const wav = r.body;
@@ -255,4 +257,4 @@ class OmniVoice {
 const REF_TEXT = 'Okay, kurzer Recap: Du bist Support mit Malphite. Die Botlane ist gegen Caitlyn und Lux schwer, wart auf den Jungler für den Gank, hol dir Control Wards und spar dir dein Ultimate für den Teamfight am Drachen. Nach dem Recall roamst du Mid, aber pass auf Skillshots auf.';
 const BUNDLED = Object.freeze({ jarvis: 'jarvis.wav', alya: 'alya.wav' });
 
-module.exports = { OmniVoice, UV, PKG, STEPS, REF_TEXT, BUNDLED, localPost };
+module.exports = { OmniVoice, UV, PKG, STEPS, REF_TEXT, BUNDLED, localPost, QUALITY_STEPS };

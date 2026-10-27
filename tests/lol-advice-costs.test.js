@@ -30,7 +30,7 @@ test('Economy: short tasks use the cheapest Flash-Lite; free key first, paid key
     core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
     core.secrets.set('gemini.free_api_key', 'FREE');
     await core.gemini.generate({ feature: 'lol', tier: 'lite', json: true, contents: [{ role: 'user', parts: [{ text: 'a' }] }] });
-    assert.equal(sdk.requests.at(-1).model, 'gemini-2.5-flash-lite');
+    assert.equal(sdk.requests.at(-1).model, 'gemini-3.1-flash-lite');
     assert.deepEqual(keys, ['FREE']);
     const before = core.db.get('SELECT COUNT(*) c FROM ai_ledger').c;
     assert.equal(before, 0, 'kostenloses Kontingent kostet nichts');
@@ -59,7 +59,7 @@ test('LoL: tips against every enemy champion (one cheap call, cached per patch),
     const F = core.gaming.lolflow;
     const t = await F.enemyTips({ enemies: ['Draven', 'Thresh', 'Ahri'] });
     assert.deepEqual(t.map((x) => [x.champion, x.source]), [['Draven', 'ki'], ['Thresh', 'ki'], ['Ahri', 'riot']]);
-    assert.equal(sdk.requests.length, 1); assert.equal(sdk.requests[0].model, 'gemini-2.5-flash-lite');
+    assert.equal(sdk.requests.length, 1); assert.equal(sdk.requests[0].model, 'gemini-3.1-flash-lite');
     // zweites Spiel mit denselben Gegnern: kein neuer Aufruf
     sdk.script.push({ text: '{"enemies":[]}' });
     await F.enemyTips({ enemies: ['Draven', 'Thresh'] });
@@ -87,10 +87,26 @@ test('LoL: champion recommendation from own pool, own record vs these enemies, t
     assert.deepEqual(r.candidates[0].vs, [{ enemy: 'Draven', wins: 2, games: 2 }]);
     assert.ok(!r.candidates.some((c) => ['Nautilus', 'Thresh'].includes(c.champion)), 'gebannt bzw. beim Gegner vergeben');
     assert.deepEqual(r.ai.picks.map((p) => p.champion), ['Braum', 'Leona'], 'KI darf nur Champions aus dem Pool nennen');
-    assert.equal(sdk.requests[0].model, 'gemini-2.5-flash-lite');
+    assert.equal(sdk.requests[0].model, 'gemini-3.1-flash-lite');
     // nur wählbare Champions
     const r2 = await core.gaming.lolflow.recommend({ role: 'Support', enemies: ['Draven'], pickable: new Set(['Leona']) });
     assert.deepEqual(r2.candidates.map((c) => c.champion), ['Leona']);
   } finally { cleanup(); }
 });
 
+
+test('Model switched off by Google (404 "no longer available"): remembered, next model of the same kind used automatically', async () => {
+  const sdk = fakeSdk([{ text: '{"enemies":[]}' }, { text: '{"enemies":[]}' }], { models: ['gemini-3.8-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite'] });
+  const Orig = sdk.sdk.GoogleGenAI; const tried = [];
+  sdk.sdk.GoogleGenAI = class extends Orig { constructor(o) { super(o); const gc = this.models.generateContent; this.models.generateContent = async (req) => { tried.push(req.model); if (req.model === 'gemini-2.5-flash-lite') throw Object.assign(new Error('{"error":{"code":404,"message":"This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite","status":"NOT_FOUND"}}'), { status: 404 }); return gc(req); }; } };
+  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk });
+  try {
+    core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
+    assert.equal(core.gemini.model('lite'), 'gemini-2.5-flash-lite');
+    await core.gemini.generate({ feature: 'lol', tier: 'lite', json: true, contents: [{ role: 'user', parts: [{ text: 'a' }] }] });
+    assert.deepEqual(tried, ['gemini-2.5-flash-lite', 'gemini-3.5-flash-lite'], 'derselbe Aufruf klappt mit dem Ersatz');
+    assert.equal(core.gemini.model('lite'), 'gemini-3.5-flash-lite', 'gemerkt');
+    await core.gemini.generate({ feature: 'lol', tier: 'lite', json: true, contents: [{ role: 'user', parts: [{ text: 'b' }] }] });
+    assert.equal(tried.at(-1), 'gemini-3.5-flash-lite'); assert.equal(tried.length, 3, 'kein erneuter Fehlversuch');
+  } finally { cleanup(); }
+});

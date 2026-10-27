@@ -147,3 +147,21 @@ test('Only calendars owned by the account are used; a missing calendar list abor
   assert.deepEqual(created, ['JARVIS · Termine']);
   await assert.rejects(ex.ensureCalendars({ google: { listCalendars: async () => ({}) } }), /unvollständig/);
 });
+
+test('Google Kalender: Gründe für nicht übertragene Einträge werden gesammelt; 403 „rate limit“ wird abgewartet und wiederholt', async () => {
+  ex.PACING.ms = 0;
+  const items = new Map([['jarvis1', { summary: 'A', extendedProperties: { private: { jarvisSource: 'local', jarvisSourceId: '1' } } }], ['jarvis2', { summary: 'B', extendedProperties: { private: { jarvisSource: 'local', jarvisSourceId: '2' } } }]]);
+  const google = { listMirroredEvents: async () => [], insertEvent: async () => { throw Object.assign(new Error('Calendar usage limits exceeded.'), { status: 403 }); } };
+  const r = await ex.mirrorCalendar({ db: null, google, calendarId: 'c', items, from: new Date(0).toISOString(), to: new Date().toISOString() });
+  assert.equal(r.failed, 2); assert.deepEqual(r.reasons, { '403 Calendar usage limits exceeded.': 2 });
+
+  const { GoogleClient: Google } = require('../src/main/providers/google');
+  let calls = 0;
+  const fetch = async () => { calls++; return calls < 3
+    ? { ok: false, status: 403, json: async () => ({ error: { message: 'Rate Limit Exceeded', errors: [{ reason: 'rateLimitExceeded' }] } }) }
+    : { ok: true, status: 200, json: async () => ({ id: 'ok' }) }; };
+  const g = Object.create(Google.prototype);
+  Object.assign(g, { fetch, settings: { get: () => ({ exportLocalToGoogle: true }) }, token: async () => 't', sleep: async () => {} });
+  assert.deepEqual(await g.api('POST', '/calendars/c/events', { body: {} }), { id: 'ok' });
+  assert.equal(calls, 3);
+});

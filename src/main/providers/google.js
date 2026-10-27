@@ -137,15 +137,18 @@ class GoogleClient {
     if (method !== 'GET' && /calendar\/v3/.test(base) && !this.settings.get('google').exportLocalToGoogle) throw new Error('Termine bleiben lokal: Google-Kalender-Schreibzugriff nicht freigegeben.');
     const url = new URL(base + path);
     if (query) for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const wait = this.sleep || ((ms) => new Promise((s) => setTimeout(s, ms)));
+    for (let attempt = 0; attempt < 5; attempt++) {
       const r = await this.fetch(url.toString(), {
         method, headers: { Authorization: 'Bearer ' + await this.token(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
       if (r.status === 401 && attempt === 0) { this.access = null; continue; }
-      if ((r.status === 429 || r.status >= 500) && attempt < 2) { await new Promise((s) => setTimeout(s, 800 * (attempt + 1) ** 2)); continue; }
+      if ((r.status === 429 || r.status >= 500) && attempt < 4) { await wait(800 * (attempt + 1) ** 2); continue; }
       if (r.status === 204) return null;
       const data = await r.json().catch(() => ({}));
+      // Google Kalender meldet „zu viele Anfragen“ als 403 (rateLimitExceeded / usageLimits) → kurz warten, erneut
+      if (r.status === 403 && attempt < 4 && /rateLimitExceeded|userRateLimitExceeded|quotaExceeded|usage limits/i.test(JSON.stringify(data?.error || {}))) { await wait(1000 * 2 ** attempt); continue; }
       if (!r.ok) throw googleError(r.status, data);
       return data;
     }
