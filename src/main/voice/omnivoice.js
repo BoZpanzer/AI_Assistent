@@ -140,7 +140,8 @@ class OmniVoice {
     fs.writeFileSync(this.marker(), JSON.stringify({ at: new Date().toISOString(), gpu, device: gpu ? 'cuda' : 'cpu', uv: this.uv.version, ...PKG }, null, 2));
     this.step('model');
     await this.start(); // lädt das Modell beim ersten Mal von Hugging Face
-    await this.synthesize('Test.', {});
+    // Probesatz mit der mitgelieferten J.A.R.V.I.S.-Stimme (ohne Grafikkarte kann das einige Minuten dauern)
+    await this.synthesize('Alles bereit.', { ref: 'jarvis-1-install', seed: 1, refAudio: this.bundledRef('jarvis', 1, ''), refText: REF_TEXT, timeoutMs: 20 * 60000 });
   }
 
   /** Alles entfernen (Dienst beenden, Ordner löschen). */
@@ -206,12 +207,12 @@ class OmniVoice {
     return dst;
   }
 
-  synthesize(text, { instruct, ref = 'default', seed = 1, speed, refAudio, refText } = {}) {
+  synthesize(text, { instruct, ref = 'default', seed = 1, speed, refAudio, refText, timeoutMs } = {}) {
     const job = this.queue.then(async () => {
       const port = await this.start();
       const r = await this.s.fetch(`http://127.0.0.1:${port}/tts`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': this.token },
-        body: JSON.stringify({ text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined }), signal: AbortSignal.timeout(120000),
+        body: JSON.stringify({ text: String(text).slice(0, 1500), instruct, ref, seed, speed, language: 'de', ref_audio: refAudio || undefined, ref_text: refAudio ? refText : undefined }), signal: AbortSignal.timeout(timeoutMs || (/cuda/.test(this.device) ? 120000 : 600000)),
       });
       if (!r.ok) throw new Error('Lokale KI-Stimme: ' + ((await r.text().catch(() => '')).slice(0, 200) || 'HTTP ' + r.status));
       const wav = Buffer.from(await r.arrayBuffer());
