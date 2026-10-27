@@ -61,7 +61,23 @@ class Life {
   cfg() { return this.s.settings.get('life') || {}; }
   emit() { this.s.bus.emit('life:data', {}); }
 
-  buckets(month) { return this.db().all('SELECT * FROM expense_buckets' + (month ? ' WHERE month=?' : '') + ' ORDER BY month, created_at', ...(month ? [month] : [])); }
+  /** Buckets mit Plan (amount), bereits darin gebuchten Ausgaben (spent) und Rest (remaining, ≥ 0). */
+  buckets(month) {
+    return this.db().all(`SELECT b.*, COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.bucket_id=b.id), 0) AS spent,
+      (SELECT COUNT(*) FROM expenses e WHERE e.bucket_id=b.id) AS bookings FROM expense_buckets b` + (month ? ' WHERE b.month=?' : '') + ' ORDER BY b.month, b.created_at', ...(month ? [month] : []))
+      .map((b) => ({ ...b, spent: r2(b.spent), remaining: r2(Math.max(0, b.amount - b.spent)), over: r2(Math.max(0, b.spent - b.amount)) }));
+  }
+  bucket(bid) { return bid ? this.buckets().find((b) => b.id === bid) || null : null; }
+  /** Bucket per ID oder Name (Name: bevorzugt aktueller Monat). */
+  findBucket(ref, month = null) {
+    if (!ref) return null;
+    const all = this.buckets(); const byId = all.find((b) => b.id === ref); if (byId) return byId;
+    const q = normText(ref); const ym = month || this.ym();
+    const hits = all.filter((b) => normText(b.name) === q || normText(b.name).includes(q));
+    return hits.find((b) => b.month === ym) || hits.find((b) => b.month > ym) || hits.at(-1) || null;
+  }
+  ym(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+  bucketExpenses(bid) { return this.db().all('SELECT id,amount,category,note,at FROM expenses WHERE bucket_id=? ORDER BY at DESC', bid); }
   saveBucket({ id: bid, name, amount, month, category = 'Sonstiges' } = {}) {
     const a = Number(String(amount).replace(',', '.'));
     if (!String(name || '').trim() || !Number.isFinite(a) || a < 0.01 || a >= 100000 || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) throw new Error('Name, positiver Betrag und Monat (JJJJ-MM) nötig');
@@ -69,30 +85,35 @@ class Life {
     const key = bid || id('bucket');
     this.db().run(`INSERT INTO expense_buckets(id,name,amount,month,category,created_at) VALUES(?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name, amount=excluded.amount, month=excluded.month, category=excluded.category`, key, String(name).trim().slice(0,120), r2(a), month, CATEGORIES.includes(category) ? category : 'Sonstiges', nowIso());
-    this.emit(); return this.db().get('SELECT * FROM expense_buckets WHERE id=?', key);
+    this.emit(); return this.bucket(key);
   }
-  removeBucket(bid) { this.db().run('DELETE FROM expense_buckets WHERE id=?', bid); this.emit(); return true; }
+  /** Bucket löschen; darin gebuchte Ausgaben bleiben als normale Ausgaben erhalten. */
+  removeBucket(bid) {
+    this.db().tx(() => { this.db().run('UPDATE expenses SET bucket_id=NULL WHERE bucket_id=?', bid); this.db().run('DELETE FROM expense_buckets WHERE id=?', bid); });
+    this.emit(); return true;
+  }
+  /** „Bezahlt“: den noch offenen Rest als Ausgabe in den Bucket buchen. */
   bookBucket(bid, at) {
-    const result = this.db().tx(() => {
-      const b = this.db().get('SELECT * FROM expense_buckets WHERE id=?', bid);
-      if (!b) throw new Error('Bucket nicht gefunden oder bereits gebucht');
-      this.db().run('DELETE FROM expense_buckets WHERE id=?', bid);
-      return this.addExpense({ amount: b.amount, note: b.name, category: b.category, at });
-    });
-    this.emit(); return result;
+    const b = this.bucket(bid);
+    if (!b) throw new Error('Bucket nicht gefunden');
+    if (b.remaining < 0.01) throw new Error('Nichts mehr offen – Bucket bereits gebucht');
+    return this.addExpense({ amount: b.remaining, note: b.name, category: b.category, at, bucketId: bid });
   }
 
   // ---------- Ausgaben ----------
-  addExpense({ amount, note = '', category, at } = {}) {
+  addExpense({ amount, note = '', category, at, bucketId = null } = {}) {
     const a = Number(String(amount).replace(',', '.'));
     if (!(a > 0 && a < 100000)) throw new Error('Betrag ungültig');
-    const cat = CATEGORIES.includes(category) ? category : pickBy(CAT_WORDS, note, 'Sonstiges');
+    const b = bucketId ? this.bucket(bucketId) : null;
+    if (bucketId && !b) throw new Error('Bucket nicht gefunden');
+    if (b && !String(note || '').trim()) note = b.name;
+    const cat = CATEGORIES.includes(category) ? category : b && b.category !== 'Sonstiges' ? b.category : pickBy(CAT_WORDS, note, 'Sonstiges');
     const when = at ? new Date(at) : new Date();
     if (isNaN(when)) throw new Error('Datum ungültig');
     const eid = id('ex');
-    this.db().run('INSERT INTO expenses(id,amount,category,note,at,created_at) VALUES(?,?,?,?,?,?)', eid, r2(a), cat, String(note).slice(0, 120), when.toISOString(), nowIso());
+    this.db().run('INSERT INTO expenses(id,amount,category,note,at,created_at,bucket_id) VALUES(?,?,?,?,?,?,?)', eid, r2(a), cat, String(note).slice(0, 120), when.toISOString(), nowIso(), b?.id || null);
     this.emit();
-    return { id: eid, amount: r2(a), category: cat, note, month: this.month() };
+    return { id: eid, amount: r2(a), category: cat, note, bucket: b ? this.bucket(b.id) : null, month: this.month() };
   }
   removeExpense(eid) { this.db().run('DELETE FROM expenses WHERE id=?', eid); this.emit(); return true; }
   /** Monatsübersicht (Standard: aktueller Monat): Summe, Budget, Kategorien, Abo-Kosten, Prognose. */
@@ -115,12 +136,12 @@ class Life {
     const subsThisMonth = r2(this.subscriptions().filter((x) => x.active).reduce((a, x) => { const nc = new Date(x.nextCharge + 'T12:00:00'); return a + (x.cycle === 'month' || x.cycle === 'week' ? monthly(x) : (nc.getFullYear() === y && nc.getMonth() + 1 === m ? x.amount : 0)); }, 0));
     // Saldo = was bis Monatsende noch frei ist: Einnahmen minus feste Posten, Abos und Ausgaben bisher
     const buckets = this.buckets(`${y}-${String(m).padStart(2, '0')}`);
-    const reserved = r2(buckets.reduce((sum, b) => sum + b.amount, 0));
+    const reserved = r2(buckets.reduce((sum, b) => sum + b.remaining, 0)); // Gebuchtes steckt schon in total
     const balance = income ? r2(income - fixedOut - subsThisMonth - total - reserved) : null;
     const perDay = balance != null && isNow ? r2(balance / Math.max(1, daysIn - dayNo + 1)) : null;
     return { month: `${y}-${String(m).padStart(2, '0')}`, total, subscriptions: subs, totalWithSubs: r2(total + subs), budget, left: budget != null ? r2(budget - total - subs - reserved) : null, forecast,
       reserved, buckets, income, fixedOut, subsThisMonth, balance, perDay, fixed, incomes: once.map((x) => ({ id: x.id, amount: x.amount, note: x.note, at: x.at })),
-      categories: Object.entries(byCat).map(([category, sum]) => ({ category, sum })).sort((a, b) => b.sum - a.sum), recent: rows.slice(0, 12).map((x) => ({ id: x.id, amount: x.amount, category: x.category, note: x.note, at: x.at })) };
+      categories: Object.entries(byCat).map(([category, sum]) => ({ category, sum })).sort((a, b) => b.sum - a.sum), recent: rows.slice(0, 12).map((x) => ({ id: x.id, amount: x.amount, category: x.category, note: x.note, at: x.at, bucketId: x.bucket_id || null })) };
   }
 
   // ---------- Feste Einnahmen & Fixkosten, einmalige Einnahmen ----------

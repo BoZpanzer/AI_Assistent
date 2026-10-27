@@ -487,3 +487,16 @@ a:hover { text-decoration: underline; }
 .col.scroll > .panel, .col.scroll > section { flex-shrink: 0; }
 
 .map-tools > * { flex-shrink: 0; }
+
+/* Buckets: Säulendiagramm (Umriss = Plan, Füllung = ausgegeben) */
+.bucket-chart { display: flex; gap: 14px; align-items: flex-end; overflow-x: auto; padding: 10px 2px 4px; margin-top: 8px; }
+.bc-col { flex: 1 0 64px; max-width: 120px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.bc-track { position: relative; width: 100%; max-width: 46px; height: 150px; border-bottom: 1px solid var(--line); }
+.bc-plan { position: absolute; bottom: 0; left: 0; right: 0; border: 1px dashed var(--line-strong); border-bottom: 0; border-radius: 4px 4px 0 0; }
+.bc-fill { position: absolute; bottom: 0; left: 5px; right: 5px; background: linear-gradient(180deg, var(--cyan-2), var(--cyan)); box-shadow: 0 0 8px rgba(34, 211, 238, 0.45); border-radius: 3px 3px 0 0; transition: height .3s ease; }
+.bc-fill.over { background: var(--red); box-shadow: 0 0 8px rgba(244, 63, 94, 0.5); }
+.bc-val { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.bc-val.over { color: var(--red); }
+.bc-name { font-size: 12px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-sub { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.bucket-row { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
