@@ -1,6 +1,6 @@
 # Kosten, Datenschutz und Aufgabenverteilung
 
-Stand: 27.10.2026 · gilt ab JARVIS 5.0
+Stand: 27.10.2026 · gilt ab JARVIS 5.1 (Gemini Live entfernt)
 
 ## Leitlinie
 
@@ -17,7 +17,6 @@ So wenig Gemini wie möglich, so viel lokal wie sinnvoll – ohne das Spiel ausz
 | Nicht private Nachrichten (Wissen, Uni, allgemeine Fragen), „gründliche“ Fragen, Bildschirmfrage, Websuche | **Gemini Flash**, nur wenn erlaubt – ohne private Nachrichten im Verlauf | Qualität lokal nicht erreichbar |
 | Brain selbst erweitern (nach Antworten) | privat: **lokales Modell**; sonst **Gemini Sparmodell**, max. 40×/Tag | Sensibles wird nie automatisch gespeichert |
 | Gaming-Nachrichten, Matchup-Karte, Gegner-Tipps, Champion-Empfehlung, Kurzfassungen | **Gemini Sparmodell** (gemini-2.5-flash-lite, 0,10/0,40 $ je 1 Mio. Token) | kurze, strukturierte Aufgaben; ca. 8× günstiger als Flash |
-| Gemini Live (Echtzeit-Audio) | **aus** (Standard), optional | teuerste Funktion |
 
 Die Entscheidung trifft zentral `Orchestrator.route()` (Chat) bzw. `Gemini.generate()` (Einzelaufrufe); erzwungen wird sie in `Gemini.cloud()` im Hauptprozess.
 `Gemini.client()` funktioniert nur innerhalb dieser Pforte – ein Test prüft, dass kein anderer Code das SDK direkt benutzt.
@@ -27,7 +26,7 @@ Die Entscheidung trifft zentral `Orchestrator.route()` (Chat) bzw. `Gemini.gener
 - **Sparsam hybrid** (Standard): Gemini nur für nicht private Nachrichten und eingeschaltete Funktionen; JARVIS ordnet jede Nachricht selbst ein (siehe unten).
 - **Strikt lokal**: keine externen KI-Aufrufe. Nicht private Nachrichten werden – falls eingerichtet – vom lokalen Modell beantwortet, mit sichtbarem Hinweis.
   Umschalten: Einstellungen → Gemini / KI → Modus, oder Klick auf den Cloud-Chip oben in der Kopfzeile („Cloud pausieren“).
-  Laufende Gemini-Aufrufe werden dabei abgebrochen, eine Live-Sitzung beendet.
+  Laufende Gemini-Aufrufe werden dabei abgebrochen.
 
 Ist Cloud gesperrt (Modus, Funktion aus, Budget erreicht), ruft JARVIS **nie** stattdessen still ein anderes Modell oder einen anderen Anbieter auf.
 Fällt das lokale Modell aus, wird **nie** automatisch Gemini benutzt.
@@ -48,7 +47,6 @@ Fällt das lokale Modell aus, wird **nie** automatisch Gemini benutzt.
 | Pro-Modell | nie automatisch (nur Modus „Immer maximal“) |
 | Wiederholungen | gleiche Anfrage, gleiches Modell: 1× bei Überlastung (5xx), 1× kurzes Warten bei 429 ≤ 10 s; kein Modellwechsel |
 | Abgelehnte Anfragen (4xx) | werden 1 h nicht erneut gesendet |
-| Gemini Live | aus; wenn an: max. 10 min und 0,10 € je Sitzung, Audio nur bei erkannter Sprache, Leerlauf-Trennung 45 s |
 | LoL-Team-Tipps in der Championauswahl | aus (ein Aufruf pro Gegner-Zusammenstellung, praktisch nie im Cache) |
 | LoL-KI-Nachbesprechung, Patch-Notes-Kurzfassungen, Spielseiten gestalten | aus (per Knopf weiterhin verfügbar) |
 | LoL-Matchup-/Konter-Karte | an (pro Matchup und Patch einmal, 30 Tage gespeichert) |
@@ -57,7 +55,6 @@ Fällt das lokale Modell aus, wird **nie** automatisch Gemini benutzt.
 
 - Vor jedem Aufruf wird eine **Schätzung reserviert** (Eingabe ≈ Zeichen / 3,5, Bilder ≈ 1 300 Token, plus maximale Ausgabe). Danach ersetzt der von Google gemeldete Verbrauch die Schätzung.
 - Dadurch zählen **laufende und parallele** Aufrufe sofort mit. Nicht abgeschlossene Reservierungen (Absturz, Neustart) bleiben mit ihrer Schätzung gezählt; ein Neustart setzt das **Tagesbudget nicht zurück** (das Sitzungsbudget schon – es gilt seit dem Start).
-- Gemini Live meldet Verbrauch fortlaufend; zusätzlich zählen mindestens die gestreamten Audiominuten (0,005 $/min).
 - Preise: offizielle Listenpreise (bezahlter Tarif) von <https://ai.google.dev/gemini-api/docs/pricing>, abgerufen am 19.10.2026, in **USD**. Angekündigte Erhöhungen (gemini-3.8-flash ab 01.01.2027, gemini-4-argon ab 01.12.2026) sind hinterlegt. Unbekannte Modelle werden wie Pro berechnet.
 - Euro: Umrechnung mit dem einstellbaren Kurs (Standard 0,86 €/$, **Annahme**, kein Tageskurs).
 - Die lokale Sperre ist **keine garantierte Abrechnungsobergrenze**: Google zählt selbst (eigene Zeitzone, Rundung, Suchgebühren über 5 000/Monat, Preisänderungen), und ein bereits laufender Aufruf kann eine Grenze noch überschreiten. Für eine harte Obergrenze das Ausgabenlimit im Google AI Studio verwenden; JARVIS ändert daran nichts.
@@ -82,7 +79,6 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Daten | Aufnahme | Ziel | Speicherung | Abschalten |
 |---|---|---|---|---|
 | Mikrofon (lokal) | nur nach Mikrofon-Taste/Wake-Word, endet nach Sprechpause | whisper.cpp auf dem PC | temporäre WAV, sofort gelöscht | Mikrofon nicht drücken / Wake-Word aus |
-| Mikrofon (Gemini Live) | nur wenn Funktion an + Zustimmung je Sitzung; nur bei erkannter Sprache | Google | nicht von JARVIS | Funktion „Gemini Live“ aus (Standard) |
 | Transkript / Chattext | aus Eingabe | pro Nachricht: privat → lokal, sonst Gemini (ohne private Nachrichten) | lokale Datenbank (Gesprächsverlauf) | Gespräch löschen; Modus „Strikt lokal“ |
 | Bildschirm | nur Hotkey/Frage, **nur während ein Spiel aktiv ist**, bevorzugt nur das Spielfenster, max. 1 600 px; Tarkov-Itemscan nur Ausschnitt um den Mauszeiger | Gemini (Gaming-Chat des Spiels) | **standardmäßig nicht gespeichert** | Einstellungen → Sicherheit; Funktion „Bildschirmanalyse“ aus |
 | Spieldaten (LoL-Matches, Tarkov-Log, Statistik) | Client/Log/Riot-API | lokal; an Gemini nur in Gaming-Chats bzw. LoL nach Freigabe „LoL-Daten für Cloud“ | lokale Datenbank | Freigabe aus; Statistik-Einträge löschen |
@@ -96,7 +92,7 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Kostenloses Kontingent (Zusatz-Schlüssel) | Sparmodell-Anfragen | Google; darf laut Google zur Produktverbesserung genutzt werden | – | Schlüssel entfernen |
 | Kosten-Protokoll | je Gemini-Aufruf | lokal, nur Metadaten | Datenbank | ältere Einträge löschen |
 
-Sichtbarkeit: Die Kopfzeile zeigt den Cloud-Zustand (aus / an mit laufenden Aufrufen und Tagesstand / gesperrt), ein aktives Mikrofon (lokal oder Gemini Live) und jede Bildschirmaufnahme.
+Sichtbarkeit: Die Kopfzeile zeigt den Cloud-Zustand (aus / an mit laufenden Aufrufen und Tagesstand / gesperrt), ein aktives Mikrofon (immer lokal) und jede Bildschirmaufnahme.
 
 **Lokale Modellserver:** JARVIS spricht Ollama nur über `127.0.0.1` an (kein DNS, kein Proxy, keine Weiterleitung, keine `:cloud`-Modelle). Ollama selbst lauscht standardmäßig nur auf `127.0.0.1:11434`; ist `OLLAMA_HOST` auf eine andere Adresse gesetzt (z. B. `0.0.0.0`), zeigt JARVIS eine Warnung. Empfehlung: `OLLAMA_HOST=127.0.0.1:11434`. JARVIS kann die Konfiguration des separat installierten Ollama-Dienstes nicht erzwingen.
 

@@ -24,7 +24,7 @@ JARVIS spricht ausschließlich mit `127.0.0.1`, folgt keinen Redirects und verwe
 - Neue Termine werden immer im lokalen Kalender angelegt. Importierte Google-/Feed-Termine sind zum Bearbeiten schreibgeschützt; ausstehende Google-Schreibvorgänge werden blockiert. Bereits früher synchronisierte Daten werden nicht aus Google gelöscht.
 - Vollständige Drive-Backups werden gesperrt, weil sie private Daten enthalten. Lokale Sicherungen bleiben verfügbar. Bereits vorhandene Cloud-Backups bleiben bestehen.
 - Cloud-Embeddings sind gesperrt; die lokale Volltextsuche bleibt verfügbar.
-- Gemini Live bleibt deaktiviert, weil Sprache sonst vor einer Klassifizierung übertragen würde. Lokale Spracherkennung ist ein separater Ausbau. Vorlesen verwendet ausschließlich als lokal gekennzeichnete Systemstimmen.
+- Sprache läuft komplett lokal: Erkennung mit Whisper, Antworten mit OmniVoice/Piper. Gemini Live gibt es seit 5.1 nicht mehr.
 - Automatische Fahrplanung anhand privater Terminorte ist deaktiviert. Manuell abgefragte öffentliche Fahrplandaten bleiben verfügbar.
 - Private Tools dürfen keine externen Zugriffe ausführen, auch nicht nach Bestätigung. Eine explizite Tool-Freigabeliste und ein asynchroner Netzwerk-Kontext verhindern, dass ein lokales Modell private Daten durch Web-/Browser-/Cloud-Tools versendet.
 

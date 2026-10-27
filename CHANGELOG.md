@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.1.0 – Feste monatliche Buckets, Sprache komplett lokal
+
+- **Monatliche Buckets:** Beim Anlegen „jeden Monat (fester Bucket)“ einschalten – der Bucket (z. B. „Essen gehen 100 €“) wird ab diesem Monat automatisch jeden Monat neu angelegt und startet jeweils bei 0 €. Erkennbar am ↻. Ändern gilt wahlweise nur für diesen Monat oder auch für alle kommenden; einen Monat entfernen überspringt nur diesen; „Beenden“ stoppt ihn ab dem nächsten Monat. Geht auch per Chat („jeden Monat 50 € fürs Sparen“).
+- **Gemini Live entfernt:** Sprache läuft jetzt komplett lokal – Mikrofon → Whisper → Text an Gemini oder das lokale Modell (automatisch je nach Nachricht) → OmniVoice spricht. Keine Audio-Übertragung an Google mehr, keine Live-Kosten; die zugehörigen Einstellungen (Live-Stimme, Minuten-/Kostengrenzen, Barge-in, Extended Thinking) sind weg.
+
 ## 5.0.0 – Lokale KI-Stimme, automatisch privat, Brain lernt selbst
 
 - **Neue lokale KI-Stimme (OmniVoice):** natürlich klingende Stimme auf deiner Grafikkarte – kostenlos, offline, auch für private Antworten. J.A.R.V.I.S. und Alya haben feste, mitgelieferte Stimmen (von OmniVoice erzeugt, keine echte Person); „neu würfeln“ erzeugt eine andere, „Original“ holt sie zurück. Englische Spielbegriffe werden eingedeutscht („Dschungler“, „Gänk“, „Altimet“). Installation nur per Klick unter Einstellungen → Lokale KI-Stimme (ca. 6 GB: Python, PyTorch, Modell), mit einem Klick wieder entfernbar. Läuft auch beim Zocken (ca. 2–3 GB Grafikspeicher). Ohne Installation spricht weiter die einfache lokale Stimme.

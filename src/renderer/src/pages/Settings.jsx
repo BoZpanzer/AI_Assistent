@@ -7,7 +7,6 @@ import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask, FixText, 
 import { audio, playStartSound } from '../lib/audio.js';
 import { ago } from '../lib/format.js';
 
-const VOICES = ['Charon', 'Puck', 'Kore', 'Fenrir', 'Aoede', 'Orus', 'Leda', 'Zephyr', 'Enceladus', 'Iapetus', 'Algieba', 'Despina'];
 export const upd = (patch) => guard(() => rpc('settings.update', patch));
 
 const SAMPLE = 'Hallo, ich bin JARVIS. Du warst Support mit Malphite – achte in der Lane auf Sivirs Spellshield und warde den Jungle vor dem Drachen. Deine Überlebensrate in Tarkov liegt heute bei sechzig Prozent.';
@@ -215,13 +214,12 @@ function Speech({ s }) {
     try { const stop = await audio.meter(setLevel, v.inputDeviceId); setTimeout(() => { stop(); setLevel(null); }, 5000); } catch (e) { toast('Mikrofon nicht verfügbar: ' + e.message, 'error'); setLevel(null); }
   };
   return (
-    <Panel icon={Globe} title="Sprache" sub="Spracherkennung lokal (Whisper) · Gemini Live nur mit Cloud-Freigabe">
+    <Panel icon={Globe} title="Sprache" sub="Spracherkennung komplett lokal (Whisper) – Audio verlässt nie den PC">
       <Field label="Oberflächensprache"><Select value="de-DE" onChange={() => {}} options={[{ value: 'de-DE', label: 'Deutsch (DE)' }]} /></Field>
-      <Field label="Stimme (Gemini Live)"><Select value={v.voiceName} onChange={(x) => upd({ voice: { voiceName: x } })} options={VOICES} /></Field>
       <Field label="Mikrofon"><Select value={v.inputDeviceId} onChange={(x) => upd({ voice: { inputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.in.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Mikrofon' }))]} /></Field>
       <Field label="Lautsprecher"><Select value={v.outputDeviceId} onChange={(x) => upd({ voice: { outputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
       <Field label="Mikrofon testen">{level === null ? <button class="btn xs" onClick={test}><Mic size={12} />Pegel testen</button> : <div class="meter" style={{ width: '100%' }}><i style={{ width: `${level * 100}%` }} /></div>}</Field>
-      <div class="notice tiny">🔒 <b>Lokale Spracheingabe:</b> Whisper ist in der Windows-Version enthalten. Mikrofon drücken, sprechen – das Audio bleibt auf dem PC; der erkannte Text wird wie getippter Text eingeordnet (privat → lokales Modell). ☁ Gemini Live (optional): Vor jeder Sitzung ist deine Zustimmung für die Audioübertragung an Google nötig.</div>
+      <div class="notice tiny">🔒 <b>Lokale Spracheingabe:</b> Whisper ist in der Windows-Version enthalten. Mikrofon drücken, sprechen – das Audio bleibt auf dem PC; der erkannte Text wird wie getippter Text eingeordnet (privat → lokales Modell).</div>
       <div class="row gap-s mt">
         <span class="small">{voiceLocal?.ready ? (voiceLocal.bundled ? '● Whisper bereits im JARVIS-Installer enthalten – einsatzbereit' : '● Eigenes Whisper installiert – einsatzbereit') : '○ Whisper nicht gefunden: ' + (voiceLocal?.error || 'Verfügbarkeit wird geprüft …')}</span>
         <button class="btn xs" onClick={refreshVoiceLocal}>Spracherkennung prüfen</button>
@@ -242,16 +240,9 @@ function Speech({ s }) {
       <Field label="„Hey Jarvis“ (lokal, offline)" hint="Mikrofon bleibt lokal – nichts wird übertragen, bis das Wake-Word erkannt wird"><Toggle checked={v.wakeWord} onChange={(x) => upd({ voice: { wakeWord: x } })} /></Field>
       {v.wakeWord && <Field label="Empfindlichkeit"><input class="range" type="range" min="0.2" max="0.9" step="0.05" value={v.wakeSensitivity} onChange={(e) => upd({ voice: { wakeSensitivity: Number(e.currentTarget.value) } })} /></Field>}
       <Field label="Push-to-Talk-Taste (global)"><input class="inp" value={v.pushToTalkKey} onChange={(e) => upd({ voice: { pushToTalkKey: e.currentTarget.value } })} /></Field>
-      <Field label="Unterbrechen erlauben (Barge-in)"><Toggle checked={v.bargeIn} onChange={(x) => upd({ voice: { bargeIn: x } })} /></Field>
       <Field label="Textantworten vorlesen" hint="Stimme siehe „Sprachausgabe“"><Toggle checked={v.speakReplies} onChange={(x) => upd({ voice: { speakReplies: x } })} /></Field>
       <Field label="Antworten auf Spracheingaben vorlesen" hint="Stimme siehe „Sprachausgabe“"><Toggle checked={v.speakVoiceReplies !== false} onChange={(x) => upd({ voice: { speakVoiceReplies: x } })} /></Field>
       <Field label="CPU-Threads für Spracherkennung" hint="beim Spielen automatisch höchstens 2, mit niedriger Priorität"><Select value={String(v.whisperThreads || 4)} onChange={(x) => upd({ voice: { whisperThreads: Number(x) } })} options={['2', '4', '6', '8'].map((n) => ({ value: n, label: n }))} /></Field>
-      <div class="tiny muted">Gemini Live (Echtzeit-Audio an Google) nur, wenn unter „Gemini / KI → Cloud-Funktionen“ eingeschaltet:</div>
-      <Field label="Live: höchstens Minuten je Sitzung"><input class="inp" type="number" min="1" max="60" style={{ width: 80 }} value={v.cloudMaxMinutes ?? 10} onChange={(e) => upd({ voice: { cloudMaxMinutes: Number(e.currentTarget.value) || 10 } })} /></Field>
-      <Field label="Live: höchstens € je Sitzung (Schätzung)"><input class="inp" type="number" min="0.01" max="5" step="0.05" style={{ width: 80 }} value={v.cloudMaxEur ?? 0.1} onChange={(e) => upd({ voice: { cloudMaxEur: Number(e.currentTarget.value) || 0.1 } })} /></Field>
-      <Field label="Live: Audio nur bei Sprache senden" hint="Stille und leise Hintergrundgeräusche gehen nicht an Google"><Toggle checked={v.cloudVad !== false} onChange={(x) => upd({ voice: { cloudVad: x } })} /></Field>
-      <Field label="Extended Thinking (falls verfügbar)" hint="gemini-3.8-live-extended-thinking: länger nachdenken, Werkzeuge asynchron"><Toggle checked={v.extendedThinking} onChange={(x) => upd({ voice: { extendedThinking: x } })} /></Field>
-      <Field label="Verbindung trennen nach Stille"><Select value={String(v.idleDisconnectSeconds)} onChange={(x) => upd({ voice: { idleDisconnectSeconds: Number(x) } })} options={[['30', '30 Sekunden'], ['90', '90 Sekunden'], ['180', '3 Minuten'], ['600', '10 Minuten']].map(([value, label]) => ({ value, label }))} /></Field>
     </Panel>
   );
 }
@@ -268,7 +259,7 @@ function Ai({ s, secrets }) {
     setBusy(false); setRes(r);
     if (r?.ok) { setState({ secrets: await rpc('secrets.status') }); setKey(''); toast(`Verbunden – ${r.count} Modelle verfügbar`); }
   };
-  const opt = (role) => [{ value: '', label: 'Automatisch' }, ...models.filter((m) => role === 'embedding' ? /embed/.test(m) : role === 'live' ? /live|native-audio/.test(m) : !/embed|tts|image|live|veo|lyria|imagen|aqa/.test(m)).map((m) => ({ value: m, label: m }))];
+  const opt = (role) => [{ value: '', label: 'Automatisch' }, ...models.filter((m) => role === 'embedding' ? /embed/.test(m) : !/embed|tts|image|live|veo|lyria|imagen|aqa/.test(m)).map((m) => ({ value: m, label: m }))];
   return (
     <Panel icon={Sparkles} title="Gemini / KI" sub="KI-Modelle und Analyse-Tools">
       <CloudControl s={s} />
@@ -276,7 +267,7 @@ function Ai({ s, secrets }) {
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['gemini.api_key'] ? '••••••••••••' : 'AIza…'} value={key} onInput={(e) => setKey(e.currentTarget.value)} /><button class="btn xs" disabled={busy} onClick={() => test(key)}>{busy ? <Spinner size={12} /> : 'Prüfen'}</button></div>
       </Field>
       {res && !res.ok && <div class="notice warn">{res.error}</div>}
-      {[['fast', 'Modell: schnelle Antworten'], ['reasoning', 'Modell: Reasoning'], ['research', 'Modell: Webrecherche'], ['vision', 'Modell: Multimodal/Seiten'], ['live', 'Modell: Echtzeit-Sprache'], ['embedding', 'Modell: Embeddings']].map(([role, label]) => (
+      {[['fast', 'Modell: schnelle Antworten'], ['reasoning', 'Modell: Reasoning'], ['research', 'Modell: Webrecherche'], ['vision', 'Modell: Multimodal/Seiten'], ['embedding', 'Modell: Embeddings']].map(([role, label]) => (
         <Field label={label}><Select value={s.models[role]} onChange={(v) => upd({ models: { [role]: v } })} options={opt(role)} /></Field>
       ))}
       <Field label="Denktiefe bei normalen Fragen" hint={s.aiCostMode === 'max' ? 'immer volle Denktiefe – kostet deutlich mehr' : 'kurzes Nachdenken; Analysen, Lernpläne usw. denken weiter voll'}><Select value={s.aiCostMode || 'spar'} onChange={(v) => upd({ aiCostMode: v })} options={[{ value: 'spar', label: 'Sparsam (empfohlen)' }, { value: 'max', label: 'Immer maximal' }]} /></Field>
@@ -349,9 +340,9 @@ function CloudControl({ s }) {
         <Select value={c.mode || 'hybrid'} onChange={(mode) => guard(() => rpc('cloud.setMode', { mode })).then(reload)} options={[{ value: 'hybrid', label: 'Sparsam hybrid (Gemini nur wo nötig)' }, { value: 'local', label: 'Strikt lokal (keine Cloud-KI)' }]} />
       </Field>
       {!local && <details class="mt">
-        <summary class="small">Cloud-Funktionen einzeln ({Object.keys(labels).filter((k) => !['meta', 'diagnostics'].includes(k) && (k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false)).length} von {Object.keys(labels).length - 2} an)</summary>
+        <summary class="small">Cloud-Funktionen einzeln ({Object.keys(labels).filter((k) => !['meta', 'diagnostics'].includes(k) && c.features?.[k] !== false).length} von {Object.keys(labels).length - 2} an)</summary>
         {Object.entries(labels).filter(([k]) => !['meta', 'diagnostics'].includes(k)).map(([k, label]) => (
-          <Field label={label} hint={k === 'voice' ? 'Echtzeit-Audio an Google, teuer (Audio-Eingabe 3 $/1 Mio. Token). Standard: lokale Spracheingabe.' : undefined}><Toggle checked={k === 'voice' ? c.features?.voice === true : c.features?.[k] !== false} onChange={(v) => upd({ cloud: { features: { [k]: v } } }).then(reload)} /></Field>
+          <Field label={label}><Toggle checked={c.features?.[k] !== false} onChange={(v) => upd({ cloud: { features: { [k]: v } } }).then(reload)} /></Field>
         ))}
       </details>}
       {!local && <>
@@ -379,7 +370,7 @@ function CostReport() {
   );
 }
 
-const FEATURE_LABEL = { chat: 'Chat', voice: 'Gemini Live', research: 'Webrecherche', vision: 'Bildschirm', study: 'Seiten lesen', lol: 'LoL-Analysen', news: 'Patch-Notes', games: 'Spielseiten', wikilist: 'Checklisten', diagnostics: 'Verbindungstest', embeddings: 'Suche (Embeddings)', other: 'Sonstiges' };
+const FEATURE_LABEL = { chat: 'Chat', research: 'Webrecherche', vision: 'Bildschirm', study: 'Seiten lesen', lol: 'LoL-Analysen', news: 'Patch-Notes', games: 'Spielseiten', wikilist: 'Checklisten', diagnostics: 'Verbindungstest', embeddings: 'Suche (Embeddings)', other: 'Sonstiges' };
 const kTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + ' Mio' : Math.round(n / 1000) + 'k');
 function UsageTable() {
   const [rep] = useRpc('gemini.usageReport', { days: 7 }, {});

@@ -243,5 +243,12 @@ module.exports = [
     ALTER TABLE expenses ADD COLUMN bucket_id TEXT;
     CREATE INDEX ix_expenses_bucket ON expenses(bucket_id);
   `),
+  // v12 — monatliche Buckets: Serie als Vorlage, je Monat ein eigener Bucket (series_id); übersprungene Monate in skip
+  (db) => db.exec(`
+    CREATE TABLE bucket_series(id TEXT PRIMARY KEY, name TEXT NOT NULL, amount REAL NOT NULL CHECK(amount>0), category TEXT NOT NULL,
+      start_month TEXT NOT NULL, end_month TEXT, skip TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL);
+    ALTER TABLE expense_buckets ADD COLUMN series_id TEXT;
+    CREATE UNIQUE INDEX ix_buckets_series_month ON expense_buckets(series_id, month) WHERE series_id IS NOT NULL;
+  `),
 ];
 

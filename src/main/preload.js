@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld('jarvis', {
     set.add(cb); listeners.set(type, set);
     return () => set.delete(cb);
   },
-  sendAudio: (buf) => ipcRenderer.send('voice:audio', buf),
   /** Absolute path of a dropped/selected File (Electron ≥ 32). */
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
 });

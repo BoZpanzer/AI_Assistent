@@ -128,7 +128,7 @@ test('Calendar, backup, embeddings and voice fail closed; private recipes use lo
     assert.equal(typeof s.vectors.backfill, 'undefined', 'kein Embedding-Hintergrundjob mehr');
     assert.equal((await s.driveBackup.run({ force: true })).skipped, 'private-data');
     await assert.rejects(s.driveBackup.upload('/none'), /Private/);
-    await assert.rejects(s.voice.start(), /Datenschutz/);
+    assert.equal(s.voice.isOpen(), false);
     assert.equal((await s.transit.check()).skipped, 'private-calendar');
     s.localLLM.generate = async () => ({ recipes: [{ name: 'local' }] });
     s.life.addPantry(['Reis', 'Tomaten', 'Bohnen']);
@@ -189,4 +189,39 @@ test('Loopback Ollama integration: local verification, lowercase tools, tool res
     assert.equal(seen.filter((r) => r.path === '/api/chat').length, before);
     redirect = true; await assert.rejects(llm.models(), /HTTP 302/);
   } finally { await new Promise((resolve) => server.close(resolve)); }
+});
+
+test('Monthly buckets: created every month from the start month, edit this month or all coming months, skip one month, end the series', async () => {
+  const { core: s, cleanup } = tempCore();
+  try {
+    const now = ym(); const shift = (n) => { const [y, m] = now.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+    const essen = s.life.saveBucket({ name: 'Essen gehen', amount: 100, month: now, monthly: true });
+    assert.equal(essen.monthly, true);
+    assert.equal(s.life.buckets(shift(-1)).length, 0, 'nicht rückwirkend');
+    const next = s.life.buckets(shift(1));
+    assert.equal(next.length, 1); assert.equal(next[0].name, 'Essen gehen'); assert.equal(next[0].amount, 100); assert.equal(next[0].spent, 0, 'jeder Monat startet bei 0');
+    assert.equal(s.life.buckets(shift(1)).length, 1, 'nicht doppelt');
+    // Ausgabe im aktuellen Monat betrifft nur diesen Monat
+    s.life.addExpense({ amount: 30, bucketId: essen.id });
+    assert.equal(s.life.bucket(essen.id).spent, 30); assert.equal(s.life.buckets(shift(1))[0].spent, 0);
+    // nur diesen Monat ändern
+    s.life.saveBucket({ ...s.life.bucket(essen.id), amount: 150 });
+    assert.equal(s.life.bucket(essen.id).amount, 150); assert.equal(s.life.buckets(shift(2))[0].amount, 100);
+    // für alle kommenden Monate ändern (auch schon angelegte)
+    s.life.saveBucket({ ...s.life.bucket(essen.id), amount: 120, forFuture: true });
+    assert.equal(s.life.buckets(shift(1))[0].amount, 120); assert.equal(s.life.buckets(shift(3))[0].amount, 120);
+    // einen Monat entfernen → bleibt weg, Serie läuft weiter
+    s.life.removeBucket(s.life.buckets(shift(2))[0].id);
+    assert.equal(s.life.buckets(shift(2)).length, 0); assert.equal(s.life.buckets(shift(4)).length, 1);
+    // beenden → ab dem Folgemonat keine mehr, gebuchte bleiben
+    s.life.endSeries(s.life.buckets(shift(1))[0].id);
+    assert.equal(s.life.buckets(shift(3)).length, 0); assert.equal(s.life.buckets(shift(6)).length, 0); assert.equal(s.life.buckets(shift(1)).length, 1);
+    assert.equal(s.life.month().reserved, 90, 'Monatsübersicht: offener Rest 120 − 30');
+    // per Chat-Werkzeug
+    const r = await s.orchestrator.execute('expense_buckets', { action: 'save', name: 'Sparen', amount: 50, monthly: true }, { conversationId: 'x', channel: 'text', scope: 'private' });
+    assert.equal(r.response.monthly, true); assert.equal(s.life.buckets(shift(5)).filter((b) => b.name === 'Sparen').length, 1);
+    // einmalige Buckets bleiben einmalig
+    s.life.saveBucket({ name: 'Konzert', amount: 60, month: now });
+    assert.equal(s.life.buckets(shift(1)).some((b) => b.name === 'Konzert'), false);
+  } finally { cleanup(); }
 });

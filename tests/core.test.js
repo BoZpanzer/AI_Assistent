@@ -10,7 +10,7 @@ const { redact } = require('../src/main/core/logger');
 
 test('Datenbank: Migration, Schema-Version, Backup vor Migration', () => {
   const { core, cleanup } = tempCore();
-  assert.equal(core.db.version, 11);
+  assert.equal(core.db.version, 12);
   const snap = core.db.snapshot('test');
   assert.ok(fs.existsSync(snap));
   cleanup();
@@ -222,9 +222,8 @@ test('Modellauswahl: nur bestätigte Modelle, Rollen-Zuordnung', async () => {
   const { core, cleanup } = tempCore();
   const r = await core.gemini.discover('AIza-x');
   assert.equal(r.chosen.fast, 'gemini-3.8-flash');
-  assert.equal(r.chosen.live, 'gemini-3.8-live');
+  assert.equal(r.chosen.live, undefined, 'keine Echtzeit-Sprache mehr');
   assert.equal(r.chosen.embedding, 'gemini-embedding-2');
-  assert.equal(r.requested.every((x) => x.available), true);
   cleanup();
 });
 

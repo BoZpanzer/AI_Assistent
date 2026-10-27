@@ -68,7 +68,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'cloud.setMode': ({ mode }) => {
       if (!['hybrid', 'local'].includes(mode)) throw new Error('Unbekannter Modus');
       s.settings.update({ cloud: { mode } });
-      if (mode === 'local') { s.voice.stop(); s.gemini.abortAll(); }
+      if (mode === 'local') s.gemini.abortAll();
       return s.gemini.cloudCfg();
     },
     // --- Spielstatistiken (deterministisch, lokal)
@@ -88,7 +88,6 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     // --- chat ---
     'chat.retry': ({ conversationId, messageId }) => { s.orchestrator.retry({ conversationId, messageId }).catch((e) => log.error('chat.retry', e)); return { ok: true }; },
     'chat.send': async ({ conversationId, text, attachments }) => {
-      if (s.voice.isOpen() && s.voice.conversationId === conversationId && text && !attachments?.length) { s.voice.sendText(text); return { viaVoice: true }; }
       const files = [];
       for (const a of (attachments || []).slice(0, 5)) {
         if (!a.path || !fs.existsSync(a.path)) continue;
@@ -102,7 +101,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.list': ({ q } = {}) => s.conversations.list({ q }),
     'conv.messages': ({ id, limit }) => s.conversations.messages(id, { limit: limit || 200 }),
     'conv.create': ({ title, privacy } = {}) => s.conversations.create(title, privacy),
-    'conv.private': ({ id }) => { if (s.voice.conversationId === id) s.voice.stop(); s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
+    'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
     // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
@@ -356,6 +355,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'life.saveBucket': (p) => s.life.saveBucket(p),
     'life.removeBucket': ({ id }) => s.life.removeBucket(id),
     'life.bookBucket': ({ id, at }) => s.life.bookBucket(id, at),
+    'life.endSeries': ({ id }) => s.life.endSeries(id),
     'life.bucketExpenses': ({ id }) => s.life.bucketExpenses(id),
     'life.month': ({ month } = {}) => s.life.month(month || null),
     'life.addExpense': (a) => s.life.addExpense(a),
@@ -589,11 +589,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       s.orchestrator.chat({ conversationId, text, attachments: [], channel: 'voice' }).catch((e) => log.error('chat', e));
       return { text, started: true };
     },
-    'voice.audioEnd': () => s.voice.sendAudioEnd(),
-    'voice.start': ({ conversationId, cloudAudioApproved } = {}) => s.voice.start({ conversationId, cloudAudioApproved }),
-    'voice.stop': () => s.voice.stop(),
-    'voice.state': () => ({ state: s.voice.state, model: s.voice.model }),
-    'voice.activity': () => s.voice.activity(),
+    'voice.state': () => ({ state: s.voice.state }),
 
     // --- system ---
     'system.status': () => s.system.status(),
@@ -701,11 +697,6 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       log.warn(`${method} fehlgeschlagen`, err);
       throw new Error(friendlyError(err));
     }
-  });
-  // High-rate audio: one-way channel, size-limited.
-  ipcMain.on('voice:audio', (e, buf) => {
-    if (!(e.senderFrame?.url || '').startsWith('app://jarvis/')) return;
-    if (buf && buf.byteLength && buf.byteLength <= 64000) s.voice.sendAudio(buf);
   });
 }
 

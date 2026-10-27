@@ -288,21 +288,6 @@ app.whenReady().then(async () => {
     if (!ev || !ev.allDay) throw new Error('Termin fehlt oder nicht ganztägig');
     win.setSize(1600, 1000); await sleep(300);
   });
-  await step('Sprachmodus: Mikrofon → Gemini Live (Fake) → Audioantwort → Transkript im Chat', async () => {
-    await nav('dashboard');
-    await js(`document.querySelector('.chatbar .mic').click()`);
-    await waitFor(() => global.__fakeLive?.answered === 1, 15000);
-    await waitFor(() => js(`document.querySelector('.chat-list').textContent.includes('ich höre dich')`), 10000);
-    await shot('15-voice');
-    const st = core.voice.state;
-    if (!['speaking', 'listening'].includes(st)) throw new Error('Unerwarteter Zustand: ' + st);
-    await sleep(1800);
-    const msgs = core.conversations.messages(core.voice.conversationId);
-    if (!msgs.some((m) => m.channel === 'voice' && m.content.includes('Hallo Jarvis'))) throw new Error('Sprach-Transkript fehlt im Verlauf');
-    await js(`document.querySelector('.chatbar .mic.on').click()`);
-    await waitFor(() => core.voice.state === 'off', 5000);
-    if (!global.__fakeLive.closed) throw new Error('Live-Sitzung nicht geschlossen');
-  });
   await step('Klausurmodus auf der Studium-Seite + Lernplan-Vorschlag', async () => {
     core.exams.create({ title: 'Klausur Mathematik II', subject: 'Mathematik', date: new Date(Date.now() + 21 * 86400000).toISOString(), targetHours: 12, notes: 'Aus Campus-Dual-Stundenplan übernommen. Raum: Aula' });
     await nav('study'); await sleep(600);

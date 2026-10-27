@@ -2,9 +2,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { tempCore, fakeSdk } = require('./helpers');
-const { resolve, publicPresets, PRESETS } = require('../src/main/voice/voice-presets');
+const { resolve, publicPresets } = require('../src/main/voice/voice-presets');
 
-test('Voice presets: J.A.R.V.I.S./Alya map to own voices per engine (OmniVoice, Piper, Live); unknown preset or missing voice → Standard', () => {
+test('Voice presets: J.A.R.V.I.S./Alya map to own voices per engine (OmniVoice, Piper); unknown preset or missing voice → Standard', () => {
   const base = { preset: 'jarvis', voice: 'de_DE-thorsten-medium', pitch: 1, speed: 1 };
   const j = resolve(base);
   assert.equal(j.omniInstruct, 'male, middle-aged, low pitch'); assert.equal(j.omniSeed, 1); assert.equal(j.pitch, 0.9);
@@ -13,7 +13,6 @@ test('Voice presets: J.A.R.V.I.S./Alya map to own voices per engine (OmniVoice, 
   assert.equal(resolve({ ...base, preset: 'gibtsnicht' }).preset, 'standard');
   assert.equal(resolve({ ...base, omni: { voices: { jarvis: 'male, elderly' }, seeds: { jarvis: 7 } } }).omniInstruct, 'male, elderly');
   assert.equal(resolve({ ...base, omni: { seeds: { jarvis: 7 } } }).omniSeed, 7);
-  assert.equal(PRESETS.jarvis.live, 'Charon'); assert.equal(PRESETS.alya.live, 'Leda');
   assert.deepEqual(publicPresets().map((p) => p.id), ['standard', 'jarvis', 'alya']);
 });
 

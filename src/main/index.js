@@ -84,7 +84,7 @@ function createWindow() {
 }
 
 // Overlay gets everything except high-rate streams it does not need.
-const OVERLAY_SKIP = new Set(['voice:audio', 'chat:delta', 'message:update', 'study:progress']);
+const OVERLAY_SKIP = new Set(['chat:delta', 'message:update', 'study:progress']);
 function send(type, data) {
   if (win && !win.isDestroyed()) win.webContents.send('evt', { type, data });
   if (overlay?.visible && !OVERLAY_SKIP.has(type)) overlay.send(type, data);
@@ -174,7 +174,6 @@ function buildTray() {
   tray.setContextMenu(menu());
   tray.on('click', () => (win.isVisible() && win.isFocused() ? win.hide() : showWindow()));
   core.bus.on('settings:changed', () => tray.setContextMenu(menu()));
-  core.bus.on('voice:state', () => tray.setContextMenu(menu()));
   core.bus.on('overlay:visible', () => tray.setContextMenu(menu()));
   core.bus.on('update:state', (u) => { if (['available', 'current', 'error'].includes(u.state)) tray.setContextMenu(menu()); });
 }
@@ -216,8 +215,8 @@ function applyScanHotkey() {
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
-    'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:state', 'voice:audio', 'voice:standby',
-    'voice:interrupted', 'voice:transcript', 'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported', 'cloud:usage', 'cloud:state', 'game:stats', 'privacy:capture',
+    'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:standby',
+    'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'data:imported', 'cloud:usage', 'cloud:state', 'game:stats', 'privacy:capture',
     'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'omnivoice:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }

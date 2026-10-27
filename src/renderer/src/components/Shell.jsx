@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { Wallet, MicOff, LayoutGrid, MessageCircle, SquareCheckBig, CalendarDays, BookOpen, Gamepad2, Orbit, Settings, Search, Paperclip, SendHorizontal, Mic, Minus, Square, X, ChevronRight, Bell, FileText, Brain, Upload, Globe, Calendar as CalIcon, CircleStop, Download, Rocket, RefreshCw } from 'lucide-preact';
+import { Wallet, LayoutGrid, MessageCircle, SquareCheckBig, CalendarDays, BookOpen, Gamepad2, Orbit, Settings, Search, Paperclip, SendHorizontal, Mic, Minus, Square, X, ChevronRight, Bell, FileText, Brain, Upload, Globe, Calendar as CalIcon, CircleStop, Download, Rocket, RefreshCw } from 'lucide-preact';
 import { useStore, navigate, setState, toast, guard, getState } from '../lib/store.js';
 import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { audio } from '../lib/audio.js';
@@ -77,7 +77,7 @@ function PrivacyStatus() {
   useEvent('privacy:capture', (d) => { setShot(d); setTimeout(() => setShot(null), 8000); });
   const local = (settings?.cloud?.mode || 'hybrid') === 'local';
   const eur = (v) => (v || 0).toFixed(2).replace('.', ',') + ' €';
-  const mic = voice === 'recording-local' || voice === 'transcribing-local' ? 'Mikro lokal' : ['listening', 'speaking', 'thinking', 'connecting'].includes(voice) ? 'Mikro → Gemini Live' : null;
+  const mic = voice === 'recording-local' || voice === 'transcribing-local' ? 'Mikro lokal' : null;
   const toggle = () => guard(() => rpc('cloud.setMode', { mode: local ? 'hybrid' : 'local' }), local ? 'Cloud-KI wieder an (sparsam hybrid)' : 'Cloud-KI pausiert – alles lokal').then(reload);
   return (
     <div class="row gap-s tiny" style={{ marginLeft: 12, alignItems: 'center' }}>
@@ -284,13 +284,11 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
   const voice = useStore((s) => s.voice);
   const page = useStore((s) => s.page);
   const draft = useStore((s) => s.chatDraft);
-  const muted = useStore((s) => s.micMuted);
   const ref = useRef();
   useEvent('ui:focus-input', () => ref.current?.focus());
   useEffect(() => { if (draft != null) { setText(draft); setState({ chatDraft: null }); setTimeout(() => ref.current?.focus(), 0); } }, [draft]);
-  const liveVoiceOn = ['listening', 'speaking', 'thinking', 'connecting'].includes(voice);
   const localVoiceOn = voice === 'recording-local';
-  const voiceOn = liveVoiceOn || localVoiceOn;
+  const voiceOn = localVoiceOn;
   const send = async () => {
     const t = text.trim();
     if (!t && !files.length) return;
@@ -316,11 +314,10 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
       <div class="chatbar">
         <button class="btn icon attach" onClick={attach} title="Datei anhängen"><Paperclip size={22} /></button>
         <div class="input">
-          <textarea ref={ref} rows={1} placeholder={localVoiceOn ? '🔒 Offline-Aufnahme läuft – zum Erkennen erneut auf das Mikrofon klicken …' : voice === 'transcribing-local' ? '🔒 Sprache wird offline erkannt …' : voiceOn ? 'Gemini Live aktiv – sprich einfach oder tippe …' : placeholder} value={text}
+          <textarea ref={ref} rows={1} placeholder={localVoiceOn ? '🔒 Offline-Aufnahme läuft – zum Erkennen erneut auf das Mikrofon klicken …' : voice === 'transcribing-local' ? '🔒 Sprache wird offline erkannt …' : placeholder} value={text}
             onInput={(e) => { setText(e.currentTarget.value); e.currentTarget.style.height = '52px'; e.currentTarget.style.height = Math.min(140, e.currentTarget.scrollHeight) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-          {liveVoiceOn && <button class="mic" style={muted ? { color: 'var(--red)' } : undefined} onClick={() => audio.setMuted(!muted)} title={muted ? 'Stummschaltung aufheben' : 'Mikrofon stummschalten'}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</button>}
-          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Aufnahme stoppen und senden' : liveVoiceOn ? 'Cloud-Sprachmodus beenden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : '🔒 Spracheingabe (lokal erkannt, privat bleibt lokal)'}>
+          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Aufnahme stoppen und senden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : '🔒 Spracheingabe (lokal erkannt, privat bleibt lokal)'}>
             {voiceOn ? <CircleStop size={22} /> : <Mic size={22} />}
           </button>
           <button class="send" onClick={send} title="Senden (Enter)"><SendHorizontal size={24} /></button>
