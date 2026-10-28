@@ -310,7 +310,9 @@ class Orchestrator {
         if (ac.signal.aborted) throw new Error('Abgebrochen.');
         let emitted = false;
         const step = () => {
-          const allowed = isPrivateConv ? privacy.LOCAL_TOOLS : isLocal ? new Set([...privacy.LOCAL_TOOLS].filter((n) => privacy.cloudTools(scope).has(n))) : privacy.cloudTools(scope);
+          let allowed = isPrivateConv ? privacy.LOCAL_TOOLS : isLocal ? new Set([...privacy.LOCAL_TOOLS].filter((n) => privacy.cloudTools(scope).has(n))) : privacy.cloudTools(scope);
+          // Lokales Modell: nur die zum Thema passenden Werkzeuge mitschicken (spart Tausende Tokens = Minuten auf der CPU)
+          if (isLocal) allowed = privacy.localToolsFor([text, ...contents.filter((c) => c.role === 'user').slice(-3).map((c) => (c.parts || []).map((p) => p.text || '').join(' '))], allowed);
           return provider.stepStream({
             model, system: stable, contents, tools: [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => allowed.has(t.name)) }], signal: ac.signal, feature: images.length ? 'vision' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
             onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),

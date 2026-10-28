@@ -12,7 +12,7 @@ const { tempCore } = require('./helpers');
 test('Local LLM while gaming: CPU only, 2 threads, unload immediately; optional pause for background work', async () => {
   let cfg = { model: 'qwen3.5:4b', threads: 6, whileGaming: 'cpu' };
   const llm = new LocalLLM({ get: () => cfg });
-  assert.deepEqual(llm.runtimeOptions(), { options: { num_ctx: 4096, num_thread: 6 }, keep_alive: '2m' });
+  assert.deepEqual(llm.runtimeOptions(), { options: { num_ctx: 8192, num_thread: 6 }, keep_alive: '2m' });
   llm.isGaming = () => true;
   assert.deepEqual(llm.runtimeOptions(), { options: { num_ctx: 4096, num_thread: 2, num_gpu: 0 }, keep_alive: '0s' });
   cfg = { ...cfg, whileGaming: 'pause' };

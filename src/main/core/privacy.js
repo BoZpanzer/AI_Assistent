@@ -25,4 +25,29 @@ const GAMING_TOOLS = new Set([...CLOUD_TOOLS, 'league_recent_matches', 'league_s
 const cloudTools = (privacy) => privacy === 'gaming' ? GAMING_TOOLS : CLOUD_TOOLS;
 const CLOUD_SYSTEM = 'Du bist JARVIS, ein persönlicher KI-Assistent. Du bekommst nur nicht-private Nachrichten (Wissen, Uni, Gaming, allgemeine Fragen); persönliche Daten wie Termine, Finanzen, Gesundheit oder Familie beantwortet ein lokales Modell auf dem PC – frag nicht danach und erfinde nichts darüber. Antworte auf Deutsch, klar und kompakt.';
 const LOCAL_TOOLS = new Set('set_voice set_game_context voice_standby league_recent_matches league_stats get_today_overview list_tasks create_task update_task complete_task delete_task list_events find_free_slots create_event schedule_events update_event delete_event list_exams create_exam plan_exam log_study search_brain remember forget search_study list_documents read_document deadlines add_deadline deadline_done add_expense finance_overview recurring_money add_income subscription shopping_list pantry recipe_ideas log_workout training_progress rest_timer birthday_gifts expense_buckets game_stats record_raid lol_counters'.split(' '));
-module.exports = { LOCAL_TOOLS, local, cloud, isPrivate, isCloud, assertExternal, privateText, personalText, publicTopic, CLOUD_TOOLS, GAMING_TOOLS, cloudTools, CLOUD_SYSTEM };
+/**
+ * Welche Werkzeuge bekommt das lokale Modell für diese Frage? Alle 46 Beschreibungen sind ≈ 6.400 Tokens – auf dem Gaming-PC
+ * mit Spiel/CPU-Betrieb dauert allein das Einlesen Minuten. Darum: ein kleiner Grundstock plus die Themengruppen, die zu
+ * den letzten Nachrichten passen (Folgefragen wie „ja, bitte“ behalten so die Werkzeuge des Themas). Ausführen darf das Modell
+ * weiterhin nur LOCAL_TOOLS (siehe Orchestrator) – das hier verkleinert nur, was mitgeschickt wird.
+ */
+const TOOL_GROUPS = [
+  [/termin|kalender|zeit|uhr|morgen|heute|woche|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|frei|plan|verschieb|trag/i, 'list_events find_free_slots create_event schedule_events update_event delete_event'],
+  [/aufgabe|todo|to-do|erledig|task|liste/i, 'list_tasks create_task update_task complete_task delete_task'],
+  [/klausur|prüfung|pruefung|exam|lern|uni|studi|vorlesung|dokument|skript|deadline|frist|abgabe/i, 'list_exams create_exam plan_exam log_study search_study list_documents read_document deadlines add_deadline deadline_done'],
+  [/geld|ausgabe|einnahme|euro|€|budget|bucket|abo|konto|gehalt|kosten|bezahl|miete|finanz/i, 'add_expense finance_overview recurring_money add_income subscription expense_buckets'],
+  [/einkauf|rezept|vorrat|essen|kochen|zutat|kühlschrank/i, 'shopping_list pantry recipe_ideas'],
+  [/training|workout|sport|gym|satz|wiederholung|pause|gewicht/i, 'log_workout training_progress rest_timer'],
+  [/geburtstag|geschenk/i, 'birthday_gifts'],
+  [/league|lol|champion|tarkov|raid|spiel|game|zock|counter|match|rang/i, 'league_recent_matches league_stats game_stats record_raid lol_counters set_game_context'],
+  [/stimme|voice|standby|sprich|sprech|schlaf|pause/i, 'set_voice voice_standby'],
+  [/merk|vergiss|weißt du|wusstest|notiz|brain|erinner/i, 'remember forget search_brain'],
+];
+const TOOL_BASE = 'get_today_overview list_tasks create_task complete_task list_events create_event remember search_brain'.split(' ');
+function localToolsFor(texts, allowed = LOCAL_TOOLS) {
+  const t = (Array.isArray(texts) ? texts : [texts]).filter(Boolean).join(' \n ');
+  const out = new Set(TOOL_BASE);
+  for (const [re, names] of TOOL_GROUPS) if (re.test(t)) for (const n of names.split(' ')) out.add(n);
+  return new Set([...out].filter((n) => allowed.has(n)));
+}
+module.exports = { localToolsFor, LOCAL_TOOLS, local, cloud, isPrivate, isCloud, assertExternal, privateText, personalText, publicTopic, CLOUD_TOOLS, GAMING_TOOLS, cloudTools, CLOUD_SYSTEM };

@@ -1,4 +1,5 @@
 'use strict';
+const log = require('../core/logger').scope('local-ai');
 const http = require('node:http');
 const LOCAL_TIERS = Object.freeze([
   { id: 'ultra', model: 'qwen3.5:0.8b', label: 'Ultra-Leicht', memoryGB: 2 },
@@ -11,7 +12,9 @@ const LOCAL_TIERS = Object.freeze([
  * Empfehlung für einen Gaming-PC: das lokale Modell konkurriert mit dem Spiel um RAM/VRAM.
  * Darum höchstens „Ausgewogen“ (4B), auch bei viel RAM; größere Stufen bleiben wählbar.
  */
-function recommendedTier(ramGB) {
+function recommendedTier(ramGB, vramGB = 0) {
+  // Mit gemessenem Grafikspeicher: das Modell soll hineinpassen (4B ≈ 3,5 GB, 9B ≈ 6,5 GB, plus Kontext) und dem Spiel Platz lassen
+  if (vramGB >= 3 && ramGB >= 16) return vramGB >= 16 ? 'strong' : vramGB >= 6 ? 'balanced' : 'light';
   if (ramGB >= 16) return 'balanced';
   if (ramGB >= 8) return 'light';
   return 'ultra';
@@ -33,11 +36,12 @@ function jsonSchema(s) { if (!s || typeof s !== 'object') return s; if (Array.is
  */
 class LocalLLM {
   constructor(settings) { this.settings = settings; this.busy = 0; this.queue = []; this.isGaming = () => false; }
-  cfg() { return { port: 11434, model: '', keepAlive: '2m', threads: 4, numCtx: 4096, whileGaming: 'cpu', ...(this.settings.get('localLLM') || {}) }; }
+  cfg() { return { port: 11434, model: '', keepAlive: '2m', threads: 4, numCtx: 8192, whileGaming: 'cpu', ...(this.settings.get('localLLM') || {}) }; }
   /** Ollama-Optionen je Anfrage (beim Spielen: weniger Threads, auf Wunsch nur CPU, sofort entladen). */
   runtimeOptions() {
     const c = this.cfg(); const gaming = this.isGaming();
-    const options = { num_ctx: c.numCtx, num_thread: gaming ? Math.min(2, c.threads) : c.threads };
+    // Beim Zocken kleinerer Kontext (spart Speicher); sonst reicht der Kontext für Anweisungen + Werkzeuge + Gespräch (≈ 4–5k Tokens)
+    const options = { num_ctx: gaming ? Math.min(4096, c.numCtx) : c.numCtx, num_thread: gaming ? Math.min(2, c.threads) : c.threads };
     if (gaming && c.whileGaming === 'cpu') options.num_gpu = 0;
     return { options, keep_alive: gaming ? '0s' : c.keepAlive };
   }
@@ -85,11 +89,14 @@ class LocalLLM {
   async status() {
     const os = require('node:os');
     const ramGB = Math.round(os.totalmem() / 1073741824);
+    const gpus = await this.gpus().catch(() => []);
+    const vramGB = gpus.reduce((m, g) => Math.max(m, g.totalGB || 0), 0);
+    const c = this.cfg(); const base = { tiers: LOCAL_TIERS, ramGB, gpus, vramGB, recommended: recommendedTier(ramGB, vramGB), selected: c.model, gaming: !!this.isGaming(), whileGaming: c.whileGaming, numCtx: c.numCtx, last: this.last || null };
     try {
       const installed = await this.models();
-      return { online: true, installed, tiers: LOCAL_TIERS, ramGB, recommended: recommendedTier(ramGB), selected: this.cfg().model, exposure: exposureWarning() };
+      return { ...base, online: true, installed, loaded: await this.loaded(), exposure: exposureWarning() };
     } catch (_) {
-      return { online: false, installed: [], tiers: LOCAL_TIERS, ramGB, recommended: recommendedTier(ramGB), selected: this.cfg().model };
+      return { ...base, online: false, installed: [], loaded: [] };
     }
   }
   /** Ollama im Hintergrund starten (Windows: die installierte App, sonst `ollama serve`) und warten, bis es antwortet. */
@@ -131,6 +138,46 @@ class LocalLLM {
       req.end(JSON.stringify({ model, stream: true }));
     });
   }
+  /** Letzte Anfrage merken (Dauer, Tokens, Tempo) – damit „warum so langsam?“ in den Einstellungen sichtbar ist. */
+  noteRun(model, r, ctx, ms) {
+    const ns = (v) => Number(v || 0) / 1e9;
+    const prompt = r.prompt_eval_count || 0; const out = r.eval_count || 0;
+    const last = { at: Date.now(), model, seconds: Math.round(ms / 100) / 10, loadSeconds: Math.round(ns(r.load_duration) * 10) / 10, promptTokens: prompt, promptSeconds: Math.round(ns(r.prompt_eval_duration) * 10) / 10,
+      outTokens: out, tokPerSec: ns(r.eval_duration) > 0 ? Math.round((out / ns(r.eval_duration)) * 10) / 10 : 0, ctx, truncated: !!ctx && prompt >= ctx - 8 };
+    this.last = last;
+    log.info(`Lokale KI: ${last.seconds} s gesamt (Laden ${last.loadSeconds} s, Prompt ${prompt} Tokens in ${last.promptSeconds} s, Antwort ${out} Tokens, ${last.tokPerSec} Tok/s)`);
+    if (last.truncated) log.warn(`Lokale KI: Eingabe füllt den ganzen Kontext (${prompt} von ${ctx} Tokens) – Anfang wird abgeschnitten. Kontext in den Einstellungen erhöhen.`);
+  }
+  /** Grafikkarten + Grafikspeicher (NVIDIA per nvidia-smi, sonst Windows-Registry). Kurz zwischengespeichert. */
+  async gpus() {
+    if (this._gpu && Date.now() - this._gpu.at < 4000) return this._gpu.list;
+    const { execFile } = require('node:child_process');
+    const run = (cmd, args, timeout = 5000) => new Promise((resolve) => execFile(cmd, args, { windowsHide: true, timeout, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? '' : String(out))));
+    let list = [];
+    const smi = process.platform === 'win32' ? ['nvidia-smi', 'C:\\Windows\\System32\\nvidia-smi.exe', 'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe'] : ['nvidia-smi'];
+    for (const exe of smi) {
+      const out = await run(exe, ['--query-gpu=name,memory.total,memory.used,memory.free', '--format=csv,noheader,nounits']);
+      list = out.split(/\r?\n/).map((l) => l.split(',').map((x) => x.trim())).filter((p) => p.length >= 4 && Number(p[1]) > 0)
+        .map((p) => ({ name: p[0], totalGB: Math.round(Number(p[1]) / 102.4) / 10, usedGB: Math.round(Number(p[2]) / 102.4) / 10, freeGB: Math.round(Number(p[3]) / 102.4) / 10, source: 'nvidia-smi' }));
+      if (list.length) break;
+    }
+    if (!list.length && process.platform === 'win32') {
+      const ps = "$r=@(); Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue | ForEach-Object { $p=Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue; if ($p.'HardwareInformation.qwMemorySize') { $r += [pscustomobject]@{ name=[string]$p.DriverDesc; total=[int64]$p.'HardwareInformation.qwMemorySize' } } }; ConvertTo-Json -Compress -InputObject @($r)";
+      try {
+        const j = JSON.parse((await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], 8000)).trim() || '[]');
+        list = (Array.isArray(j) ? j : [j]).filter((g) => g && g.total > 0).map((g) => ({ name: g.name, totalGB: Math.round(g.total / 1073741824 * 10) / 10, usedGB: null, freeGB: null, source: 'registry' }));
+      } catch { /* ignore */ }
+    }
+    this._gpu = { at: Date.now(), list };
+    return list;
+  }
+  /** Was Ollama gerade im Speicher hält und wie viel davon auf der Grafikkarte liegt (/api/ps). */
+  async loaded() {
+    try {
+      const r = await this.request('/api/ps', null);
+      return (r.models || []).filter((m) => !m.remote_host).map((m) => ({ name: m.name, sizeGB: Math.round((m.size || 0) / 107374182.4) / 10, vramGB: Math.round((m.size_vram || 0) / 107374182.4) / 10, onGpuPct: m.size ? Math.round(((m.size_vram || 0) / m.size) * 100) : 0, ctx: m.context_length || null }));
+    } catch { return []; }
+  }
   async models(signal) {
     const r = await this.request('/api/tags', null, signal);
     return (r.models || []).filter((m) => !m.remote_host && !m.remote_model && !/cloud/i.test(m.name)).map((m) => m.name);
@@ -157,7 +204,14 @@ class LocalLLM {
       for (const p of parts) if (p.functionResponse) messages.push({ role: 'tool', tool_name: p.functionResponse.name, content: JSON.stringify(p.functionResponse.response) });
     }
     const declarations = tools.flatMap((t) => t.functionDeclarations || []).map(({ name, description, parameters }) => ({ type: 'function', function: { name, description, parameters: jsonSchema(parameters) } }));
-    const r = await this.request('/api/chat', { model, messages, stream: false, ...this.runtimeOptions(), ...(declarations.length ? { tools: declarations } : {}), ...(json ? { format: schema || 'json' } : {}) }, signal);
+    const rt = this.runtimeOptions();
+    const body = { model, messages, stream: false, ...rt, ...(declarations.length ? { tools: declarations } : {}), ...(json ? { format: schema || 'json' } : {}) };
+    const t0 = Date.now();
+    // Qwen3.5 „denkt“ sonst standardmäßig minutenlang im Verborgenen – für Assistenz-Antworten abgeschaltet (Modelle ohne Denkmodus: ohne den Parameter wiederholen)
+    let r;
+    try { r = await this.request('/api/chat', { ...body, think: false }, signal); }
+    catch (e) { if (!/HTTP 400/.test(String(e.message))) throw e; r = await this.request('/api/chat', body, signal); }
+    this.noteRun(model, r, rt.options.num_ctx, Date.now() - t0);
     if (!r.message) throw new Error('Ungültige Antwort des lokalen Modells');
     const text = r.message.content || ''; onText(text);
     const functionCalls = (r.message.tool_calls || []).map((t, i) => ({ id: 'local-' + i, name: t.function.name, args: t.function.arguments }));
