@@ -1,5 +1,6 @@
 'use strict';
 const { BrowserWindow, Menu, screen } = require('electron');
+const log = require('./core/logger').scope('pet');
 
 /**
  * Desktop-Figur: durchsichtiger, klick-durchlässiger Streifen am unteren Bildschirmrand (über der Taskleiste),
@@ -12,8 +13,10 @@ class Pet {
   constructor({ core, preload, isDev, showWindow, startVoice, uiShown = () => false, display = () => screen.getPrimaryDisplay() }) {
     this.core = core; this.preload = preload; this.isDev = isDev; this.showWindow = showWindow; this.startVoice = startVoice; this.uiShown = uiShown; this.display = display;
     this.win = null; this.visible = false;
-    this.poll = null; this.lastCur = ''; this.tick = 0;
+    this.poll = null; this.lastCur = ''; this.tick = 0; this.mouse = false;
     core.bus.on('game:running', () => this.refresh());
+    // Das Overlay liegt auf „screen-saver“-Höhe über allem – die Figur muss darüber bleiben, sonst kommt kein Klick bei ihr an
+    core.bus.on('overlay:visible', () => this.raise());
     core.bus.on('settings:changed', ({ keys }) => { if (keys.includes('pet') || keys.includes('setupComplete')) this.refresh(); });
     screen.on('display-metrics-changed', () => this.applyBounds());
     screen.on('display-added', () => this.applyBounds());
@@ -36,7 +39,9 @@ class Pet {
       skipTaskbar: true, focusable: false, hasShadow: false, alwaysOnTop: true, title: 'JARVIS Figur',
       webPreferences: { preload: this.preload, contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, devTools: this.isDev },
     });
-    this.win.setAlwaysOnTop(true, 'floating');
+    this.win.setAlwaysOnTop(true, 'screen-saver');
+    this.win.on('unresponsive', () => { log.warn('Figurfenster reagiert nicht – wird neu aufgebaut'); this.recover(); });
+    this.win.webContents.on('render-process-gone', (_e, d) => { log.warn('Figur-Renderer beendet: ' + d.reason); this.recover(); });
     this.win.setIgnoreMouseEvents(true, { forward: true });
     this.win.loadURL('app://jarvis/pet.html');
     this.win.webContents.on('will-navigate', (e) => e.preventDefault());
@@ -55,8 +60,9 @@ class Pet {
   refresh() {
     const show = this.shouldShow();
     if (show === this.visible) return;
+    log.info(show ? 'Figur wird gezeigt' : 'Figur wird versteckt (Fenster offen, Spiel oder Vollbild)');
     this.visible = show;
-    if (show) { this.ensure(); this.applyBounds(); this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.showInactive(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
+    if (show) { this.ensure(); this.applyBounds(); this.mouse = false; this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.showInactive(); this.raise(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
     else { this.stopPoll(); if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); } }
   }
 
@@ -75,15 +81,27 @@ class Pet {
         const key = inside ? p.x + ',' + p.y : 'out';
         if (key !== this.lastCur) { this.lastCur = key; this.win.webContents.send('evt', { type: 'pet:cursor', data: inside ? { x: p.x - b.x, y: p.y - b.y } : { x: -1, y: -1 } }); }
         // andere „immer im Vordergrund“-Fenster (Taskleiste, Overlays) können sie sonst überdecken
-        if (++this.tick % 100 === 0) { this.win.setAlwaysOnTop(true, 'floating'); this.win.moveTop(); }
+        ++this.tick;
+        if (this.tick % 20 === 0) this.win.setIgnoreMouseEvents(!this.mouse, { forward: true }); // Windows verliert den Durchklick-Zustand gern nach Verstecken/Zeigen – einmal pro Sekunde neu setzen
+        if (this.tick % 100 === 0) this.raise();
       } catch { /* ignore */ }
     }, 50);
+  }
+  /** Ganz nach oben, auch über das Overlay (gleiche Ebene, aber zuletzt nach vorn geholt). */
+  raise() { if (this.visible && this.win && !this.win.isDestroyed()) { try { this.win.setAlwaysOnTop(true, 'screen-saver'); this.win.moveTop(); } catch { /* ignore */ } } }
+  /** Figurfenster komplett neu aufbauen (Tray-Menü „Figur zurückholen“ oder wenn es abstürzt/hängt). */
+  recover() {
+    log.info('Figurfenster wird neu aufgebaut');
+    this.stopPoll(); try { this.win?.destroy(); } catch { /* ignore */ }
+    this.win = null; this.visible = false; this.mouse = false;
+    this.refresh();
   }
   stopPoll() { clearInterval(this.poll); this.poll = null; this.lastCur = ''; }
 
   /** Maus über Figur/Blase → Fenster nimmt Klicks an; sonst geht alles an die Fenster darunter. */
   setMouse(over) {
     if (!this.win || this.win.isDestroyed()) return;
+    this.mouse = !!over;
     this.win.setIgnoreMouseEvents(!over, { forward: true });
   }
 

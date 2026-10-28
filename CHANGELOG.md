@@ -2,6 +2,18 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.5.0 – Lokale KI deutlich schneller, VRAM-Messung, Figur bleibt greifbar
+
+- **Lokale KI: Minuten → Sekunden:** Jede private Anfrage schickte ≈ 8.400 Tokens an Anweisungen und Werkzeug-Beschreibungen mit, bei einem Kontext von nur 4.096 – der Anfang wurde abgeschnitten und das Einlesen dauerte auf der CPU Minuten. Jetzt gehen nur der Grundstock und die zum Thema passenden Werkzeuge mit (Folgefragen wie „ja, bitte“ behalten das Thema), der Kontext ist 8.192 groß (im Spielmodus 4.096), und das versteckte „Nachdenken“ der Qwen-Modelle ist abgeschaltet.
+- **Grafikspeicher messen (Einstellungen → Lokale KI):** Zeigt Grafikkarte, VRAM (gesamt/belegt/frei), welches Modell gerade geladen ist und wie viel davon auf der Grafikkarte liegt – mit Erklärung, falls es nur auf der CPU läuft (Spielmodus oder Ollama sieht die Grafikkarte nicht). Die Hardware-Empfehlung berücksichtigt jetzt den Grafikspeicher (8 GB → „Ausgewogen“ 4B).
+- **Letzte Anfrage sichtbar:** Dauer, Laden, Einlesen (Tokens und Sekunden) und Tempo der letzten lokalen Anfrage stehen in den Einstellungen und im Protokoll; füllt die Eingabe den ganzen Kontext, gibt es eine Warnung.
+
+### Figur bleibt greifbar (Overlay, Taskleiste, Verstecken/Zeigen)
+
+- **Figur nicht mehr klickbar:** Das Overlay liegt auf der höchsten Fensterebene und hat die Figur an ihrem Stammplatz (rechter Rand) überdeckt. Die Figur sitzt jetzt auf derselben Ebene und wird nach vorn geholt, sobald sie erscheint, das Overlay auftaucht und alle paar Sekunden. Der „Durchklick“-Zustand des Fensters wird jede Sekunde neu gesetzt, weil Windows ihn nach Verstecken/Zeigen (Fenster minimieren/wiederherstellen per Taskleiste) gern verliert.
+- **Selbstheilung:** Hängt oder stürzt das Figurfenster ab, baut JARVIS es automatisch neu auf. Zusätzlich gibt es im Tray-Menü „Figur zurückholen (falls sie hängt)“.
+- **Fehlersuche:** Fensterereignisse (öffnen, minimieren, wiederherstellen) und die Zeit bis zum Erscheinen des JARVIS-Fensters landen im Protokoll, ebenso wann die Figur gezeigt/versteckt wird. Hängt der Hauptprozess länger als anderthalb Sekunden (dann reagieren Figur und Fenster nicht), steht auch das im Protokoll.
+
 ## 5.4.0 – Figur frei platzierbar, Ollama-Download repariert, Figur bleibt greifbar
 
 - **Ollama-Download:** Der Knopf war grau (Zeiger mit rotem Strich), sobald Ollama nicht lief – ohne zu sagen, warum. Jetzt startet er Ollama bei Bedarf selbst, zeigt Fortschritt in Prozent, meldet Fehler lesbar (z. B. unterbrochener Download) und sagt „✓ Modell ist installiert“, wenn es schon da ist. Zusätzlich gibt es einen Knopf „Ollama starten“, und die Anzeige prüft alle paar Sekunden neu, solange Ollama nicht erreichbar ist.

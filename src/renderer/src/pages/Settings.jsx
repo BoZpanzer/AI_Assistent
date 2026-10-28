@@ -951,6 +951,22 @@ function ImportModal({ onClose }) {
 }
 
 
+/** Grafikkarte, VRAM, was Ollama gerade nutzt und wie schnell die letzte Anfrage war – „warum ist das so langsam?“ auf einen Blick. */
+function LocalSpeed({ status }) {
+  const gpu = status.gpus?.[0]; const m = status.loaded?.[0]; const l = status.last;
+  const cpuOnly = m && m.onGpuPct === 0;
+  const why = cpuOnly
+    ? (status.gaming && status.whileGaming === 'cpu' ? 'Spielmodus aktiv: Die KI läuft absichtlich nur auf der CPU, damit das Spiel den Grafikspeicher behält (Einstellung „Während ein Spiel läuft“).'
+      : gpu ? 'Ollama nutzt die Grafikkarte nicht. Ollama auf die neueste Version bringen und den NVIDIA-Treiber aktualisieren; mit „ollama ps“ in der Eingabeaufforderung siehst du es auch.' : 'Keine Grafikkarte erkannt – die KI läuft auf der CPU.')
+    : m && m.onGpuPct < 100 ? 'Das Modell passt nicht ganz in den Grafikspeicher – ein Teil läuft auf der CPU (langsamer). Eine kleinere Stufe oder weniger andere GPU-Programme (z. B. die KI-Stimme) helfen.' : '';
+  return <div class="notice tiny mt" style={{ display: 'grid', gap: 3 }}>
+    <div><b>Grafikkarte:</b> {gpu ? `${gpu.name} · ${gpu.totalGB} GB VRAM${gpu.freeGB != null ? ` (${gpu.freeGB} GB frei, ${gpu.usedGB} GB belegt)` : ''}` : 'nicht erkannt (nvidia-smi nicht gefunden)'}{status.gaming ? ' · 🎮 Spiel läuft' : ''}</div>
+    <div><b>KI im Speicher:</b> {m ? `${m.name} · ${m.sizeGB} GB · ${m.onGpuPct} % auf der Grafikkarte (${m.vramGB} GB VRAM)${m.ctx ? ' · Kontext ' + m.ctx : ''}` : 'gerade nichts geladen (wird bei der nächsten privaten Frage geladen)'}</div>
+    {why && <div class="warn" role="alert">⚠ {why}</div>}
+    {l && <div><b>Letzte lokale Anfrage:</b> {l.seconds} s gesamt · Laden {l.loadSeconds} s · Einlesen {l.promptTokens} Tokens in {l.promptSeconds} s · Antwort {l.outTokens} Tokens ({l.tokPerSec} Tok/s){l.truncated ? ' · ⚠ Eingabe füllte den ganzen Kontext – Kontext erhöhen' : ''}</div>}
+  </div>;
+}
+
 export function LocalAI({ s }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -995,7 +1011,8 @@ export function LocalAI({ s }) {
       <button class="btn xs" onClick={refresh} disabled={loading}>Status prüfen</button>
       {!status?.online && <button class="btn xs" disabled={loading} onClick={async () => { if (!window.confirm('Ollama über Windows winget installieren? Der Download benötigt Internet und kann eine Windows-Bestätigung erfordern.')) return; setLoading(true); try { await rpc('local.installOllama'); await refresh(); } catch (e) { setError(String(e.message || e)); } finally { setLoading(false); } }}>Ollama installieren (Windows)</button>}
     </div>
-    {status && <p class="tiny muted">Arbeitsspeicher: {status.ramGB} GB · Hardware-Empfehlung: {recommended?.label || '–'} ({recommended?.model || '–'}). GPU/VRAM werden nicht automatisch gemessen.</p>}
+    {status && <p class="tiny muted">Arbeitsspeicher: {status.ramGB} GB · Hardware-Empfehlung: {recommended?.label || '–'} ({recommended?.model || '–'}){status.vramGB ? ' – passend zu deinem Grafikspeicher.' : '. Grafikspeicher konnte nicht gemessen werden.'}</p>}
+    {status && <LocalSpeed status={status} />}
     <Field label="Lokale Leistungsstufe">
       <Select value={selected} onChange={model => upd({ localLLM: { model } })}
         options={[{ value: '', label: 'Bitte Modell auswählen' }, ...tiers.map(t => ({ value: t.model, label: t.label + ' · ' + t.model + (status?.installed?.includes(t.model) ? ' ✓ installiert' : '') }))]} />
