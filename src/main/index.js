@@ -77,7 +77,8 @@ function createWindow() {
     // Mit Desktop-Figur bleibt JARVIS beim Schließen da (die Figur holt das Fenster zurück)
     if (!quitting && (core.settings.get('closeToTray') || core.settings.get('pet')?.enabled !== false)) { e.preventDefault(); win.hide(); send('window', { visible: false }); }
   });
-  for (const ev of ['show', 'hide', 'minimize', 'restore']) win.on(ev, () => pet?.refresh());
+  // Fensterereignisse mitprotokollieren (Fehlersuche: „Figur nicht klickbar“, „Fenster öffnet verzögert“)
+  for (const ev of ['show', 'hide', 'minimize', 'restore']) win.on(ev, () => { logger.scope('window').info(ev + ' (Figur ' + (pet?.visible ? 'sichtbar' : 'versteckt') + ')'); pet?.refresh(); });
   win.on('show', () => send('window', { visible: true }));
   win.on('minimize', () => send('window', { visible: false, minimized: true }));
   win.on('restore', () => send('window', { visible: true }));
@@ -156,6 +157,7 @@ async function captureScreen({ windowHints = [] } = {}) {
 /** Fenster sicher nach vorne holen (Windows blockiert das sonst aus dem Hintergrund). */
 function bringToFront() {
   if (!win || win.isDestroyed()) return;
+  const t0 = Date.now(); if (!win.isVisible() || win.isMinimized()) win.once('show', () => logger.scope('window').info('JARVIS-Fenster erschien nach ' + (Date.now() - t0) + ' ms'));
   showWindow();
   win.setAlwaysOnTop(true); win.moveTop(); win.focus();
   setTimeout(() => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(!!core.settings.get('alwaysOnTop')); }, 300);
@@ -179,6 +181,7 @@ function buildTray() {
   tray.setToolTip('JARVIS');
   const menu = () => Menu.buildFromTemplate([
     { label: 'JARVIS öffnen', click: () => showWindow() },
+    { label: 'Figur zurückholen (falls sie hängt)', click: () => pet?.recover() },
     { label: core.voice.isOpen() ? 'Sprachmodus beenden' : 'Sprachmodus starten', click: () => (core.voice.isOpen() ? core.voice.stop() : send('voice:toggle', {})) },
     { label: 'Wake-Word „Hey Jarvis“', type: 'checkbox', checked: !!core.settings.get('voice').wakeWord, click: (i) => core.settings.update({ voice: { wakeWord: i.checked } }) },
     { type: 'separator' },
