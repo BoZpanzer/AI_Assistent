@@ -13,7 +13,7 @@ const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'groq.api_key'
  * Single RPC entry point. Only our own app:// frame may call; every method
  * is explicit (no generic service access from the renderer).
  */
-function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay }) {
+function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay, pet }) {
   const pick = async (opts) => {
     const r = await dialog.showOpenDialog(getWin(), opts);
     return r.canceled ? null : r.filePaths;
@@ -104,8 +104,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
-    // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
-    'tts.status': () => s.tts.status(),
+    // Sprachausgabe: Sprechfassung, Synthese Satz für Satz (KI-Stimme bzw. Google-Stimme)
     'groq.status': () => s.groq.status(),
     'groq.test': async ({ key } = {}) => s.groq.test(key || s.secrets.get('groq.api_key')),
     'cloudtts.status': () => s.cloudTts.status(),
@@ -124,8 +123,6 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'omnivoice.resetVoice': ({ preset }) => s.omnivoice.resetVoice(require('./voice/voice-presets').presetId(preset)),
     'omnivoice.restart': async () => { s.omnivoice.stop(); await s.omnivoice.start(); return s.omnivoice.status(); },
     'tts.presets': () => ({ presets: require('./voice/voice-presets').publicPresets() }),
-    'tts.install': ({ id }) => s.tts.install(String(id || '')),
-    'tts.remove': ({ id }) => s.tts.remove(String(id || '')),
     'local.installOllama': () => s.localLLM.installOllama(),
     'local.installTier': ({ model }) => s.localLLM.installTier(model),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),
@@ -694,6 +691,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'screen.ask': async ({ question }) => { const r = await s.screen.hotkeyQuestion(String(question || '').slice(0, 500)); return { content: r?.content || '' }; },
     'screen.recent': () => s.db.all('SELECT id, question, answer, game, created_at AS createdAt FROM screenshots ORDER BY created_at DESC LIMIT 10'),
     'overlay.toggle': () => overlay?.()?.toggle(),
+    // Desktop-Figur
+    'pet.mouse': ({ over }) => pet?.()?.setMouse(!!over),
+    'pet.open': () => { showWindow(); },
+    'pet.menu': () => pet?.()?.menu(),
+    'pet.signal': ({ kind, on }) => { if (['speaking', 'listening'].includes(kind)) s.bus.emit('pet:signal', { kind, on: !!on }); },
     'overlay.interactive': ({ on }) => overlay?.()?.setInteractive(!!on),
   };
 

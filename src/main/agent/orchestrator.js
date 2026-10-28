@@ -104,15 +104,18 @@ class Orchestrator {
     conversations.add(cid, { role: 'user', content: userText, meta: { scope, ...(attachInfo.length ? { attachments: attachInfo } : {}) }, channel });
     conversations.autoTitle(cid, text || attachInfo[0]?.name || 'Gespräch');
     const msg = conversations.add(cid, { role: 'assistant', content: '', meta: { streaming: true, scope }, channel });
+    // Desktop-Figur/Overlay: neue Eingabe → Sprechblase „denkt …“
+    if (['text', 'voice'].includes(channel)) bus.emit('pet:input', { conversationId: cid, messageId: msg.id, channel });
 
     // Feste Fragen (Statistiken, Erfassungen) ohne Sprachmodell beantworten – kostenlos und lokal.
     const det = !images.length && !attachments.length ? this.deterministic(text) : null;
     if (det) {
       conversations.update(msg.id, { content: det.text, meta: { streaming: false, deterministic: det.deterministic, model: 'lokal (ohne KI)' } });
+      bus.emit('pet:answer', { messageId: msg.id, text: det.text });
       bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) {
-        if (scope === 'private' && this.quietPrivate()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true });
+        if (scope === 'private' ? this.quietPrivate() : this.quietPublic()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true });
         else bus.emit('tts:speak', { text: det.text, private: scope === 'private' });
       }
       return conversations.messages(cid, { limit: 1 })[0];
@@ -121,6 +124,7 @@ class Orchestrator {
       const content = 'Ich brauche zuerst einen Gemini-API-Schlüssel, Chef. Öffne **Einstellungen → Gemini / KI** oder den Einrichtungsassistenten.';
       conversations.update(msg.id, { content, meta: { streaming: false, error: true } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
+      bus.emit('pet:answer', { messageId: msg.id, text: content, error: true });
       return conversations.messages(cid, { limit: 1 })[0];
     }
     return this.run({ cid, msg, text, channel, images, hint, scope });
@@ -139,11 +143,14 @@ class Orchestrator {
     if (scope !== 'private' && !this.s.gemini.hasKey() && !this.s.groq?.hasKey() && !this.s.localLLM?.cfg().model) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
     const fresh = conversations.update(msg.id, { content: '', meta: { streaming: true, error: false, cards: [], sources: [] } });
     bus.emit('chat:retry', { conversationId, messageId });
+    bus.emit('pet:input', { conversationId, messageId, channel: 'text' });
     return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id, scope });
   }
 
   /** Läuft ein Spiel und spricht dabei die Google-Stimme? Dann private Antworten nur als Text ins Overlay. */
   quietPrivate() { try { return !!this.s.localLLM?.isGaming?.() && this.s.cloudTts?.gamingMode() === 'cloud'; } catch { return false; } }
+  /** Beim Zocken ohne verfügbare Google-Stimme (kein Schlüssel / Kontingent leer): auch öffentliche Antworten nur ins Overlay. */
+  quietPublic() { try { return this.quietPrivate() && !this.s.cloudTts.available(60); } catch { return false; } }
 
   /** Deterministic answers (no model): game statistics and their spoken/typed entry. */
   deterministic(text) {
@@ -218,6 +225,7 @@ class Orchestrator {
       const content = `⚠️ ${routed.reason}. Es ist kein lokales Modell eingerichtet (Einstellungen → Lokale KI).`;
       conversations.update(msg.id, { content, meta: { streaming: false, error: true } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: content });
+      bus.emit('pet:answer', { messageId: msg.id, text: content, error: true });
       return conversations.messages(cid, { limit: 1 })[0];
     }
     let isLocal = routed.provider === 'local';
@@ -250,9 +258,15 @@ class Orchestrator {
     const vs0 = this.s.settings.get('voice') || {};
     const wantSpeech = (channel === 'voice' && vs0.speakVoiceReplies !== false) || (!isPrivateConv && vs0.speakReplies && channel === 'text');
     // Beim Zocken spricht die Google-Stimme – private Antworten gehen nicht dorthin, sondern nur als Text ins Overlay
-    const overlayOnly = wantSpeech && isPrivateConv && this.quietPrivate();
+    const overlayOnly = wantSpeech && (isPrivateConv ? this.quietPrivate() : this.quietPublic());
     const speak = wantSpeech && !overlayOnly;
     const talk = speak ? new (require('../voice/sentence-stream').SentenceStream)({ id: msg.id, short: vs0.tts?.short !== false, emit: (e) => bus.emit('tts:stream', { ...e, private: isPrivateConv }) }) : null;
+    // Sprechblase der Figur live mitschreiben (höchstens alle 250 ms)
+    let petAt = 0; let petTimer = null;
+    const petDelta = () => {
+      const fire = () => { petTimer = null; petAt = Date.now(); bus.emit('pet:delta', { messageId: msg.id, text: full }); };
+      if (Date.now() - petAt > 250) fire(); else if (!petTimer) petTimer = setTimeout(fire, 250);
+    };
     const cards = []; const sources = []; const used = []; let full = routed.note ? `_(Lokal beantwortet – ${routed.note}.)_\n\n` : '';
     if (routed.note) bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: full });
     bus.emit('orb:state', { state: 'thinking' });
@@ -265,7 +279,7 @@ class Orchestrator {
           return provider.stepStream({
             model, system: stable, contents, tools: [{ functionDeclarations: this.declarations()[0].functionDeclarations.filter((t) => allowed.has(t.name)) }], signal: ac.signal, feature: images.length ? 'vision' : 'chat', effort: role === 'reasoning' ? 'high' : 'low',
             onWait: (ms) => bus.emit('chat:tool', { conversationId: cid, messageId: msg.id, name: 'quota_wait', state: 'running', seconds: Math.round(ms / 1000) }),
-            onText: (d) => { emitted = true; full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); talk?.push(d); },
+            onText: (d) => { emitted = true; full += d; bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: d }); talk?.push(d); petDelta(); },
           });
         };
         let r;
@@ -299,6 +313,7 @@ class Orchestrator {
       }
       const final = conversations.update(msg.id, { content: full.trim() || (cards.length ? '' : '…'), meta: { streaming: false, cards, sources: sources.slice(0, 12), model, scope, local: isLocal } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
+      clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: final.content });
       // Brain selbstständig erweitern (Hintergrund; privat → lokales Modell, sonst Gemini-Sparmodell)
       if (!routed.note) setImmediate(() => this.s.learner?.learn({ cid, messageId: msg.id, userText: text, answer: final.content, scope: isLocal && scope !== 'private' ? 'private' : scope, sources, usedRemember: used.includes('remember') }).catch(() => {}));
       talk?.end(); // Rest der Antwort vorlesen (der Anfang läuft schon)
@@ -311,6 +326,7 @@ class Orchestrator {
       talk?.end();
       conversations.update(msg.id, { content: (full ? full + '\n\n' : '') + `⚠️ ${err}`, meta: { streaming: false, error: true, cards, sources } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: err });
+      clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: `⚠️ ${err}`, error: true });
       return conversations.messages(cid, { limit: 1 })[0];
     } finally {
       if (this.active.get(cid) === ac) this.active.delete(cid);

@@ -4,7 +4,7 @@ const log = require('../core/logger').scope('cloud-tts');
 /**
  * Stimme beim Zocken: Google Cloud Text-to-Speech (Chirp 3 HD) – rechnet auf Googles Servern, der PC bleibt frei fürs Spiel.
  * - Kostenlos bis 1 Mio. Zeichen pro Monat (Chirp 3 HD, Stand Okt. 2026). JARVIS zählt selbst mit und hört bei
- *   `monthlyChars` (Standard 950 000) auf – danach spricht Piper. Bereits gesprochene Sätze kommen aus dem Cache (kostet nichts).
+ *   `monthlyChars` (Standard 950 000) auf – danach bleibt JARVIS beim Zocken stumm (Antwort im Overlay). Bereits gesprochene Sätze kommen aus dem Cache (kostet nichts).
  * - Nie für private Antworten: die kommen beim Zocken nur als Text ins Overlay (siehe Orchestrator).
  * - Schlüssel: eigener Google-Cloud-Schlüssel (google.tts_api_key), sonst der Gemini-Schlüssel, falls dort die
  *   Text-to-Speech-API freigeschaltet ist.
@@ -17,8 +17,8 @@ const VOICES = Object.freeze({ standard: 'de-DE-Chirp3-HD-Achird', jarvis: 'de-D
 class CloudTts {
   constructor(s) { this.s = s; this.pausedUntil = 0; this.lastError = ''; }
   cfg() { return { whileGaming: 'cloud', monthlyChars: DEFAULT_LIMIT, voices: {}, ...(this.s.settings.get('voice')?.tts?.cloud || {}) }; }
-  /** Was beim Zocken spricht: 'cloud' (Google), 'piper' (einfach, offline) oder 'omnivoice' (lokal, braucht die Grafikkarte). */
-  gamingMode() { return this.cfg().whileGaming || 'cloud'; }
+  /** Was beim Zocken spricht: 'cloud' (Google) oder 'omnivoice' (lokal, braucht die Grafikkarte). */
+  gamingMode() { return this.cfg().whileGaming === 'omnivoice' ? 'omnivoice' : 'cloud'; }
   key() { return this.s.secrets.get('google.tts_api_key') || this.s.secrets.get('gemini.api_key') || ''; }
   ownKey() { return !!this.s.secrets.get('google.tts_api_key'); }
   limit() { return Math.min(FREE_CHARS, Math.max(0, Number(this.cfg().monthlyChars) || DEFAULT_LIMIT)); }

@@ -12,7 +12,7 @@ So wenig Gemini wie möglich, so viel lokal wie sinnvoll – ohne das Spiel ausz
 | Raid-Ergebnis erfassen, Statistikfragen („Wie ist meine Überlebensrate heute?“) | **deterministisch**, auch per Sprache | Satzmuster lokal erkannt, 0 € |
 | Kartenkalibrierung, Einstellungen, Timer, Datenabfragen | **deterministisch** | |
 | Spracherkennung | **lokal** (whisper.cpp, in jedem Chat) | Audio verlässt den PC nicht |
-| Sprachausgabe | **lokal**: KI-Stimme OmniVoice auf der Grafikkarte (nach Installation per Klick), sonst Piper/Windows | 0 €, nichts verlässt den PC; Gemini liefert nur Text |
+| Sprachausgabe | **lokal**: KI-Stimme OmniVoice auf der Grafikkarte (nach Installation per Klick); beim Zocken Google-Stimme (Chirp 3 HD, gratis bis 1 Mio. Zeichen/Monat, nur nicht-private Antworten) | 0 €, nichts verlässt den PC; Gemini liefert nur Text |
 | Private Nachrichten (pro Nachricht automatisch erkannt): Termine, Finanzen, Familie, eigene Daten, Assistenz-Aktionen, Anhänge | **lokales Modell** (Ollama) | kein Cloud-Fallback |
 | Nicht private Nachrichten (Wissen, Uni, allgemeine Fragen), „gründliche“ Fragen, Bildschirmfrage, Websuche | **Gemini Flash**, nur wenn erlaubt – ohne private Nachrichten im Verlauf | Qualität lokal nicht erreichbar |
 | Brain selbst erweitern (nach Antworten) | privat: **lokales Modell**; sonst **Gemini Sparmodell**, max. 40×/Tag | Sensibles wird nie automatisch gespeichert |
@@ -77,7 +77,7 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 ## Kostenlose Anbieter (ab 5.2.0)
 
 - **Groq (Text):** Öffentliche Fragen gehen zuerst an Groq (Free-Plan, Modell `openai/gpt-oss-120b`, ca. 1 000 Anfragen bzw. 200 000 Token pro Tag, Stand Okt. 2026). Ist das Kontingent leer (HTTP 429) oder Groq gestört, beantwortet Gemini dieselbe Frage (mit Budget), danach das lokale Modell. Private Nachrichten gehen nie an Groq. Groq kann Anfragen bis zu 30 Tage speichern.
-- **Google Cloud Text-to-Speech (Stimme beim Zocken):** Chirp 3 HD, kostenlos bis 1 Mio. Zeichen pro Monat. JARVIS zählt mit und hört bei 950 000 Zeichen auf (einstellbar), danach spricht Piper. Private Antworten werden beim Zocken nicht gesprochen, sondern nur im Overlay angezeigt.
+- **Google Cloud Text-to-Speech (Stimme beim Zocken):** Chirp 3 HD, kostenlos bis 1 Mio. Zeichen pro Monat. JARVIS zählt mit und hört bei 950 000 Zeichen auf (einstellbar); danach kommen Antworten beim Zocken nur ins Overlay. Private Antworten werden beim Zocken nicht gesprochen, sondern nur im Overlay angezeigt.
 
 ## Datenflüsse
 
@@ -91,7 +91,7 @@ Vermutung, nicht belegt: der größte Anteil stammt aus Punkt 1. Nach dem Update
 | Goon-Meldung | nur per Knopf | tarkov.dev (mit Tarkov-Account-ID) | – | Knopf nicht nutzen |
 | Diagnose-Protokolle | laufend | lokal, Schlüssel/Token geschwärzt, max. 8 MB | `logs/` | Einstellungen → Sicherheit → Protokolle leeren |
 | JARVIS-Kalender (Termine, Geburtstage, Uni, Aufgaben mit Fälligkeit, Erinnerungen) | nur wenn „Alles aus JARVIS nach Google übertragen“ an ist; letzte 30 bis nächste 180 Tage | Google Kalender (eigene Kalender „JARVIS · …“ je Art) | bei Google | Schalter aus bzw. Art abwählen (entfernt unveränderte Kopien) |
-| Vorgelesene Antworten | jede Sprachantwort | **lokal** (OmniVoice/Piper) | Audio-Cache lokal (max. 60 MB) | – |
+| Vorgelesene Antworten | jede Sprachantwort | **lokal** (OmniVoice); beim Zocken Google Chirp 3 HD (nur nicht-privat) | Audio-Cache lokal (max. 60 MB) | – |
 | Lokale KI-Stimme (Installation) | nur per Klick | Downloads von GitHub (uv), python.org-Builds, PyTorch, PyPI, Hugging Face (Modell) | `omnivoice/` im Datenordner (ca. 6 GB) | Einstellungen → Lokale KI-Stimme → Entfernen |
 | Brain-Lernschritt | nach Antworten | privat: lokal; sonst Gemini Sparmodell (nur dieser Austausch) | Brain (lokal) | Einstellungen → „Brain selbstständig erweitern“ aus; Einträge im Brain löschen |
 | Kostenloses Kontingent (Zusatz-Schlüssel) | Sparmodell-Anfragen | Google; darf laut Google zur Produktverbesserung genutzt werden | – | Schlüssel entfernen |

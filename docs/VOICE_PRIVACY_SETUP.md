@@ -1,6 +1,6 @@
 # Sprache in JARVIS: komplett lokal
 
-> **Stand 5.0:** Spracherkennung (Whisper) und Sprachausgabe (OmniVoice/Piper) laufen lokal. Der erkannte Text wird wie getippter Text pro Nachricht eingeordnet (privat → lokales Modell, sonst Gemini). Gemini liefert nur noch Text, keine Stimme. Seit 5.1 gibt es Gemini Live nicht mehr – Audio verlässt nie den PC. Die Aufnahme endet nach einer Sprechpause automatisch. Details: [KOSTEN_UND_DATENSCHUTZ.md](KOSTEN_UND_DATENSCHUTZ.md).
+> **Stand 5.0:** Spracherkennung (Whisper) und Sprachausgabe (OmniVoice) laufen lokal; beim Zocken spricht die Google-Stimme nur nicht-private Antworten. Der erkannte Text wird wie getippter Text pro Nachricht eingeordnet (privat → lokales Modell, sonst Gemini). Gemini liefert nur noch Text, keine Stimme. Seit 5.1 gibt es Gemini Live nicht mehr – Audio verlässt nie den PC. Die Aufnahme endet nach einer Sprechpause automatisch. Details: [KOSTEN_UND_DATENSCHUTZ.md](KOSTEN_UND_DATENSCHUTZ.md).
 
 ## Warum das Mikrofon vorher blockiert war
 

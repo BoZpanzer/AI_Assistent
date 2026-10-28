@@ -97,7 +97,6 @@ test('Beim Zocken: Google-Stimme statt OmniVoice, Zeichen werden gezählt, Grenz
   try {
     core.secrets.set('gemini.api_key', 'AIza-test');
     core.localLLM.isGaming = () => true;
-    core.tts.synthesize = async () => ({ wav: Buffer.from('PIPER') });
     core.omnivoice.allowed = () => { throw new Error('OmniVoice darf beim Zocken nicht laufen'); };
     core.settings.update({ voice: { tts: { preset: 'jarvis' } } });
     const r = await core.speech.synthesize('Der Jungler kommt Bot.');
@@ -108,13 +107,13 @@ test('Beim Zocken: Google-Stimme statt OmniVoice, Zeichen werden gezählt, Grenz
     // gleicher Satz → Cache, keine weiteren Zeichen
     await core.speech.synthesize('Der Jungler kommt Bot.');
     assert.equal(sent.length, 1);
-    // privat → nie Google
-    const p = await core.speech.synthesize('Dein Termin ist um acht.', { private: true });
-    assert.equal(p.engine, 'piper'); assert.equal(sent.length, 1);
-    // Grenze erreicht → Piper
+    // privat → nie Google (und beim Zocken auch keine KI-Stimme)
+    await assert.rejects(core.speech.synthesize('Dein Termin ist um acht.', { private: true }), /privat/);
+    // Grenze erreicht → keine Stimme, kein Google-Aufruf
     core.settings.update({ voice: { tts: { cloud: { monthlyChars: 30 } } } });
-    const q = await core.speech.synthesize('Ein ganz anderer, deutlich längerer Satz über den Raid.');
-    assert.equal(q.engine, 'piper'); assert.equal(sent.length, 1);
+    await assert.rejects(core.speech.synthesize('Ein ganz anderer, deutlich längerer Satz über den Raid.'), /Monatskontingent/);
+    assert.equal(sent.length, 1);
+    assert.equal(core.orchestrator.quietPublic(), true, 'dann auch öffentliche Antworten nur ins Overlay');
   } finally { cleanup(); }
 });
 

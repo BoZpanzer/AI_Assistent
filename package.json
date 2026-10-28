@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "description": "JARVIS – Personal Intelligence System",
   "main": "src/main/index.js",
   "scripts": {
@@ -102,13 +102,6 @@
       {
         "from": "build/whisper-runtime",
         "to": "voice",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "build/piper-runtime",
-        "to": "tts",
         "filter": [
           "**/*"
         ]
