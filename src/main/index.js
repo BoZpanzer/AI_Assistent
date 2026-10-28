@@ -311,6 +311,8 @@ app.whenReady().then(async () => {
   createWindow();
   if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); mapCorner = new MapCorner({ core, preload: path.join(__dirname, 'preload.js'), isDev, overlay }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
   if (!isSmoke && !isE2E) { pet = new Pet({ core, preload: path.join(__dirname, 'preload.js'), isDev, showWindow: () => bringToFront(), uiShown: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(), display: () => (win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay()), startVoice: () => send('voice:toggle', {}) }); setTimeout(() => pet.refresh(), 3000); }
+  // Fehlersuche „Figur reagiert verzögert / Fenster öffnet erst nach Sekunden“: hängt der Hauptprozess, steht es im Protokoll
+  if (!isSmoke && !isE2E) { let last = Date.now(); setInterval(() => { const n = Date.now(); const lag = n - last - 500; last = n; if (lag > 1500) logger.scope('main').warn('Hauptprozess hing ' + Math.round(lag) + ' ms (Figur und Fenster reagieren in dieser Zeit nicht)'); }, 500).unref(); }
   // Vollbild-Programme erkennen: Figur ausblenden; unbekannte Vollbild-Spiele zählen als Zocken
   if (!isSmoke && !isE2E) {
     fsWatch = new FullscreenWatch({
