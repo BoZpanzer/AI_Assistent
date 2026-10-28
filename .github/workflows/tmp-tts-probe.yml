@@ -1,0 +1,44 @@
+name: tmp tts probe
+on:
+  push:
+    branches: [tmp/tts-probe]
+permissions:
+  contents: write
+jobs:
+  samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: install
+        run: |
+          sudo apt-get install -y -q ffmpeg
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -q omnivoice==0.2.1 soundfile numpy piper-tts 2>&1 | tail -3
+      - name: piper
+        run: |
+          node probe-tts/text.js
+          SAID=$(python -c "import json;print(json.load(open('probe-tts/text.json'))['said'])")
+          base=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE
+          for v in thorsten/medium kerstin/low; do n=de_DE-${v%/*}-${v#*/}; curl -sSL -o $n.onnx $base/$v/$n.onnx; curl -sSL -o $n.onnx.json $base/$v/$n.onnx.json; done
+          # wie in der App: length_scale = pitch/speed, abgespielt mit playbackRate = pitch
+          echo "$SAID" | python -m piper -m de_DE-thorsten-medium.onnx -f p_std.wav --sentence-silence 0.15
+          echo "$SAID" | python -m piper -m de_DE-thorsten-medium.onnx -f p_jv.wav --length-scale 0.968 --sentence-silence 0.15
+          echo "$SAID" | python -m piper -m de_DE-kerstin-low.onnx -f p_al.wav --length-scale 1.059 --sentence-silence 0.15
+          ffmpeg -y -v error -i p_std.wav -b:a 128k probe-tts/Einfache_Stimme_Standard.mp3
+          ffmpeg -y -v error -i p_jv.wav -af "asetrate=22050*0.9,aresample=22050" -b:a 128k probe-tts/Einfache_Stimme_JARVIS.mp3
+          ffmpeg -y -v error -i p_al.wav -af "asetrate=16000*1.08,aresample=22050" -b:a 128k probe-tts/Einfache_Stimme_Alya.mp3
+      - name: omnivoice
+        run: |
+          python probe-tts/samples.py 2>&1 | grep -v -i warn | tail -20 | tee probe-tts/log_samples.txt
+          cd probe-tts && for f in KI-Stimme_*.wav; do ffmpeg -y -v error -i "$f" -b:a 128k "${f%.wav}.mp3" && rm "$f"; done; ls -la
+      - name: commit
+        if: always()
+        run: |
+          git config user.name probe; git config user.email probe@users.noreply.github.com
+          git add -A probe-tts; git commit -m "tmp: voice samples" || true
+          for i in 1 2 3 4 5; do git pull --rebase -q && git push && break; sleep 5; done
