@@ -156,7 +156,7 @@ function Desk() {
   const state = mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : mood.state !== 'idle' ? mood.state : drag ? 'wave' : walk ? 'walk' : idleAct || 'idle';
   const gender = genderFor(settings);
   // Blase neben dem Kopf – auf der Seite mit mehr Platz; die Spitze zeigt Richtung Gesicht
-  const bw = 330; const gap = 16;
+  const bw = mood.bubble?.kind === 'think' ? 120 : 330; const gap = 16; // „denkt …“-Blase nur so breit wie die Punkte
   const figH = petHeight(gender, size);
   const headY = window.innerHeight - figH + figH * 0.12; // Gesichtshöhe (von oben)
   let side = x + size / 2 > window.innerWidth / 2 ? 'left' : 'right';

@@ -5,6 +5,7 @@ Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 ## 5.3.2 – Standby, neue Sprechblase, Figur verschwindet bei Vollbild
 
 - **Standby-Modus:** „Jarvis, geh in den Standby“ (auch „Standby“, „schlaf jetzt“, „mach Pause“, „gute Nacht Jarvis“) oder Rechtsklick auf die Figur → „Standby“. Die Figur legt sich an den Rand und schläft (Zzz), der Sprachmodus ist komplett aus und JARVIS liest nichts mehr vor. „Hey Jarvis“ weckt ihn mit einem neuen Chat, eine getippte Nachricht oder der Mikrofon-Knopf auch.
+- **Flüssigere Figur:** Neue Bilder mit Übergängen – zwischen Grundhaltung und jeder Pose spielt ein Zwischenbild, Mund und Blinzeln laufen über drei Stufen statt hart umzuschalten. Neu: zweite Denkpose (Arm vor dem Oberkörper) und eine erklärende Geste nach Antworten; beim Losgehen dreht sie sich erst seitlich.
 - **Sprechblase neu:** neben dem Kopf mit kleiner Spitze Richtung Figur, Name oben (Alya / J.A.R.V.I.S.), farbiger Akzent, bei Fehlern orange. „Mach mal die Sprechblase weg“ schließt sie.
 - **Figur läuft:** Sie wohnt am rechten Rand. Zum Reden läuft sie ein Stück nach links, damit die Blase Platz hat; schließt du die Blase, läuft sie zurück an den Rand.
 - **Vollbild:** Bei Videos, Präsentationen und Spielen im Vollbild verschwindet die Figur. Unbekannte Spiele (Vollbild oder laufendes Steam-Spiel ohne eigenes Profil) zählen jetzt auch als Zocken: KI-Stimme wird entladen, die Google-Stimme spricht, das Overlay erscheint.

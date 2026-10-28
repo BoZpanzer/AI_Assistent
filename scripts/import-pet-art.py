@@ -8,7 +8,9 @@ import json, os, sys
 from PIL import Image
 import numpy as np
 
-POSES = ['idle', 'blink', 'talk', 'think', 'listen', 'wave', 'happy', 'oops', 'sleep', 'lean', 'walk1', 'walk2']
+BASE = ['idle', 'blink', 'talk', 'think', 'think_high', 'listen', 'wave', 'happy', 'oops', 'sleep', 'lean', 'gesture', 'walk1', 'walk2']
+# Übergänge: idle_to_<pose> (ein Zwischenbild zwischen Grundhaltung und Pose)
+POSES = BASE + ['idle_to_' + p for p in BASE if p != 'idle']
 OUT_W, OUT_H = 400, 600
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
