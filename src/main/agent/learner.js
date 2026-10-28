@@ -44,7 +44,7 @@ class Learner {
     const t = String(userText || '').trim();
     if (!this.enabled() || usedRemember || t.length < 12) return false;
     if (/^(?:hi|hallo|hey|danke|ok(?:ay)?|ja|nein|cool|nice|super)\b[\s!.?]*$/i.test(t)) return false;
-    if (scope !== 'private' && this.cloudCount() >= LEARN_DAILY_CLOUD) return false;
+    if (scope !== 'private' && this.cloudCount() >= LEARN_DAILY_CLOUD && !this.s.groq?.available()) return false;
     return true;
   }
 
@@ -62,8 +62,10 @@ class Learner {
       const run = () => this.s.gemini.generate({ system: SYSTEM, contents, json: true, schema: SCHEMA, feature: 'chat', tier: 'lite', background: true, maxOut: 500, temperature: 0.2 });
       // Private Nachrichten: nur das lokale Modell (privacy.local erzwingt das); öffentliche: Gemini-Sparmodell.
       if (isPrivate && !this.s.localLLM?.cfg().model) return [];
-      if (!isPrivate) this.bumpCloud();
-      const out = await (isPrivate ? privacy.local(run) : privacy.cloud(run));
+      // Öffentlich: zuerst Groq (kostenlos), sonst Gemini-Sparmodell (zählt gegen das Tageslimit)
+      const viaGroq = () => privacy.cloud(() => this.s.groq.generate({ system: SYSTEM, contents, json: true, schema: SCHEMA, maxOut: 500, temperature: 0.2 }));
+      const viaGemini = () => { this.bumpCloud(); return privacy.cloud(run); };
+      const out = isPrivate ? await privacy.local(run) : this.s.groq?.available() ? await viaGroq().catch(() => viaGemini()) : await viaGemini();
       const saved = [];
       for (const e of (out?.entries || []).slice(0, 2)) {
         if (!e?.content || String(e.content).length < 8) continue;

@@ -7,7 +7,7 @@ const logger = require('./core/logger');
 const { friendlyError } = require('./providers/gemini');
 const log = logger.scope('ipc');
 
-const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'riot.api_key', 'pubg.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
+const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'groq.api_key', 'google.tts_api_key', 'riot.api_key', 'pubg.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
 
 /**
  * Single RPC entry point. Only our own app:// frame may call; every method
@@ -106,10 +106,14 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'local.status': () => s.localLLM.status(),
     // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
     'tts.status': () => s.tts.status(),
+    'groq.status': () => s.groq.status(),
+    'groq.test': async ({ key } = {}) => s.groq.test(key || s.secrets.get('groq.api_key')),
+    'cloudtts.status': () => s.cloudTts.status(),
+    'cloudtts.test': async () => s.cloudTts.test(),
     'tts.prepare': ({ text, full } = {}) => require('./voice/speakable').speakable(String(text || '').slice(0, 20000), { full: !!full || s.settings.get('voice').tts?.short === false }),
-    'tts.synthesize': async ({ text, override, preview } = {}) => {
+    'tts.synthesize': async ({ text, override, preview, private: priv } = {}) => {
       const o = override && typeof override === 'object' ? { preset: override.preset, engine: override.engine, voice: override.voice, style: override.style, speaker: override.speaker, speed: override.speed, pitch: override.pitch } : {};
-      const r = await s.speech.synthesize(String(text || ''), { preview: !!preview, override: Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) });
+      const r = await s.speech.synthesize(String(text || ''), { preview: !!preview, private: !!priv, override: Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) });
       return { audio: r.wav.toString('base64'), pitch: r.pitch, engine: r.engine, preset: r.preset, fallback: !!r.fallback };
     },
     // Stimmprofile für Einstellungen → Stimme (ohne Schlüssel; nur ob einer hinterlegt ist)

@@ -257,11 +257,11 @@ class AudioEngine {
    * Satzweises Vorlesen, während die Antwort noch entsteht (Ereignis „tts:stream“ je Satzblock).
    * Der nächste Block wird schon berechnet, während der vorige läuft.
    */
-  speakStream({ id, text, done }) {
+  speakStream({ id, text, done, private: priv }) {
     if (this.mode.local || id === this.stoppedStream) return; // abgebrochen → Rest nicht mehr vorlesen
     if (!this.sq || this.sq.id !== id) {
       this.stopSpeech();
-      this.sq = { id, gen: this.tts.gen, queue: [], ended: false, chain: Promise.resolve(), wake: null, windows: '' };
+      this.sq = { id, gen: this.tts.gen, queue: [], ended: false, chain: Promise.resolve(), wake: null, windows: '', private: !!priv };
       this.runStream(this.sq);
     }
     const q = this.sq;
@@ -285,7 +285,7 @@ class AudioEngine {
       if (q.gen === this.tts.gen && q.queue.length) this.windowsSpeak(q.queue.join(' '), await this.withPreset(st));
       return;
     }
-    const synth = (t) => { const p = rpc('tts.synthesize', { text: t }); p.catch(() => {}); return p; };
+    const synth = (t) => { const p = rpc('tts.synthesize', { text: t, private: q.private }); p.catch(() => {}); return p; };
     this.tts.speaking = true;
     let pending = null;
     try {
