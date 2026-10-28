@@ -1,59 +1,60 @@
-/* JARVIS-Figur (Desktop + Overlay) */
-.pet-fig { overflow: visible; display: block; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35)); }
+/* JARVIS-Figur (Desktop + Overlay) – Koordinaten im viewBox 120 × 260 */
+.pet-fig { overflow: visible; display: block; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4)); }
 .pet-fig g, .pet-fig path, .pet-fig rect, .pet-fig circle, .pet-fig ellipse { transform-box: view-box; }
-.pet-fig .body { transform-origin: 60px 162px; animation: pet-breathe 2.8s ease-in-out infinite; }
-.pet-fig .upper { transform-origin: 60px 130px; }
-.pet-fig .head { transform-origin: 60px 86px; transition: transform 0.3s ease; }
-.pet-fig .arm-l { transform-origin: 38.5px 97px; transition: transform 0.25s ease; }
-.pet-fig .arm-r { transform-origin: 81.5px 97px; transition: transform 0.25s ease; }
-.pet-fig .leg-l { transform-origin: 52px 130px; }
-.pet-fig .leg-r { transform-origin: 68px 130px; }
-.pet-fig .eyes { transform-origin: 60px 61px; animation: pet-blink 4.6s infinite; }
+.pet-fig .body { transform-origin: 60px 250px; animation: pet-breathe 3s ease-in-out infinite; }
+.pet-fig .upper { transform-origin: 60px 150px; }
+.pet-fig .head { transform-origin: 60px 70px; transition: transform 0.3s ease; }
+.pet-fig .arm-l { transform-origin: 36px 92px; }
+.pet-fig .arm-r { transform-origin: 84px 92px; }
+.pet-fig .leg-l { transform-origin: 51px 150px; }
+.pet-fig .leg-r { transform-origin: 69px 150px; }
+.pet-fig .eyes { transform-origin: 60px 50px; animation: pet-blink 4.6s infinite; }
 .pet-fig .mouth-open, .pet-fig .sweat, .pet-fig .zzz, .pet-fig .waves, .pet-fig .sparkle { opacity: 0; }
 .pet-fig .glow { animation: pet-glow 2.4s ease-in-out infinite; }
-.pet-fig .shadow { transform-origin: 60px 163px; }
+
+/* Armhaltungen: Standard = Hände an der Hüfte */
+.pet-fig .pose { display: none; }
+.pet-fig .arm .p-hip { display: inline; }
+.pet-fig.s-wave .arm-r .p-hip, .pet-fig.s-think .arm-r .p-hip, .pet-fig.s-talk .arm-r .p-hip, .pet-fig.s-oops .arm-r .p-hip, .pet-fig.s-happy .arm .p-hip { display: none; }
+.pet-fig.s-wave .arm-r .p-up, .pet-fig.s-happy .arm .p-up { display: inline; }
+.pet-fig.s-think .arm-r .p-chin { display: inline; }
+.pet-fig.s-talk .arm-r .p-out { display: inline; }
+.pet-fig.s-oops .arm-r .p-scratch { display: inline; }
 
 /* Laufen */
-.pet-fig.s-walk .body { animation: pet-step 0.5s ease-in-out infinite; }
-.pet-fig.s-walk .leg-l { animation: pet-leg 0.5s ease-in-out infinite alternate; }
-.pet-fig.s-walk .leg-r { animation: pet-leg 0.5s ease-in-out infinite alternate-reverse; }
-.pet-fig.s-walk .arm-l { animation: pet-swing 0.5s ease-in-out infinite alternate-reverse; }
-.pet-fig.s-walk .arm-r { animation: pet-swing 0.5s ease-in-out infinite alternate; }
+.pet-fig.s-walk .body { animation: pet-step 0.56s ease-in-out infinite; }
+.pet-fig.s-walk .leg-l { animation: pet-leg 0.56s ease-in-out infinite alternate; }
+.pet-fig.s-walk .leg-r { animation: pet-leg 0.56s ease-in-out infinite alternate-reverse; }
 /* Sprechen */
-.pet-fig.s-talk .mouth-open { animation: pet-mouth 0.36s steps(1) infinite; }
-.pet-fig.s-talk .mouth-closed { animation: pet-mouth 0.36s steps(1) infinite reverse; }
+.pet-fig.s-talk .mouth-open { animation: pet-mouth 0.34s steps(1) infinite; }
+.pet-fig.s-talk .mouth-closed { animation: pet-mouth 0.34s steps(1) infinite reverse; }
 .pet-fig.s-talk .head { animation: pet-nod 1.6s ease-in-out infinite; }
-.pet-fig.s-talk .arm-r { transform: rotate(-28deg); }
-/* Nachdenken: Hand ans Kinn, Kopf schief */
-.pet-fig.s-think .arm-r { transform: rotate(112deg); }
-.pet-fig.s-think .head { transform: rotate(6deg); }
-/* Zuhören */
-.pet-fig.s-listen .head { transform: rotate(-7deg); }
+.pet-fig.s-talk .arm-r { animation: pet-gesture 1.4s ease-in-out infinite; }
+/* Nachdenken / Zuhören */
+.pet-fig.s-think .head { transform: rotate(5deg); }
+.pet-fig.s-listen .head { transform: rotate(-6deg); }
 .pet-fig.s-listen .waves { animation: pet-pulse 1s ease-in-out infinite; }
 /* Winken */
 .pet-fig.s-wave .arm-r { animation: pet-wave 0.42s ease-in-out infinite alternate; }
 /* Freuen */
 .pet-fig.s-happy .body { animation: pet-jump 0.5s ease-out 3; }
 .pet-fig.s-happy .sparkle { animation: pet-pulse 0.5s ease-in-out 3; }
-.pet-fig.s-happy .arm-l { transform: rotate(150deg); }
-.pet-fig.s-happy .arm-r { transform: rotate(-150deg); }
 /* Schlafen */
 .pet-fig.s-sleep .body { animation: pet-breathe 4.4s ease-in-out infinite; }
-.pet-fig.s-sleep .head { transform: rotate(10deg) translateY(2px); }
+.pet-fig.s-sleep .head { transform: rotate(9deg) translateY(2px); }
 .pet-fig.s-sleep .zzz { animation: pet-zzz 2.6s ease-in-out infinite; }
 /* Fehler */
 .pet-fig.s-oops .sweat { opacity: 1; animation: pet-sweat 1.2s ease-in infinite; }
-.pet-fig.s-oops .arm-r { transform: rotate(-150deg); }
 
-@keyframes pet-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1.4px) scaleY(0.992); } }
-@keyframes pet-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.4px); } }
-@keyframes pet-leg { from { transform: rotate(16deg); } to { transform: rotate(-16deg); } }
-@keyframes pet-swing { from { transform: rotate(18deg); } to { transform: rotate(-18deg); } }
+@keyframes pet-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1.2px) scaleY(0.995); } }
+@keyframes pet-step { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes pet-leg { from { transform: rotate(9deg); } to { transform: rotate(-9deg); } }
 @keyframes pet-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.08); } }
 @keyframes pet-mouth { 0% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes pet-nod { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(2.5deg); } 70% { transform: rotate(-2deg); } }
-@keyframes pet-wave { from { transform: rotate(-150deg); } to { transform: rotate(-115deg); } }
-@keyframes pet-jump { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-12px); } }
+@keyframes pet-gesture { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-8deg); } }
+@keyframes pet-wave { from { transform: rotate(-6deg); } to { transform: rotate(14deg); } }
+@keyframes pet-jump { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-14px); } }
 @keyframes pet-pulse { 0%, 100% { opacity: 0.15; } 50% { opacity: 1; } }
 @keyframes pet-zzz { 0% { opacity: 0; transform: translate(0, 4px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -8px); } }
 @keyframes pet-sweat { 0% { transform: translateY(-2px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(8px); opacity: 0; } }
