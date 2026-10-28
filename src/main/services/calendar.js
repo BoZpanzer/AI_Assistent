@@ -167,7 +167,7 @@ class Calendar {
     if (d.start) {
       if (d.allDay) {
         ev.start = { date: localDate(d.start) };
-        ev.end = { date: localDate(d.end) === localDate(d.start) ? localDate(new Date(Date.parse(d.start) + 86400000)) : localDate(d.end) };
+        ev.end = { date: localDate(d.end) === localDate(d.start) ? localDate((() => { const z = new Date(d.start); return new Date(z.getFullYear(), z.getMonth(), z.getDate() + 1); })()) : localDate(d.end) };
       } else {
         ev.start = { dateTime: new Date(d.start).toISOString(), timeZone: tz() };
         ev.end = { dateTime: new Date(d.end).toISOString(), timeZone: tz() };
@@ -430,7 +430,8 @@ class Calendar {
     const slots = [];
     const [sh, sm] = dayStart.split(':').map(Number);
     const [eh, em] = dayEnd.split(':').map(Number);
-    for (let d = startOfDay(f); d < t; d = new Date(d.getTime() + 86400000)) {
+    // Tag für Tag per Kalender (nicht + 24 h – an der Zeitumstellung verrutschte sonst jeder folgende Tag)
+    for (let d = startOfDay(f); d < t; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
       let cur = new Date(d); cur.setHours(sh, sm, 0, 0);
       const end = new Date(d); end.setHours(eh, em, 0, 0);
       if (cur < f) cur = new Date(Math.ceil(f.getTime() / 900000) * 900000);
