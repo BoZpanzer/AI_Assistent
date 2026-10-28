@@ -95,11 +95,11 @@ class ScreenVision {
     const profile = active.profile || null;
     const gameHint = !crop && profile ? require('./gaming/kits').screenHint(profile) : '';
     const hint = !crop ? (gameHint ? `(Spiel: ${profile.name}. ${gameHint})` : '') : '(Das Bild ist ein Ausschnitt um meinen Mauszeiger – das Ding in der Mitte meine ich. Ist dort ein Escape-from-Tarkov-Item, rufe tarkov_item_value mit dem Itemnamen auf und nenne kurz Flohmarkt, besten Händler, Wert pro Slot und ob ich es für Quests/Hideout behalten sollte. Sonst beantworte die Frage normal.)';
-    this.s.bus.emit('overlay:thinking', { question: shown });
+    this.s.bus.emit('overlay:thinking', { question: shown, think: require('../agent/mood').thinkPose(shown) });
     const images = crop ? [{ mimeType: 'image/jpeg', data: crop.data.toString('base64'), name: 'Mauszeiger' }] : [{ mimeType: 'image/jpeg', data: shot.data.toString('base64'), name: shot.scope === 'window' ? 'Spielfenster' : 'Bildschirm' }];
     const msg = await this.s.orchestrator.chat({ conversationId: this.gamingConversation(active), text: q, images, channel: 'overlay', hint, screen: true });
     this.remember(shot, shown, msg?.content || '', active.id);
-    this.s.bus.emit('overlay:answer', { question: shown, answer: msg?.content || '', cards: msg?.meta?.cards || [] });
+    this.s.bus.emit('overlay:answer', { question: shown, answer: msg?.content || '', cards: msg?.meta?.cards || [], mood: require('../agent/mood').moodFor({ userText: shown, answer: msg?.content || '' }) });
     if (this.s.settings.get('overlay')?.speakAnswers) this.s.bus.emit('tts:speak', { text: String(msg?.content || '').replace(/[*#`|>_]/g, '').slice(0, 600) });
     return msg;
   }

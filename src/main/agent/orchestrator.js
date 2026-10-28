@@ -8,6 +8,7 @@ const log = require('../core/logger').scope('agent');
 
 const MAX_STEPS = 7;
 const privacy = require('../core/privacy');
+const { moodFor, thinkPose } = require('./mood');
 
 /**
  * Central orchestrator: ONE agent, one history, one tool registry for chat,
@@ -107,18 +108,18 @@ class Orchestrator {
     conversations.autoTitle(cid, text || attachInfo[0]?.name || 'Gespräch');
     const msg = conversations.add(cid, { role: 'assistant', content: '', meta: { streaming: true, scope }, channel });
     // Desktop-Figur/Overlay: neue Eingabe → Sprechblase „denkt …“
-    if (['text', 'voice'].includes(channel)) bus.emit('pet:input', { conversationId: cid, messageId: msg.id, channel });
+    if (['text', 'voice'].includes(channel)) bus.emit('pet:input', { conversationId: cid, messageId: msg.id, channel, think: thinkPose(text) });
 
     // Feste Fragen (Statistiken, Erfassungen) ohne Sprachmodell beantworten – kostenlos und lokal.
     const det = !images.length && !attachments.length ? this.deterministic(text) : null;
     if (det) {
       conversations.update(msg.id, { content: det.text, meta: { streaming: false, deterministic: det.deterministic, model: 'lokal (ohne KI)' } });
-      bus.emit('pet:answer', { messageId: msg.id, text: det.text });
+      bus.emit('pet:answer', { messageId: msg.id, text: det.text, mood: moodFor({ userText: text, answer: det.text }) });
       if (det.clearBubble) bus.emit('pet:clear', {});
       bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) {
-        if (scope === 'private' ? this.quietPrivate() : this.quietPublic()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true });
+        if (scope === 'private' ? this.quietPrivate() : this.quietPublic()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true, mood: moodFor({ userText: text, answer: det.text }) });
         else bus.emit('tts:speak', { text: det.text, private: scope === 'private' });
       }
       return conversations.messages(cid, { limit: 1 })[0];
@@ -127,7 +128,7 @@ class Orchestrator {
       const content = 'Ich brauche zuerst einen Gemini-API-Schlüssel, Chef. Öffne **Einstellungen → Gemini / KI** oder den Einrichtungsassistenten.';
       conversations.update(msg.id, { content, meta: { streaming: false, error: true } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
-      bus.emit('pet:answer', { messageId: msg.id, text: content, error: true });
+      bus.emit('pet:answer', { messageId: msg.id, text: content, error: true, mood: moodFor({ error: true }) });
       return conversations.messages(cid, { limit: 1 })[0];
     }
     return this.run({ cid, msg, text, channel, images, hint, scope });
@@ -146,7 +147,7 @@ class Orchestrator {
     if (scope !== 'private' && !this.s.gemini.hasKey() && !this.s.groq?.hasKey() && !this.s.localLLM?.cfg().model) throw new Error('Kein Gemini-API-Schlüssel hinterlegt');
     const fresh = conversations.update(msg.id, { content: '', meta: { streaming: true, error: false, cards: [], sources: [] } });
     bus.emit('chat:retry', { conversationId, messageId });
-    bus.emit('pet:input', { conversationId, messageId, channel: 'text' });
+    bus.emit('pet:input', { conversationId, messageId, channel: 'text', think: thinkPose(user.content) });
     return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id, scope });
   }
 
@@ -171,7 +172,7 @@ class Orchestrator {
     conversations.update(user.id, { meta: { scope } });
     const fresh = conversations.update(msg.id, { content: '', meta: { streaming: true, error: false, cards: [], sources: [], scope } });
     bus.emit('chat:retry', { conversationId, messageId });
-    bus.emit('pet:input', { conversationId, messageId, channel: 'text' });
+    bus.emit('pet:input', { conversationId, messageId, channel: 'text', think: thinkPose(user.content) });
     return this.run({ cid: conversationId, msg: fresh, text: user.content, channel: msg.channel || 'text', images: [], upTo: user.id, scope });
   }
 
@@ -259,7 +260,7 @@ class Orchestrator {
       const content = `⚠️ ${routed.reason}. Es ist kein lokales Modell eingerichtet (Einstellungen → Lokale KI).`;
       conversations.update(msg.id, { content, meta: { streaming: false, error: true } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: content });
-      bus.emit('pet:answer', { messageId: msg.id, text: content, error: true });
+      bus.emit('pet:answer', { messageId: msg.id, text: content, error: true, mood: moodFor({ error: true }) });
       return conversations.messages(cid, { limit: 1 })[0];
     }
     let isLocal = routed.provider === 'local';
@@ -358,11 +359,11 @@ class Orchestrator {
       }
       const final = conversations.update(msg.id, { content: full.trim() || (cards.length ? '' : '…'), meta: { streaming: false, cards, sources: sources.slice(0, 12), model, scope, local: isLocal } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
-      clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: final.content });
+      clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: final.content, mood: moodFor({ userText: text, answer: final.content }) });
       // Brain selbstständig erweitern (Hintergrund; privat → lokales Modell, sonst Gemini-Sparmodell)
       if (!routed.note) setImmediate(() => this.s.learner?.learn({ cid, messageId: msg.id, userText: text, answer: final.content, scope: isLocal && scope !== 'private' ? 'private' : scope, sources, usedRemember: used.includes('remember') }).catch(() => {}));
       talk?.end(); // Rest der Antwort vorlesen (der Anfang läuft schon)
-      if (overlayOnly) bus.emit('overlay:answer', { question: text, answer: final.content, cards, private: true });
+      if (overlayOnly) bus.emit('overlay:answer', { question: text, answer: final.content, cards, private: true, mood: moodFor({ userText: text, answer: final.content }) });
       return final;
     } catch (e) {
       // Lösungs-Marker → Markdown-Link (Chat rendert Markdown)
@@ -371,7 +372,7 @@ class Orchestrator {
       talk?.end();
       conversations.update(msg.id, { content: (full ? full + '\n\n' : '') + `⚠️ ${err}`, meta: { streaming: false, error: true, cards, sources } });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id, error: err });
-      clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: `⚠️ ${err}`, error: true });
+      clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: `⚠️ ${err}`, error: true, mood: moodFor({ error: true }) });
       return conversations.messages(cid, { limit: 1 })[0];
     } finally {
       if (this.active.get(cid) === ac) this.active.delete(cid);

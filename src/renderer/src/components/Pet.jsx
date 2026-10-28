@@ -186,10 +186,11 @@ export const petHeight = (gender, size) => Math.round(size * (PET_ART[gender]?.i
  * Blinzeln (idle↔blink), Mund (talk↔idle), Laufen (walk1↔walk2) – plus Atmen/Wippen per CSS. Fehlt ein Bild, nimmt sie idle + Effekt.
  */
 /** Zustand der App → Bild-Pose (mit Abwechslung: zwei Denkposen, Freuen oder erklärende Geste). */
-function poseFor(state, art, variant) {
+function poseFor(state, art) {
   if (state === 'walk') return art.walk1 ? 'walk' : 'idle';
-  if (state === 'think') return variant && art.think_high ? 'think_high' : art.think ? 'think' : 'idle';
-  if (state === 'happy') return variant && art.gesture ? 'gesture' : art.happy ? 'happy' : 'idle';
+  if (state === 'think_high') return art.think_high ? 'think_high' : art.think ? 'think' : 'idle';
+  if (state === 'gesture' && !art.gesture) return art.happy ? 'happy' : 'idle';
+  if (state === 'lean' && !art.lean) return art.listen ? 'listen' : 'idle';
   return art[state] ? state : 'idle';
 }
 
@@ -201,14 +202,12 @@ function PetImage({ art, state, facing, size, handlers }) {
   const [frame, setFrame] = useState('idle');
   const cur = useRef('idle'); // Pose, in der sie gerade „steht“
   const timers = useRef([]);
-  const variant = useRef(false);
   const clear = () => { timers.current.forEach(clearTimeout); timers.current = []; };
   const later = (fn, ms) => timers.current.push(setTimeout(fn, ms));
   useEffect(() => { Object.values(art).forEach((src) => { const i = new Image(); i.src = src; }); }, [art]);
   useEffect(() => () => clear(), []);
   useEffect(() => {
-    if (state === 'think' || state === 'happy') variant.current = Math.random() < (state === 'happy' ? 0.5 : 0.45);
-    const target = poseFor(state, art, variant.current);
+    const target = poseFor(state, art);
     clear();
     const has = (k) => !!art[k];
     const via = (p) => (p === 'walk' ? 'idle_to_walk1' : 'idle_to_' + p);
@@ -262,6 +261,8 @@ function PetImage({ art, state, facing, size, handlers }) {
 export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 100, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
   const art = PET_ART[gender];
   if (art?.idle) return <PetImage art={art} state={state} facing={facing} size={size} handlers={{ onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }} />;
+  // Ersatzfigur kennt nur die Grundposen
+  state = { think_high: 'think', gesture: 'happy', lean: 'listen' }[state] || state;
   return (
     <svg class={`pet-fig s-${state} g-${gender}`} width={size} height={Math.round(size * PET_H / PET_W)} viewBox={`0 0 ${PET_W} ${PET_H}`}
       style={{ transform: facing < 0 ? 'scaleX(-1)' : undefined }} onPointerDown={onPointerDown} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>

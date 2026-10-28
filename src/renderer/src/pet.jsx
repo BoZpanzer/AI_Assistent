@@ -153,7 +153,7 @@ function Desk() {
   };
   const menu = (e) => { if (!over.current) return; e.preventDefault(); rpc('pet.menu').catch(() => {}); };
 
-  const state = mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : mood.state !== 'idle' ? mood.state : drag ? 'wave' : walk ? 'walk' : idleAct || 'idle';
+  const state = mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : ['talk', 'listen', 'think', 'think_high'].includes(mood.state) ? mood.state : walk ? 'walk' : mood.state !== 'idle' ? mood.state : drag ? 'wave' : idleAct || 'idle';
   const gender = genderFor(settings);
   // Blase neben dem Kopf – auf der Seite mit mehr Platz; die Spitze zeigt Richtung Gesicht
   const bw = mood.bubble?.kind === 'think' ? 120 : 330; const gap = 16; // „denkt …“-Blase nur so breit wie die Punkte
