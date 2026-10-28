@@ -8,7 +8,7 @@ import json, os, sys
 from PIL import Image
 import numpy as np
 
-POSES = ['idle', 'blink', 'talk', 'think', 'listen', 'wave', 'happy', 'oops', 'sleep', 'walk1', 'walk2']
+POSES = ['idle', 'blink', 'talk', 'think', 'listen', 'wave', 'happy', 'oops', 'sleep', 'lean', 'walk1', 'walk2']
 OUT_W, OUT_H = 400, 600
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

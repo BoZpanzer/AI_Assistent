@@ -18,7 +18,7 @@ function Desk() {
   const [x, setX] = useState(() => Math.max(40, window.innerWidth - 320));
   const [facing, setFacing] = useState(-1);
   const [walk, setWalk] = useState(null); // { dur }
-  const [idleAct, setIdleAct] = useState(null); // 'wave' | 'sleep'
+  const [idleAct, setIdleAct] = useState(null); // 'wave' | 'lean' | 'sleep'
   const [drag, setDrag] = useState(null);
   const lastActive = useRef(Date.now());
   const over = useRef(false);
@@ -43,6 +43,7 @@ function Desk() {
       if (idleAct === 'sleep') return;
       const r = Math.random();
       if (r < 0.2) { setIdleAct('wave'); setTimeout(() => setIdleAct((a) => (a === 'wave' ? null : a)), 2200); return; }
+      if (r < 0.32) { setIdleAct('lean'); setTimeout(() => setIdleAct((a) => (a === 'lean' ? null : a)), 3500); return; } // kurz nach vorne beugen
       if (cfg.walk === false || r > 0.75) return;
       const max = window.innerWidth - size - 20;
       const target = Math.round(30 + Math.random() * Math.max(10, max - 30));
