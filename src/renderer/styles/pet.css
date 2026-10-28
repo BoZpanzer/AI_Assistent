@@ -90,9 +90,11 @@
 .pet-desk .pet-walker { position: absolute; bottom: 0; }
 .pet-desk .pet-walker .pet-fig { cursor: grab; }
 .pet-desk .pet-walker.drag .pet-fig { cursor: grabbing; }
-.pet-desk .pet-bubble { position: absolute; max-width: 340px; max-height: 240px; overflow: auto; }
+.pet-desk .pet-bubble { position: absolute; max-width: 340px; }
+.pet-desk .pet-bubble-text { max-height: 230px; overflow-y: auto; }
 
 /* Overlay: Figur links, Blase rechts daneben */
 .ov-pet { display: flex; align-items: flex-end; gap: 10px; }
 .ov-pet .pet-fig { flex: none; }
-.ov-pet .pet-bubble { flex: 1; min-width: 0; margin-bottom: 26px; font-size: 13px; max-height: 300px; overflow: hidden; }
+.ov-pet .pet-bubble { flex: 1; min-width: 0; margin-bottom: 26px; font-size: 13px; }
+.ov-pet .pet-bubble-text { max-height: 280px; overflow: hidden; }

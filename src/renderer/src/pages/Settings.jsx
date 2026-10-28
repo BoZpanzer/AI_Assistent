@@ -32,7 +32,8 @@ function PetSettings({ s }) {
       <div class="row gap" style={{ alignItems: 'flex-end' }}>
         <PetFigure gender={genderFor(s)} state={demo} size={96} />
         <div class="col grow" style={{ gap: 2 }}>
-          <Field label="Auf dem Desktop" hint="über der Taskleiste; Klick öffnet JARVIS, ziehen verschiebt, Rechtsklick = Menü"><Toggle checked={p.enabled !== false} onChange={(v) => set({ enabled: v })} /></Field>
+          <Field label="Auf dem Desktop" hint="Fenster zu → die Figur wartet über der Taskleiste. Doppelklick auf sie (oder „Jarvis, zeig dich“) öffnet das Fenster, Doppelklick auf die Figur im Fenster (oder „Fenster zu“) schließt es wieder."><Toggle checked={p.enabled !== false} onChange={(v) => set({ enabled: v })} /></Field>
+          <Field label="Beim Start Fenster öffnen" hint="aus: JARVIS startet nur als Figur"><Toggle checked={p.uiAtStart === true} onChange={(v) => set({ uiAtStart: v })} /></Field>
           <Field label="Läuft herum"><Toggle checked={p.walk !== false} onChange={(v) => set({ walk: v })} /></Field>
           <Field label="Im Overlay beim Zocken"><Toggle checked={p.overlay !== false} onChange={(v) => set({ overlay: v })} /></Field>
           <Field label={`Größe · ${Math.round((p.size || 1) * 100)} %`}><input class="range" type="range" min="0.6" max="1.6" step="0.1" value={p.size || 1} onChange={(e) => set({ size: Number(e.currentTarget.value) })} /></Field>

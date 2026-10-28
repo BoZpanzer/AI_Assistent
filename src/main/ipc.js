@@ -13,7 +13,7 @@ const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'groq.api_key'
  * Single RPC entry point. Only our own app:// frame may call; every method
  * is explicit (no generic service access from the renderer).
  */
-function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay, pet }) {
+function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, overlay, pet }) {
   const pick = async (opts) => {
     const r = await dialog.showOpenDialog(getWin(), opts);
     return r.canceled ? null : r.filePaths;
@@ -693,7 +693,8 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'overlay.toggle': () => overlay?.()?.toggle(),
     // Desktop-Figur
     'pet.mouse': ({ over }) => pet?.()?.setMouse(!!over),
-    'pet.open': () => { showWindow(); },
+    'pet.open': () => setUi(true),
+    'pet.hideUi': () => setUi(false),
     'pet.menu': () => pet?.()?.menu(),
     'pet.signal': ({ kind, on }) => { if (['speaking', 'listening'].includes(kind)) s.bus.emit('pet:signal', { kind, on: !!on }); },
     'overlay.interactive': ({ on }) => overlay?.()?.setInteractive(!!on),

@@ -27,8 +27,21 @@ test('Figur: Eingabe → „denkt“, Antwort live und fertig, Fehler sichtbar �
 test('Figur: Standard-Einstellungen und Schema', () => {
   const { core, cleanup } = tempCore();
   try {
-    assert.deepEqual(core.settings.get('pet'), { enabled: true, walk: true, overlay: true, size: 1 });
+    assert.deepEqual(core.settings.get('pet'), { enabled: true, uiAtStart: false, walk: true, overlay: true, size: 1 });
     core.settings.update({ pet: { size: 1.4, walk: false } });
     assert.equal(core.settings.get('pet').size, 1.4); assert.equal(core.settings.get('pet').walk, false);
+  } finally { cleanup(); }
+});
+
+test('Fenster per Sprache: „zeig dich“ / „Fenster zu“ ohne KI, Fragen zählen nicht', async () => {
+  const { parseWindowCommand: p } = require('../src/main/agent/window-command');
+  for (const t of ['Jarvis, zeig dich', 'öffne das Fenster', 'komm raus', 'öffne Jarvis']) assert.equal(p(t), 'show', t);
+  for (const t of ['Fenster zu', 'versteck dich', 'Hey Jarvis mach das Fenster zu', 'minimier dich', 'geh auf den Desktop']) assert.equal(p(t), 'hide', t);
+  for (const t of ['Wie öffne ich das Fenster?', 'zeig mir meine Termine', 'mach dich bereit', 'Erklär mir die Botlane']) assert.equal(p(t), null, t);
+  const { core, cleanup } = tempCore();
+  try {
+    const ev = []; core.bus.on('ui:window', (d) => ev.push(d));
+    const msg = await core.orchestrator.chat({ conversationId: core.conversations.create('X').id, text: 'Jarvis, Fenster zu', channel: 'voice' });
+    assert.deepEqual(ev, [{ show: false }]); assert.match(msg.content, /Desktop/);
   } finally { cleanup(); }
 });

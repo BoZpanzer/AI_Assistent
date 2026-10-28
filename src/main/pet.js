@@ -6,11 +6,11 @@ const { BrowserWindow, Menu, screen } = require('electron');
  * in dem die JARVIS-Figur herumläuft und in Sprechblasen antwortet. Nur über Figur/Blase nimmt das Fenster
  * die Maus an (pet.mouse). Während ein Spiel läuft, verschwindet sie – dann wohnt sie im Overlay.
  */
-const HEIGHT = 470;
+const HEIGHT = 520;
 
 class Pet {
-  constructor({ core, preload, isDev, showWindow, startVoice }) {
-    this.core = core; this.preload = preload; this.isDev = isDev; this.showWindow = showWindow; this.startVoice = startVoice;
+  constructor({ core, preload, isDev, showWindow, startVoice, uiShown = () => false }) {
+    this.core = core; this.preload = preload; this.isDev = isDev; this.showWindow = showWindow; this.startVoice = startVoice; this.uiShown = uiShown;
     this.win = null; this.visible = false;
     core.bus.on('game:running', () => this.refresh());
     core.bus.on('settings:changed', ({ keys }) => { if (keys.includes('pet') || keys.includes('setupComplete')) this.refresh(); });
@@ -22,7 +22,8 @@ class Pet {
   cfg() { return this.core.settings.get('pet') || {}; }
   shouldShow() {
     if (this.cfg().enabled === false || !this.core.settings.get('setupComplete')) return false;
-    return !this.core.gaming.context.state().gaming;
+    // Ist die Oberfläche offen, steht die Figur dort im Systemstatus; auf dem Desktop nur, solange das Fenster zu ist
+    return !this.core.gaming.context.state().gaming && !this.uiShown();
   }
 
   ensure() {
@@ -65,6 +66,7 @@ class Pet {
     const cfg = this.cfg();
     Menu.buildFromTemplate([
       { label: 'JARVIS öffnen', click: () => this.showWindow() },
+      { label: 'Beim Start Fenster öffnen', type: 'checkbox', checked: cfg.uiAtStart === true, click: (i) => this.core.settings.update({ pet: { uiAtStart: i.checked } }) },
       { label: 'Sprechen', click: () => this.startVoice?.() },
       { type: 'separator' },
       { label: 'Herumlaufen', type: 'checkbox', checked: cfg.walk !== false, click: (i) => this.core.settings.update({ pet: { walk: i.checked } }) },

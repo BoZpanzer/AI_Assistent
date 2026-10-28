@@ -22,12 +22,13 @@ function Desk() {
   const [drag, setDrag] = useState(null);
   const lastActive = useRef(Date.now());
   const over = useRef(false);
+  const lastClick = useRef(0);
 
   const load = () => rpc('settings.get').then(setSettings).catch(() => {});
   useEffect(() => { load(); }, []);
   useEvent('settings:changed', load);
   const cfg = settings?.pet || {};
-  const size = Math.round(120 * Math.max(0.6, Math.min(1.6, cfg.size || 1)));
+  const size = Math.round(150 * Math.max(0.6, Math.min(1.6, cfg.size || 1)));
   const busy = !!(mood.bubble || mood.speaking || mood.listening || mood.flash);
 
   // Aktivität weckt die Figur
@@ -70,7 +71,11 @@ function Desk() {
     const up = () => {
       removeEventListener('pointermove', move); removeEventListener('pointerup', up);
       setDrag(null); lastActive.current = Date.now();
-      if (!start.moved) rpc('pet.open').catch(() => {});
+      if (start.moved) return;
+      // Doppelklick → JARVIS nach vorne holen; einfacher Klick → sie winkt
+      if (Date.now() - lastClick.current < 380) { lastClick.current = 0; rpc('pet.open').catch(() => {}); return; }
+      lastClick.current = Date.now();
+      setIdleAct('wave'); setTimeout(() => setIdleAct((a) => (a === 'wave' ? null : a)), 1600);
     };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   };

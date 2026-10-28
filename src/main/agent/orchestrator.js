@@ -155,6 +155,10 @@ class Orchestrator {
   /** Deterministic answers (no model): game statistics and their spoken/typed entry. */
   deterministic(text) {
     try { const v = this.voiceCommand(text); if (v) return v; } catch (e) { log.debug('voice command', e); }
+    try {
+      const w = require('./window-command').parseWindowCommand(text);
+      if (w) { this.s.bus.emit('ui:window', { show: w === 'show' }); return { text: w === 'show' ? 'Hier bin ich.' : 'Alles klar, ich warte auf dem Desktop.', deterministic: 'window' }; }
+    } catch (e) { log.debug('window command', e); }
     try { return this.s.gaming?.stats?.answer(text) || null; } catch (e) { log.debug('deterministic', e); return null; }
   }
 
