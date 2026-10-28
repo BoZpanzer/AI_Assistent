@@ -123,7 +123,8 @@ class LocalLLM {
   }
   async _step({ system, contents, tools = [], signal, onText = () => {}, json, schema }) {
     const model = this.cfg().model;
-    if (!model || /cloud/i.test(model)) throw new Error('Bitte ein lokal installiertes Ollama-Modell auswählen (keine Cloud-Modelle).');
+    if (!model) throw new Error('Keine lokale KI eingerichtet. Private Fragen (Termine, Finanzen, eigene Daten) beantwortet nur die lokale KI auf deinem PC, damit nichts davon ins Internet geht – Einstellungen → Lokale KI.');
+    if (/cloud/i.test(model)) throw new Error('Bitte ein lokal installiertes Ollama-Modell auswählen (keine Cloud-Modelle).');
     const installed = await this.models(signal);
     if (!installed.includes(model)) throw new Error('Das ausgewählte Modell ist nicht lokal installiert.');
     const details = await this.request('/api/show', { model }, signal);

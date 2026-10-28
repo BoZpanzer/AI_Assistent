@@ -67,12 +67,16 @@ function createWindow() {
   win.loadURL('app://jarvis/index.html');
   win.once('ready-to-show', () => {
     // Nach einem Update immer sichtbar starten (auch wenn „minimiert starten“ aktiv ist)
-    if (justUpdated || !(startHidden || s.startMinimized)) { win.show(); win.focus(); }
+    // Mit Desktop-Figur startet nur die Figur (Doppelklick oder „Jarvis, zeig dich“ holt das Fenster) – außer beim ersten Einrichten
+    const petOnly = s.pet?.enabled !== false && s.pet?.uiAtStart !== true && s.setupComplete;
+    if (justUpdated || !(startHidden || s.startMinimized || petOnly)) { win.show(); win.focus(); }
     if (justUpdated) setTimeout(() => toast('JARVIS aktualisiert', `Version ${VERSION} ist installiert – deine Daten sind unverändert.`), 1500);
   });
   win.on('close', (e) => {
-    if (!quitting && core.settings.get('closeToTray')) { e.preventDefault(); win.hide(); send('window', { visible: false }); }
+    // Mit Desktop-Figur bleibt JARVIS beim Schließen da (die Figur holt das Fenster zurück)
+    if (!quitting && (core.settings.get('closeToTray') || core.settings.get('pet')?.enabled !== false)) { e.preventDefault(); win.hide(); send('window', { visible: false }); }
   });
+  for (const ev of ['show', 'hide', 'minimize', 'restore']) win.on(ev, () => pet?.refresh());
   win.on('show', () => send('window', { visible: true }));
   win.on('minimize', () => send('window', { visible: false, minimized: true }));
   win.on('restore', () => send('window', { visible: true }));
@@ -146,6 +150,19 @@ async function captureScreen({ windowHints = [] } = {}) {
     const img = src.thumbnail;
     return { data: img.toJPEG(85), ...img.getSize(), scope: 'screen' };
   } finally { if (ov) overlay.applyBounds(); if (mc) mapCorner.applyBounds(); }
+}
+
+/** Fenster sicher nach vorne holen (Windows blockiert das sonst aus dem Hintergrund). */
+function bringToFront() {
+  if (!win || win.isDestroyed()) return;
+  showWindow();
+  win.setAlwaysOnTop(true); win.moveTop(); win.focus();
+  setTimeout(() => { if (win && !win.isDestroyed()) win.setAlwaysOnTop(!!core.settings.get('alwaysOnTop')); }, 300);
+}
+/** Oberfläche ein-/ausblenden (Figur-Doppelklick, Sprachbefehl). Ohne Figur nur einblenden. */
+function setUi(show) {
+  if (!win || win.isDestroyed()) return;
+  if (show) bringToFront(); else win.hide();
 }
 
 function showWindow(page) {
@@ -283,12 +300,13 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => cb(['media', 'notifications', 'clipboard-sanitized-write'].includes(perm) && String(details.requestingUrl || '').startsWith('app://jarvis/')));
   session.defaultSession.setPermissionCheckHandler((wc, perm, origin) => ['media', 'notifications', 'clipboard-sanitized-write'].includes(perm) && String(origin || '').startsWith('app://jarvis'));
 
-  registerIpc({ core, getWin: () => win, app, showWindow, overlay: () => overlay, pet: () => pet, quit: () => { quitting = true; app.quit(); }, relaunch: () => { quitting = true; app.relaunch(); app.quit(); } });
+  core.bus.on('ui:window', ({ show }) => setUi(show));
+  registerIpc({ core, getWin: () => win, app, showWindow, setUi, overlay: () => overlay, pet: () => pet, quit: () => { quitting = true; app.quit(); }, relaunch: () => { quitting = true; app.relaunch(); app.quit(); } });
   forwardEvents();
   core.bus.on('game:running', () => applyScanHotkey());
   createWindow();
   if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); mapCorner = new MapCorner({ core, preload: path.join(__dirname, 'preload.js'), isDev, overlay }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
-  if (!isSmoke && !isE2E) { pet = new Pet({ core, preload: path.join(__dirname, 'preload.js'), isDev, showWindow: () => showWindow(), startVoice: () => { showWindow(); send('voice:toggle', {}); } }); setTimeout(() => pet.refresh(), 3000); }
+  if (!isSmoke && !isE2E) { pet = new Pet({ core, preload: path.join(__dirname, 'preload.js'), isDev, showWindow: () => bringToFront(), uiShown: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(), startVoice: () => send('voice:toggle', {}) }); setTimeout(() => pet.refresh(), 3000); }
   if (isE2E) global.__jarvis = { win, core, overlay: () => overlay, mapCorner: () => mapCorner };
   if (isSmoke) runSmoke();
   buildTray();

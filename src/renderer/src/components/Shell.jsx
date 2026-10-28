@@ -6,6 +6,8 @@ import { audio } from '../lib/audio.js';
 import { fmtTime, relDay, ago } from '../lib/format.js';
 import { Modal, Field, Toggle } from './ui.jsx';
 import { MiniChat } from './ChatView.jsx';
+import { PetFigure, genderFor } from './Pet.jsx';
+import { usePetMood } from '../lib/pet-mood.js';
 
 export const PAGES = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
@@ -33,10 +35,6 @@ export function BrandMark() {
 export function Sidebar() {
   const page = useStore((s) => s.page);
   const counts = useStore((s) => s.counts);
-  const voice = useStore((s) => s.voice);
-  const google = useStore((s) => s.google);
-  const secrets = useStore((s) => s.secrets);
-  const online = !!secrets['gemini.api_key'];
   return (
     <aside class="sidebar panel">
       <div class="brand">
@@ -55,13 +53,39 @@ export function Sidebar() {
           </button>
         ))}
       </nav>
-      <div class="sys-status panel">
-        <div class="hud-label" style={{ fontSize: 11.5 }}>System Status</div>
-        <div class={`mini-orb ${online ? '' : 'off'}`} />
-        <div class={`state ${online ? '' : 'warn'}`}>{online ? (voice !== 'off' && voice !== 'standby' ? 'SPRACHMODUS' : 'ONLINE') : 'SETUP'}</div>
-        <div class="small muted">{online ? (google.connected ? 'Lokal · Google verbunden' : 'Lokales Kontrollzentrum') : 'Gemini-Schlüssel fehlt'}</div>
+      <div class="sys-status">
+        <SidebarPet />
       </div>
     </aside>
+  );
+}
+
+/** Die JARVIS-Figur im Systemstatus: hört zu, denkt, spricht wie auf dem Desktop; winkt ab und zu (oder bei Klick). */
+function SidebarPet() {
+  const settings = useStore((s) => s.settings);
+  const mood = usePetMood();
+  const [act, setAct] = useState(null);
+  const play = (a, ms) => { setAct(a); setTimeout(() => setAct((x) => (x === a ? null : x)), ms); };
+  useEffect(() => {
+    let t;
+    const tick = () => { t = setTimeout(tick, 15000 + Math.random() * 20000); if (Math.random() < 0.5) play(Math.random() < 0.6 ? 'wave' : 'lean', 2600); };
+    t = setTimeout(tick, 8000);
+    return () => clearTimeout(t);
+  }, []);
+  const state = mood.state !== 'idle' ? mood.state : act || 'idle';
+  // Figur füllt den Platz unten links (Größe folgt dem Fenster)
+  const box = useRef(null);
+  const [size, setSize] = useState(120);
+  useEffect(() => {
+    const el = box.current; if (!el) return undefined;
+    const ro = new ResizeObserver(([e]) => { const { width, height } = e.contentRect; setSize(Math.max(70, Math.floor(Math.min(width - 8, (height - 6) / 1.5)))); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={box} class="sys-pet" title="Doppelklick: Fenster schließen – JARVIS wartet als Figur auf dem Desktop" onClick={() => play('wave', 1800)} onDblClick={() => rpc('pet.hideUi').catch(() => {})}>
+      <PetFigure gender={genderFor(settings)} state={state} size={size} />
+    </div>
   );
 }
 

@@ -38,7 +38,13 @@ class CloudTts {
   async synthesize(text, { preset = 'standard', speed = 1 } = {}) {
     const t = String(text || '').trim();
     if (!t) throw new Error('Kein Text');
-    if (!this.available(t.length)) throw new Error(this.used() + t.length > this.limit() ? 'Gratis-Kontingent der Cloud-Stimme für diesen Monat aufgebraucht' : 'Cloud-Stimme nicht verfügbar');
+    if (!this.available(t.length)) {
+      const why = !this.key() ? 'Kein Google-Schlüssel für die Google-Stimme hinterlegt (Einstellungen → Stimme → „Google-Cloud-Schlüssel“).'
+        : this.used() + t.length > this.limit() ? 'Gratis-Kontingent der Google-Stimme für diesen Monat aufgebraucht – ab dem 1. geht es weiter.'
+          : (this.s.settings.get('cloud') || {}).mode === 'local' ? 'Strikt lokaler Modus ist an – die Google-Stimme ist dann aus (Einstellungen → Gemini / KI → Modus).'
+            : this.pausedUntil > Date.now() ? (this.lastError || 'Google-Stimme kurz pausiert nach einem Fehler – gleich nochmal versuchen.') : 'Google-Stimme ist für private Inhalte gesperrt.';
+      throw new Error(why);
+    }
     const name = this.voiceFor(preset);
     const res = await this.s.fetch(ENDPOINT, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': this.key() },

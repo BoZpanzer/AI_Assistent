@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { ipcMain, dialog, shell, clipboard } = require('electron');
 const logger = require('./core/logger');
 const { friendlyError } = require('./providers/gemini');
+const { technical } = require('./core/errors');
 const log = logger.scope('ipc');
 
 const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'groq.api_key', 'google.tts_api_key', 'riot.api_key', 'pubg.api_key', 'google.client_secret', 'tarkovtracker.token', 'telegram.token', 'github.token'];
@@ -13,7 +14,7 @@ const ALLOWED_SECRETS = ['gemini.api_key', 'gemini.free_api_key', 'groq.api_key'
  * Single RPC entry point. Only our own app:// frame may call; every method
  * is explicit (no generic service access from the renderer).
  */
-function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay, pet }) {
+function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, overlay, pet }) {
   const pick = async (opts) => {
     const r = await dialog.showOpenDialog(getWin(), opts);
     return r.canceled ? null : r.filePaths;
@@ -156,7 +157,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'tasks.openAttachment': ({ ref }) => { if (/^https:\/\//.test(ref)) shell.openExternal(ref); else if (fs.existsSync(ref)) shell.showItemInFolder(ref); },
 
     // --- calendar ---
-    'calendar.list': ({ from, to }) => s.calendar.list(new Date(from), new Date(to)),
+    'calendar.list': ({ from, to }) => s.calendar.list(from ? new Date(from) : new Date(Date.now() - 7 * 864e5), to ? new Date(to) : new Date(Date.now() + 31 * 864e5)),
     'calendar.get': ({ id }) => s.calendar.get(id),
     'calendar.create': (p) => s.calendar.create(p),
     'calendar.update': ({ id, patch }) => s.calendar.update(id, patch),
@@ -693,7 +694,8 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'overlay.toggle': () => overlay?.()?.toggle(),
     // Desktop-Figur
     'pet.mouse': ({ over }) => pet?.()?.setMouse(!!over),
-    'pet.open': () => { showWindow(); },
+    'pet.open': () => setUi(true),
+    'pet.hideUi': () => setUi(false),
     'pet.menu': () => pet?.()?.menu(),
     'pet.signal': ({ kind, on }) => { if (['speaking', 'listening'].includes(kind)) s.bus.emit('pet:signal', { kind, on: !!on }); },
     'overlay.interactive': ({ on }) => overlay?.()?.setInteractive(!!on),
@@ -708,10 +710,11 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
       return await fn(params || {});
     } catch (err) {
       log.warn(`${method} fehlgeschlagen`, err);
-      throw new Error(friendlyError(err));
+      throw new Error(friendlyError(technical(err)));
     }
   });
 }
+
 
 /** End-to-end self test of local subsystems (no external calls). */
 async function selfTest(s) {

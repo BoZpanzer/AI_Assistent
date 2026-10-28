@@ -207,9 +207,10 @@ function PetImage({ art, state, facing, size, handlers }) {
     return blink && art.blink ? art.blink : art.idle;
   };
   const h = Math.round(size * PET_ART_RATIO);
+  // Nur die seitlichen Laufbilder spiegeln – sonst stünde „JARVIS“ auf dem Shirt verkehrt herum
   const fx = !art[state] && ['happy', 'sleep', 'oops', 'listen', 'wave'].includes(state);
   return (
-    <div class={`pet-fig pet-img s-${state}${art[state] ? ' has-pose' : ''}`} style={{ width: size + 'px', height: h + 'px', transform: facing < 0 ? 'scaleX(-1)' : undefined }} {...handlers}>
+    <div class={`pet-fig pet-img s-${state}${art[state] ? ' has-pose' : ''}`} style={{ width: size + 'px', height: h + 'px', transform: facing < 0 && state === 'walk' ? 'scaleX(-1)' : undefined }} {...handlers}>
       <div class="body"><img src={pick()} width={size} height={h} draggable={false} alt="" /></div>
       {fx && <svg class="pet-fx" viewBox="0 0 120 180" width={size} height={h}>
         <g class="zzz" fill="#cfeaf5" font-family="sans-serif" font-weight="700"><text x="84" y="22" font-size="11">z</text><text x="94" y="12" font-size="15">Z</text></g>

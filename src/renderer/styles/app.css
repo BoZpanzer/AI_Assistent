@@ -52,7 +52,7 @@ a:hover { text-decoration: underline; }
 /* ---------- App frame ---------- */
 #app { height: 100%; }
 .frame {
-  position: fixed; inset: 0; display: grid; grid-template-columns: 232px 1fr; gap: 10px; padding: 10px;
+  position: fixed; inset: 0; display: grid; grid-template-columns: 268px 1fr; gap: 10px; padding: 10px;
   background:
     radial-gradient(1200px 700px at 55% 35%, rgba(14, 116, 144, 0.10), transparent 60%),
     linear-gradient(rgba(56, 189, 248, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
@@ -99,7 +99,7 @@ a:hover { text-decoration: underline; }
 .brand-name { font-family: var(--font-hud); font-weight: 700; font-size: 27px; letter-spacing: 1.5px; line-height: 1; }
 .brand-name b { color: var(--cyan); }
 .brand-tag { font-family: var(--font-hud); font-size: 10.5px; letter-spacing: 2.3px; color: var(--text-2); margin-top: 4px; }
-.nav { display: flex; flex-direction: column; gap: 4px; padding: 10px; flex: 1; }
+.nav { display: flex; flex-direction: column; gap: 4px; padding: 10px; flex: 0 0 auto; }
 .nav button {
   display: flex; align-items: center; gap: 16px; height: 50px; padding: 0 16px; border-radius: 10px; border: 1px solid transparent;
   background: transparent; color: var(--text); font-size: 15.5px; cursor: pointer; text-align: left; transition: background .15s, border-color .15s, color .15s;
@@ -109,10 +109,11 @@ a:hover { text-decoration: underline; }
 .nav button.active { background: linear-gradient(90deg, rgba(34, 211, 238, 0.22), rgba(34, 211, 238, 0.08)); border-color: rgba(56, 220, 255, 0.6); color: var(--cyan-2); box-shadow: var(--glow-sm), inset 0 0 12px rgba(34, 211, 238, 0.12); }
 .nav button.active svg { color: var(--cyan-2); }
 .nav .badge { margin-left: auto; }
-.sys-status { margin: 0 10px 10px; padding: 14px 16px; }
+.sys-status { margin: 0 10px 6px; padding: 0; background: none; border: 0; box-shadow: none; flex: 1 1 auto; min-height: 110px; display: flex; }
 .sys-status .mini-orb { width: 66px; height: 66px; border-radius: 50%; margin: 10px 0 6px;
   background: radial-gradient(circle at 50% 50%, #b9f6ff 0%, #22d3ee 22%, rgba(14, 116, 144, 0.55) 48%, rgba(8, 47, 73, 0.2) 66%, transparent 70%);
   box-shadow: 0 0 22px rgba(34, 211, 238, 0.55); border: 1px solid rgba(56, 220, 255, 0.5); animation: breathe 4s ease-in-out infinite; }
+.sys-status .sys-pet { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: flex-end; cursor: pointer; overflow: hidden; }
 .sys-status .mini-orb.off { filter: grayscale(0.9) brightness(0.6); animation: none; }
 .sys-status .state { font-family: var(--font-hud); font-size: 22px; font-weight: 700; color: var(--cyan); letter-spacing: 1px; }
 .sys-status .state.warn { color: var(--yellow); }

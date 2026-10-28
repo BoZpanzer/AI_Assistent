@@ -2,6 +2,16 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.3.1 – Figur steuert das Fenster, Prüfungslauf-Fehler behoben
+
+- **JARVIS startet nur als Figur:** Das Fenster bleibt beim Start zu. Doppelklick auf die Figur (oder „Jarvis, zeig dich“ / „öffne das Fenster“) holt es nach vorne – die Figur steht dann unten links im Fenster. Doppelklick auf sie dort (oder „Fenster zu“ / „versteck dich“) schickt JARVIS zurück auf den Desktop. Das Schließen-X beendet JARVIS nicht mehr. Wer das Fenster beim Start will: Einstellungen → Figur → „Beim Start Fenster öffnen“.
+- **Figur unten links im Fenster** statt „System Status/ONLINE“ – größer, ohne Rahmen, wächst mit dem Fenster.
+- **Shirt-Schrift nicht mehr gespiegelt:** Nur die Laufbilder werden je nach Richtung gespiegelt.
+- **„Trag morgen um 16 Uhr Mathe lernen ein“ ging nicht:** Längere Eintrage-Sätze wurden als Uni-Frage erkannt und landeten bei Gemini, das keine Termine anlegen darf. Jetzt gehen sie wie gewünscht an die lokale KI.
+- **„Ich spiele gerade …“ setzt wieder das aktive Spiel** – das Werkzeug fehlte seit 5.0 in beiden Modellen.
+- **Klare Fehlermeldungen:** Technische Meldungen wie „Provided value cannot be bound to SQLite parameter 1“ oder „Cannot read properties of undefined“ erscheinen nicht mehr; stattdessen steht da, was fehlt. Ohne lokale KI erklärt JARVIS bei privaten Fragen, warum dafür die lokale KI nötig ist. Die Google-Stimme sagt beim Test genau, was fehlt (Schlüssel, Kontingent, lokaler Modus).
+- **Kalender ohne Zeitraum** zeigt jetzt die nächsten Wochen statt „Invalid time value“.
+
 ## 5.3.0 – JARVIS als Figur, nur noch zwei Stimmen
 
 - **JARVIS als Figur auf dem Desktop:** Eine kleine Anime-Figur läuft über der Taskleiste herum, winkt, schläft nach einer Weile ein und antwortet in Sprechblasen. Die Blase schreibt live mit und bleibt stehen, bis du das nächste Mal etwas fragst. Beim Zuhören legt sie den Kopf schief, beim Nachdenken die Hand ans Kinn, beim Sprechen bewegt sie den Mund. Die Figuren sind eigene Anime-Zeichnungen (je 11 Posen: stehen, blinzeln, sprechen, denken, zuhören, winken, freuen, verlegen, schlafen, zwei Laufschritte); bei J.A.R.V.I.S./Standard der Mann, bei Alya die Frau – „Stimme auf Alya“ wechselt beides. Klick öffnet JARVIS, ziehen verschiebt sie, Rechtsklick öffnet ein Menü (Sprechen, Herumlaufen, Ausblenden). Einstellungen → Figur.
