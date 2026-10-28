@@ -12,6 +12,7 @@ class Pet {
   constructor({ core, preload, isDev, showWindow, startVoice, uiShown = () => false, display = () => screen.getPrimaryDisplay() }) {
     this.core = core; this.preload = preload; this.isDev = isDev; this.showWindow = showWindow; this.startVoice = startVoice; this.uiShown = uiShown; this.display = display;
     this.win = null; this.visible = false;
+    this.poll = null; this.lastCur = ''; this.tick = 0;
     core.bus.on('game:running', () => this.refresh());
     core.bus.on('settings:changed', ({ keys }) => { if (keys.includes('pet') || keys.includes('setupComplete')) this.refresh(); });
     screen.on('display-metrics-changed', () => this.applyBounds());
@@ -55,8 +56,30 @@ class Pet {
     const show = this.shouldShow();
     if (show === this.visible) return;
     this.visible = show;
-    if (show) { this.ensure(); this.applyBounds(); this.win.showInactive(); } else if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); }
+    if (show) { this.ensure(); this.applyBounds(); this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.showInactive(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
+    else { this.stopPoll(); if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); } }
   }
+
+  /**
+   * Mauszeiger selbst abfragen statt sich auf weitergeleitete Mausereignisse zu verlassen: Unter Windows bleiben die bei
+   * durchklickbaren Fenstern manchmal ganz aus (z. B. nach Verstecken/Zeigen oder Fokuswechsel) – dann war die Figur nicht mehr greifbar.
+   * Alle 50 ms die Zeigerposition an die Figur melden (nur bei Änderung) und das Fenster ab und zu wieder nach oben holen.
+   */
+  startPoll() {
+    if (this.poll) return;
+    this.poll = setInterval(() => {
+      if (!this.visible || !this.win || this.win.isDestroyed()) return;
+      try {
+        const p = screen.getCursorScreenPoint(); const b = this.win.getBounds();
+        const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
+        const key = inside ? p.x + ',' + p.y : 'out';
+        if (key !== this.lastCur) { this.lastCur = key; this.win.webContents.send('evt', { type: 'pet:cursor', data: inside ? { x: p.x - b.x, y: p.y - b.y } : { x: -1, y: -1 } }); }
+        // andere „immer im Vordergrund“-Fenster (Taskleiste, Overlays) können sie sonst überdecken
+        if (++this.tick % 100 === 0) { this.win.setAlwaysOnTop(true, 'floating'); this.win.moveTop(); }
+      } catch { /* ignore */ }
+    }, 50);
+  }
+  stopPoll() { clearInterval(this.poll); this.poll = null; this.lastCur = ''; }
 
   /** Maus über Figur/Blase → Fenster nimmt Klicks an; sonst geht alles an die Fenster darunter. */
   setMouse(over) {
@@ -78,8 +101,12 @@ class Pet {
     ]).popup({ window: this.win });
   }
 
-  send(type, data) { if (this.visible && this.win && !this.win.isDestroyed()) this.win.webContents.send('evt', { type, data }); }
-  destroy() { try { this.win?.destroy(); } catch { /* ignore */ } }
+  /** Einstellungen/Standby kommen immer an (sonst zeigt sie nach dem Stimmwechsel die alte Figur); Blasen nur, solange sie sichtbar ist. */
+  send(type, data) {
+    if (!this.win || this.win.isDestroyed()) return;
+    if (this.visible || type === 'settings:changed' || type === 'voice:standby') this.win.webContents.send('evt', { type, data });
+  }
+  destroy() { this.stopPoll(); try { this.win?.destroy(); } catch { /* ignore */ } }
 }
 
 module.exports = { Pet };

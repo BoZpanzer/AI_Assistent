@@ -100,6 +100,13 @@
 .pet-desk .pet-walker { position: absolute; bottom: 0; }
 .pet-desk .pet-walker .pet-fig { cursor: grab; }
 .pet-desk .pet-walker.drag .pet-fig { cursor: grabbing; }
+/* Ziehen: hochgehoben, baumelt schräg in Zugrichtung und zappelt; Loslassen: plumpst auf und federt nach */
+.pet-desk .pet-lift { transform-origin: 50% 8%; transition: transform 0.12s ease-out; }
+.pet-desk .pet-walker.drag .pet-lift { transform: translateY(-28px) rotate(var(--tilt, 0deg)); animation: pet-dangle 0.9s ease-in-out infinite; }
+.pet-desk .pet-lift.landed { animation: pet-land 0.55s cubic-bezier(.3,1.6,.5,1) both; transform-origin: 50% 100%; }
+@keyframes pet-dangle { 0%, 100% { translate: 0 0; rotate: -3deg; } 50% { translate: 0 -4px; rotate: 3deg; } }
+@keyframes pet-land { 0% { transform: translateY(-28px) scale(1, 1); } 45% { transform: translateY(0) scale(1.08, 0.9); } 70% { transform: translateY(-6px) scale(0.97, 1.04); } 100% { transform: translateY(0) scale(1, 1); } }
+@media (prefers-reduced-motion: reduce) { .pet-desk .pet-walker.drag .pet-lift, .pet-desk .pet-lift.landed { animation: none; } }
 .pet-desk .pet-bubble-wrap { position: absolute; }
 .pet-desk .pet-bubble { max-width: 340px; }
 .pet-desk .pet-bubble-text { max-height: 230px; overflow-y: auto; }

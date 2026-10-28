@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Settings as Gear, GraduationCap, Globe, Sparkles, CalendarDays, BookOpen, Gamepad2, Monitor, ShieldCheck, Save, Link2, Upload, KeyRound, CircleCheck, CircleX, Database, RefreshCw, Download, Volume2, Trash2, FolderOpen, Bell, Mic, Play, Wrench, Rocket, TriangleAlert, Info, Wallet } from 'lucide-preact';
-import { rpc, useRpc } from '../lib/api.js';
+import { rpc, useRpc, useEvent } from '../lib/api.js';
 import { useStore, setState, guard, toast } from '../lib/store.js';
 import { ChatBar, UpdateModal } from '../components/Shell.jsx';
 import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask, FixText, useNow } from '../components/ui.jsx';
@@ -960,6 +960,10 @@ export function LocalAI({ s }) {
     catch (e) { setError(String(e.message || e)); }
   };
   useEffect(() => { refresh(); }, []);
+  // Ollama gerade erst gestartet/beendet? Solange es nicht erreichbar ist, alle paar Sekunden neu prüfen
+  useEffect(() => { if (status && !status.online) { const t = setInterval(refresh, 5000); return () => clearInterval(t); } return undefined; }, [status?.online]);
+  const [pull, setPull] = useState(null);
+  useEvent('local:pull', (p) => setPull(p));
   const tiers = status?.tiers || [
     { id: 'ultra', model: 'qwen3.5:0.8b', label: 'Ultra-Leicht' },
     { id: 'light', model: 'qwen3.5:2b', label: 'Leicht' },
@@ -970,15 +974,19 @@ export function LocalAI({ s }) {
   const selected = s.localLLM?.model || '';
   const recommended = tiers.find(t => t.id === status?.recommended);
   const install = async model => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setPull(null);
     try {
+      // Ollama installiert, aber nicht gestartet? Dann erst starten – früher war der Knopf dafür einfach grau
+      if (!status?.online) { setPull({ status: 'Ollama wird gestartet …' }); await rpc('local.startOllama'); }
       await rpc('local.installTier', { model });
       await refresh();
       upd({ localLLM: { model } });
       toast('Lokales KI-Modell installiert');
     } catch (e) { setError(String(e.message || e)); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setPull(null); await refresh(); }
   };
+  const already = !!(selected && status?.installed?.includes(selected));
+  const pct = pull?.total ? Math.min(100, Math.floor((pull.completed / pull.total) * 100)) : null;
   return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub="Gemini für allgemeine Chats · Private Daten ausschließlich lokal">
     <p class="small">Gemini bleibt für normale Gespräche aktiv. Private Gespräche verwenden nur Ollama auf diesem Rechner – ohne Cloud-Fallback. Modelle werden erst nach Klick heruntergeladen.</p>
     <Field label="Ollama-Port (nur 127.0.0.1)"><input class="inp" type="number" min="1" max="65535" value={s.localLLM?.port || 11434} onChange={e => upd({ localLLM: { port: Number(e.currentTarget.value) } })} /></Field>
@@ -993,11 +1001,15 @@ export function LocalAI({ s }) {
         options={[{ value: '', label: 'Bitte Modell auswählen' }, ...tiers.map(t => ({ value: t.model, label: t.label + ' · ' + t.model + (status?.installed?.includes(t.model) ? ' ✓ installiert' : '') }))]} />
     </Field>
     <div class="row gap-s mt">
-      <button class="btn sm" disabled={loading || !status?.online || !selected || status?.installed?.includes(selected)} onClick={() => install(selected)}>
-        {loading ? 'Modell wird geladen …' : 'Ausgewähltes Modell herunterladen'}
+      <button class="btn sm" disabled={loading || !selected || already} onClick={() => install(selected)}>
+        {loading ? 'Modell wird geladen …' : already ? '✓ Modell ist installiert' : 'Ausgewähltes Modell herunterladen'}
       </button>
+      {!status?.online && !loading && <button class="btn sm ghost" onClick={async () => { setLoading(true); setError(''); try { setPull({ status: 'Ollama wird gestartet …' }); await rpc('local.startOllama'); await refresh(); toast('Ollama läuft'); } catch (e) { setError(String(e.message || e)); } finally { setLoading(false); setPull(null); } }}>Ollama starten</button>}
       {recommended && <button class="btn sm" disabled={loading} onClick={() => upd({ localLLM: { model: recommended.model } })}>Empfehlung übernehmen</button>}
     </div>
+    {!selected && <p class="tiny muted">Wähle oben zuerst eine Leistungsstufe, dann wird der Download-Knopf frei.</p>}
+    {selected && !already && !loading && status && !status.online && <p class="tiny muted">Ollama läuft gerade nicht – der Download-Knopf startet es automatisch.</p>}
+    {loading && pull && <div class="mt" aria-live="polite"><div class="tiny">{pull.model ? pull.model + ': ' : ''}{pull.status || 'lädt …'}{pct != null ? ' – ' + pct + ' %' : ''}</div>{pct != null && <div style={{ height: 6, borderRadius: 3, background: 'var(--line, #2a3340)', overflow: 'hidden', marginTop: 4 }}><div style={{ width: pct + '%', height: '100%', background: 'var(--accent, #38e1ff)', transition: 'width .3s' }} /></div>}</div>}
     {error && <p class="tiny" role="alert">{error}</p>}
     {status?.exposure && <div class="notice warn small mt" role="alert">{status.exposure}</div>}
     <Field label="Während ein Spiel läuft" hint="Lokale KI konkurriert mit dem Spiel um CPU, RAM und Grafikspeicher">

@@ -6,9 +6,10 @@ import { PetFigure, PetBubble, genderFor, petHeight, bubbleName } from './compon
 import { usePetMood } from './lib/pet-mood.js';
 
 /**
- * Desktop-Figur: durchsichtiger Streifen über der Taskleiste. Die Figur steht am rechten Rand, läuft zum Reden ein Stück
- * nach links (damit die Blase Platz hat) und nach dem Schließen der Blase zurück an den Rand. Dazwischen winkt sie,
- * bummelt herum oder schläft ein. Doppelklick → JARVIS öffnen, ziehen → umsetzen, Rechtsklick → Menü.
+ * Desktop-Figur: durchsichtiger Streifen über der Taskleiste. Die Figur hat einen Stammplatz (Standard: rechter Rand; per Ziehen
+ * nach links, rechts oder in die Mitte versetzbar – wird gemerkt). Am Rand läuft sie zum Reden ein Stück zur Seite (damit die
+ * Blase Platz hat) und nach dem Schließen der Blase zurück. Dazwischen winkt sie, bummelt herum oder schläft ein.
+ * Doppelklick → JARVIS öffnen, ziehen → sie zappelt in der Luft und plumpst am neuen Platz auf, Rechtsklick → Menü.
  * Maus: Nur die sichtbaren Pixel der Figur und die Blase nehmen Klicks an – alles andere geht an die Fenster darunter.
  */
 const SPEED = 90; // px/s
@@ -45,6 +46,8 @@ function Desk() {
   const [walk, setWalk] = useState(null); // { dur }
   const [idleAct, setIdleAct] = useState(null); // 'wave' | 'lean' | 'sleep'
   const [drag, setDrag] = useState(null);
+  const [tilt, setTilt] = useState(0); // Schräglage beim Ziehen (folgt der Mausbewegung)
+  const [landed, setLanded] = useState(0); // Aufplumpsen nach dem Loslassen
   const lastActive = useRef(Date.now());
   const over = useRef(false);
   const lastClick = useRef(0);
@@ -54,9 +57,13 @@ function Desk() {
   const load = () => rpc('settings.get').then(setSettings).catch(() => {});
   useEffect(() => { load(); }, []);
   useEvent('settings:changed', load);
+  // Fenster wird (wieder) gezeigt – Maus-Zustand zurücksetzen (sonst hält sie ihn vom Verstecken und lässt sich nicht mehr greifen)
+  useEvent('pet:shown', () => { over.current = false; setDrag(null); load(); });
   const cfg = settings?.pet || {};
   const size = Math.round(150 * Math.max(0.6, Math.min(1.6, cfg.size || 1)));
-  const home = () => Math.max(10, window.innerWidth - size - EDGE);
+  const edge = () => Math.max(10, window.innerWidth - size - EDGE);
+  // Stammplatz: gemerkte Stelle (Anteil der Bildschirmbreite, Mitte der Figur) oder rechter Rand
+  const home = () => (typeof cfg.homeX === 'number' ? Math.round(Math.min(Math.max(10, cfg.homeX * window.innerWidth - size / 2), window.innerWidth - size - 10)) : edge());
   const busy = !!(mood.bubble || mood.speaking || mood.listening || mood.flash || mood.standby);
 
   /** Zu einer Stelle laufen (Blickrichtung, Laufanimation, CSS-Übergang). */
@@ -78,7 +85,7 @@ function Desk() {
   const hadBubble = useRef(false);
   useEffect(() => {
     const has = !!mood.bubble;
-    if (has && !hadBubble.current && !drag) setX((cur) => { if (cur > home() - TALK_SHIFT + 40) setTimeout(() => walkTo(home() - TALK_SHIFT), 0); return cur; });
+    if (has && !hadBubble.current && !drag) setX((cur) => { if (cur > edge() - TALK_SHIFT + 40) setTimeout(() => walkTo(edge() - TALK_SHIFT), 0); return cur; });
     hadBubble.current = has;
   }, [!!mood.bubble]);
   // Blase von dir geschlossen (× oder „mach die Sprechblase weg“) → zurück an den Rand
@@ -98,8 +105,9 @@ function Desk() {
       if (r < 0.2) { setIdleAct('wave'); setTimeout(() => setIdleAct((a) => (a === 'wave' ? null : a)), 2200); return; }
       if (r < 0.32) { setIdleAct('lean'); setTimeout(() => setIdleAct((a) => (a === 'lean' ? null : a)), 3500); return; }
       if (cfg.walk === false || r > 0.6) return;
-      // kleine Runde in Randnähe und wieder zurück – sie bleibt grundsätzlich rechts
-      const out = home() - 80 - Math.random() * 260;
+      // kleine Runde um den Stammplatz und wieder zurück
+      const d = 80 + Math.random() * 260; const h = home();
+      const out = h + d > window.innerWidth - size - 10 ? h - d : h - d < 10 ? h + d : (Math.random() < 0.5 ? h - d : h + d);
       walkTo(out);
       setTimeout(() => { if (!hadBubble.current && !over.current) walkTo(home()); }, (Math.abs(out - x) / SPEED + 4 + Math.random() * 6) * 1000);
     };
@@ -108,42 +116,62 @@ function Desk() {
   }, [busy, drag, idleAct, x, size, cfg.walk, walk]);
 
   // Auflösung geändert → wieder an den Rand
-  useEffect(() => { const f = () => setX(() => home()); addEventListener('resize', f); return () => removeEventListener('resize', f); }, [size]);
+  useEffect(() => { const f = () => setX(() => home()); addEventListener('resize', f); return () => removeEventListener('resize', f); }, [size, cfg.homeX]);
+  // Stammplatz geladen/geändert → dorthin laufen (nicht während sie redet)
+  useEffect(() => { if (settings && !hadBubble.current && !drag) walkTo(home()); }, [cfg.homeX, !!settings]);
 
-  // Maus nur über sichtbaren Pixeln (Figur) oder der Blase annehmen
+  // Maus nur über sichtbaren Pixeln (Figur) oder der Blase annehmen. Der Hauptprozess meldet die Zeigerposition (pet:cursor);
+  // die Mausereignisse des Fensters selbst gelten zusätzlich. „über mir“ wird regelmäßig neu gemeldet, falls es mal auseinanderläuft.
+  const sent = useRef(0);
   const setOver = (on) => {
-    if (over.current === on) return;
-    over.current = on; rpc('pet.mouse', { over: on }).catch(() => {});
+    const now = Date.now();
+    if (over.current === on && !(on && now - sent.current > 1500)) return;
+    over.current = on; sent.current = now; rpc('pet.mouse', { over: on }).catch(() => {});
     if (on && idleAct === 'sleep') { lastActive.current = Date.now(); setIdleAct(null); }
   };
+  const hit = (cx, cy) => {
+    const b = bubbleBox.current?.getBoundingClientRect();
+    if (b && cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom) return true;
+    const el = walker.current?.querySelector('.pet-lift')?.firstElementChild; const r = el?.getBoundingClientRect();
+    if (!r || cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return false;
+    const img = el.querySelector('img');
+    if (!img) return true; // Ersatzfigur (SVG): ganze Fläche
+    let fx = (cx - r.left) / r.width; const fy = (cy - r.top) / r.height;
+    if (getComputedStyle(el).transform.startsWith('matrix(-1')) fx = 1 - fx;
+    return alphaAt(img, fx, fy) > 40;
+  };
+  const dragRef = useRef(null); dragRef.current = drag;
+  useEvent('pet:cursor', (d) => { if (!dragRef.current) setOver(d.x >= 0 && hit(d.x, d.y)); });
   useEffect(() => {
-    const move = (e) => {
-      if (drag) return;
-      const b = bubbleBox.current?.getBoundingClientRect();
-      if (b && e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) return setOver(true);
-      const el = walker.current?.firstElementChild; const r = el?.getBoundingClientRect();
-      if (!r || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return setOver(false);
-      const img = el.querySelector('img');
-      if (!img) return setOver(true); // Ersatzfigur (SVG): ganze Fläche
-      let fx = (e.clientX - r.left) / r.width; const fy = (e.clientY - r.top) / r.height;
-      if (getComputedStyle(el).transform.startsWith('matrix(-1')) fx = 1 - fx;
-      setOver(alphaAt(img, fx, fy) > 40);
-    };
-    const leave = () => setOver(false);
+    const move = (e) => { if (!dragRef.current) setOver(hit(e.clientX, e.clientY)); };
+    const leave = () => { if (!dragRef.current) setOver(false); };
     addEventListener('mousemove', move); document.addEventListener('mouseleave', leave);
     return () => { removeEventListener('mousemove', move); document.removeEventListener('mouseleave', leave); };
-  }, [drag, idleAct]);
+  }, [idleAct]);
 
   const down = (e) => {
-    if (e.button !== 0 || !over.current) return;
+    if (e.button !== 0 || !(over.current || hit(e.clientX, e.clientY))) return;
     e.preventDefault();
     const start = { mx: e.clientX, x, moved: false };
     clearTimeout(walkTimer.current); setWalk(null); setDrag(start);
-    const move = (ev) => { const dx = ev.clientX - start.mx; if (Math.abs(dx) > 4) start.moved = true; setX(Math.min(Math.max(0, start.x + dx), window.innerWidth - size)); };
+    let lastX = e.clientX; let tiltT = null;
+    const move = (ev) => {
+      const dx = ev.clientX - start.mx; if (Math.abs(dx) > 4) start.moved = true;
+      // Schräg in Zugrichtung baumeln, beruhigt sich, wenn die Maus stillsteht
+      const v = ev.clientX - lastX; lastX = ev.clientX;
+      if (start.moved) { setTilt(Math.max(-14, Math.min(14, -v * 1.2))); setFacing(v < 0 ? -1 : v > 0 ? 1 : facing); clearTimeout(tiltT); tiltT = setTimeout(() => setTilt(0), 120); }
+      setX(Math.min(Math.max(0, start.x + dx), window.innerWidth - size));
+    };
     const up = () => {
       removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      clearTimeout(tiltT); setTilt(0);
       setDrag(null); lastActive.current = Date.now();
-      if (start.moved) return;
+      if (start.moved) {
+        // Aufplumpsen, kurz freuen – und den neuen Platz merken (links, rechts, Mitte …)
+        setLanded((n) => n + 1); setIdleAct('happy'); setTimeout(() => setIdleAct((a) => (a === 'happy' ? null : a)), 1500);
+        setX((cur) => { rpc('settings.update', { pet: { homeX: Math.round(((cur + size / 2) / window.innerWidth) * 1000) / 1000 } }).catch(() => {}); return cur; });
+        return;
+      }
       // Doppelklick → JARVIS nach vorne holen; einfacher Klick → sie winkt
       if (Date.now() - lastClick.current < 380) { lastClick.current = 0; rpc('pet.open').catch(() => {}); return; }
       lastClick.current = Date.now();
@@ -151,9 +179,9 @@ function Desk() {
     };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   };
-  const menu = (e) => { if (!over.current) return; e.preventDefault(); rpc('pet.menu').catch(() => {}); };
+  const menu = (e) => { if (!(over.current || hit(e.clientX, e.clientY))) return; e.preventDefault(); rpc('pet.menu').catch(() => {}); };
 
-  const state = mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : ['talk', 'listen', 'think', 'think_high'].includes(mood.state) ? mood.state : walk ? 'walk' : mood.state !== 'idle' ? mood.state : drag ? 'wave' : idleAct || 'idle';
+  const state = drag?.moved || (drag && tilt) ? 'oops' : mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : ['talk', 'listen', 'think', 'think_high'].includes(mood.state) ? mood.state : walk ? 'walk' : mood.state !== 'idle' ? mood.state : drag ? 'wave' : idleAct || 'idle';
   const gender = genderFor(settings);
   // Blase neben dem Kopf – auf der Seite mit mehr Platz; die Spitze zeigt Richtung Gesicht
   const bw = mood.bubble?.kind === 'think' ? 120 : 330; const gap = 16; // „denkt …“-Blase nur so breit wie die Punkte
@@ -173,7 +201,9 @@ function Desk() {
         </div>
       )}
       <div ref={walker} class={`pet-walker ${drag ? 'drag' : ''}`} style={{ left: x + 'px', transition: walk ? `left ${walk.dur}s linear` : 'none' }}>
+        <div key={landed} class={`pet-lift ${landed && !drag ? 'landed' : ''}`} style={{ '--tilt': tilt + 'deg' }}>
         <PetFigure gender={gender} state={state} facing={facing} size={size} onPointerDown={down} onContextMenu={menu} />
+        </div>
       </div>
     </div>
   );
