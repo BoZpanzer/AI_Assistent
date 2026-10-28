@@ -64,7 +64,7 @@ bootstrap().then(() => {
   const s = getState().settings;
   playStartSound(s.startSound);
   if (s.voice?.wakeWord) audio.setWakeWord(true);
-  on('voice:standby', ({ pending, wakeEnabled }) => { if (!pending) toast('Standby – sag „Hey Jarvis“, um weiterzumachen.'); else if (wakeEnabled) toast('Wake-Word „Hey Jarvis“ wurde eingeschaltet.'); });
+  on('voice:standby', ({ on: st, wakeEnabled }) => { if (st) toast(wakeEnabled ? 'Standby – sag „Hey Jarvis“ (neuer Chat) oder tipp mir.' : 'Standby – Mikrofon-Knopf oder Tippen weckt mich.'); });
   on('settings:changed', async ({ keys }) => { if (keys.includes('voice')) { const { rpc } = await import('./lib/api.js'); const st = await rpc('settings.get'); audio.setWakeWord(!!st.voice.wakeWord); } });
   on('voice:toggle', () => audio.toggleVoice());
 });

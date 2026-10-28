@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { PET_ART, PET_ART_RATIO } from '../pet-art.js';
 /**
  * JARVIS als Anime-Figur (eigene Gestaltung, reines SVG): feste Outline, Cel-Shading, Kopf zu Körper ca. 1 : 5,
@@ -185,33 +185,69 @@ export const petHeight = (gender, size) => Math.round(size * (PET_ART[gender]?.i
  * Figur aus Bildern (eigene Zeichnungen, siehe scripts/import-pet-art.py): je Zustand ein Bild, Bewegung durch Umschalten –
  * Blinzeln (idle↔blink), Mund (talk↔idle), Laufen (walk1↔walk2) – plus Atmen/Wippen per CSS. Fehlt ein Bild, nimmt sie idle + Effekt.
  */
+/** Zustand der App → Bild-Pose (mit Abwechslung: zwei Denkposen, Freuen oder erklärende Geste). */
+function poseFor(state, art) {
+  if (state === 'walk') return art.walk1 ? 'walk' : 'idle';
+  if (state === 'think_high') return art.think_high ? 'think_high' : art.think ? 'think' : 'idle';
+  if (state === 'gesture' && !art.gesture) return art.happy ? 'happy' : 'idle';
+  if (state === 'lean' && !art.lean) return art.listen ? 'listen' : 'idle';
+  return art[state] ? state : 'idle';
+}
+
+/**
+ * Bild-Figur mit Übergängen: Zwischen Grundhaltung und Pose spielt je ein Zwischenbild (idle_to_<pose>), von einer Pose zur
+ * nächsten geht es über die Grundhaltung. Dauerschleifen: Blinzeln (idle), Mund (talk), Schritte (walk).
+ */
 function PetImage({ art, state, facing, size, handlers }) {
-  const [tick, setTick] = useState(0);
-  const [blink, setBlink] = useState(false);
+  const [frame, setFrame] = useState('idle');
+  const cur = useRef('idle'); // Pose, in der sie gerade „steht“
+  const timers = useRef([]);
+  const clear = () => { timers.current.forEach(clearTimeout); timers.current = []; };
+  const later = (fn, ms) => timers.current.push(setTimeout(fn, ms));
   useEffect(() => { Object.values(art).forEach((src) => { const i = new Image(); i.src = src; }); }, [art]);
+  useEffect(() => () => clear(), []);
   useEffect(() => {
-    if (state !== 'talk' && state !== 'walk') return undefined;
-    const t = setInterval(() => setTick((n) => n + 1), state === 'talk' ? 150 + Math.random() * 60 : 300);
-    return () => clearInterval(t);
-  }, [state]);
-  useEffect(() => {
-    let t; let u;
-    const loop = () => { t = setTimeout(() => { setBlink(true); u = setTimeout(() => { setBlink(false); loop(); }, 140); }, 2600 + Math.random() * 3200); };
-    loop();
-    return () => { clearTimeout(t); clearTimeout(u); };
-  }, []);
-  const pick = () => {
-    if (state === 'walk') return art.walk2 && tick % 2 ? art.walk2 : art.walk1 || art.idle;
-    if (state === 'talk') return tick % 2 ? art.idle : art.talk || art.idle;
-    if (art[state]) return art[state];
-    return blink && art.blink ? art.blink : art.idle;
-  };
+    const target = poseFor(state, art);
+    clear();
+    const has = (k) => !!art[k];
+    const via = (p) => (p === 'walk' ? 'idle_to_walk1' : 'idle_to_' + p);
+    // Weg: aktuelle Pose → (Zwischenbild) → idle → (Zwischenbild) → Ziel
+    const seq = [];
+    const fast = (p) => p === 'talk' || p === 'blink';
+    if (cur.current !== target) {
+      if (cur.current !== 'idle') { if (has(via(cur.current))) seq.push([via(cur.current), fast(cur.current) ? 60 : 110]); seq.push(['idle', target === 'idle' ? 0 : 90]); }
+      if (target !== 'idle') { if (has(via(target))) seq.push([via(target), fast(target) ? 60 : 110]); }
+    }
+    let t = 0;
+    for (const [f, ms] of seq) { later(() => setFrame(f), t); t += ms; }
+    later(() => { cur.current = target; settle(target); }, t);
+    function settle(p) {
+      if (p === 'walk') { let n = 0; const step = () => { setFrame(n++ % 2 && art.walk2 ? 'walk2' : 'walk1'); later(step, 300); }; step(); return; }
+      if (p === 'talk') {
+        // Mund: talk → halb → zu → halb … mit leicht wechselndem Tempo
+        const cyc = ['talk', 'idle_to_talk', 'idle', 'idle_to_talk'].filter(has); let n = 0;
+        const step = () => { setFrame(cyc[n++ % cyc.length]); later(step, 70 + Math.random() * 50); }; step(); return;
+      }
+      setFrame(p);
+      if (p === 'idle' && has('blink')) {
+        const blink = () => later(() => {
+          const b = has('idle_to_blink') ? ['idle_to_blink', 'blink', 'idle_to_blink', 'idle'] : ['blink', 'idle'];
+          b.forEach((f, k) => later(() => setFrame(f), k * 60));
+          later(blink, b.length * 60);
+        }, 2600 + Math.random() * 3400);
+        blink();
+      }
+    }
+    return () => clear();
+  }, [state, art]);
   const h = Math.round(size * PET_ART_RATIO);
+  const src = art[frame] || art.idle;
+  const walking = /walk/.test(frame);
   // Nur die seitlichen Laufbilder spiegeln – sonst stünde „JARVIS“ auf dem Shirt verkehrt herum
-  const fx = !art[state] && ['happy', 'sleep', 'oops', 'listen', 'wave'].includes(state);
+  const fx = state === 'sleep' || (!art[state] && ['happy', 'oops', 'listen', 'wave'].includes(state));
   return (
-    <div class={`pet-fig pet-img s-${state}${art[state] ? ' has-pose' : ''}`} style={{ width: size + 'px', height: h + 'px', transform: facing < 0 && state === 'walk' ? 'scaleX(-1)' : undefined }} {...handlers}>
-      <div class="body"><img src={pick()} width={size} height={h} draggable={false} alt="" /></div>
+    <div class={`pet-fig pet-img s-${state}${art[state] ? ' has-pose' : ''}`} style={{ width: size + 'px', height: h + 'px', transform: facing < 0 && walking ? 'scaleX(-1)' : undefined }} {...handlers}>
+      <div class="body"><img src={src} width={size} height={h} draggable={false} alt="" /></div>
       {fx && <svg class="pet-fx" viewBox="0 0 120 180" width={size} height={h}>
         <g class="zzz" fill="#cfeaf5" font-family="sans-serif" font-weight="700"><text x="84" y="22" font-size="11">z</text><text x="94" y="12" font-size="15">Z</text></g>
         <g class="waves" fill="none" stroke="#38e1ff" stroke-width="2.2" stroke-linecap="round"><path d="M92 26 Q98 34 92 42" /><path d="M98 21 Q106 34 98 47" /></g>
@@ -225,6 +261,8 @@ function PetImage({ art, state, facing, size, handlers }) {
 export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 100, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
   const art = PET_ART[gender];
   if (art?.idle) return <PetImage art={art} state={state} facing={facing} size={size} handlers={{ onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }} />;
+  // Ersatzfigur kennt nur die Grundposen
+  state = { think_high: 'think', gesture: 'happy', lean: 'listen' }[state] || state;
   return (
     <svg class={`pet-fig s-${state} g-${gender}`} width={size} height={Math.round(size * PET_H / PET_W)} viewBox={`0 0 ${PET_W} ${PET_H}`}
       style={{ transform: facing < 0 ? 'scaleX(-1)' : undefined }} onPointerDown={onPointerDown} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
@@ -239,18 +277,25 @@ export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 
   );
 }
 
-/** Sprechblase: „denkt …“ oder die Antwort (Markdown). Bleibt, bis die nächste Eingabe kommt. */
-export function PetBubble({ bubble, html, onClose, tail = 'down', style }) {
+/**
+ * Sprechblase neben dem Kopf: Name oben, Text darunter (Markdown), kleine Spitze Richtung Figur.
+ * side: 'left' = Blase links der Figur (Strich nach rechts), 'right' = rechts der Figur (Strich nach links).
+ * Bleibt bis zur nächsten Eingabe, × oder „mach die Sprechblase weg“.
+ */
+export function PetBubble({ bubble, html, onClose, side = 'right', name = 'JARVIS', style }) {
   if (!bubble) return null;
   return (
-    <div class={`pet-bubble tail-${tail}`} style={style}>
-      {onClose && <button class="pet-bubble-x" title="Schließen" onClick={onClose}>×</button>}
+    <div class={`pet-bubble side-${side}${bubble.error ? ' is-error' : ''}`} style={style}>
+      <div class="pet-bubble-head"><span class="pet-bubble-name">{name}</span>{onClose && <button class="pet-bubble-x" title="Sprechblase schließen" onClick={onClose}>×</button>}</div>
       {bubble.kind === 'think'
         ? <div class="pet-dots"><i /><i /><i /></div>
         : <div class="pet-bubble-text" dangerouslySetInnerHTML={{ __html: html }} />}
     </div>
   );
 }
+
+/** Name in der Blase: Alya bzw. J.A.R.V.I.S. */
+export const bubbleName = (settings) => (settings?.voice?.tts?.preset === 'alya' ? 'Alya' : 'J.A.R.V.I.S.');
 
 /** Text für die Blase kürzen (Overlay kann nicht scrollen). */
 export function bubbleText(t, max = 700) {

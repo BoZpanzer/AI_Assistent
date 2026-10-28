@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, safeStorage, shell, protocol, net, globalShortcut, session, powerMonitor, desktopCapturer, screen } = require('electron');
 const { Overlay, MapCorner } = require('./overlay');
 const { Pet } = require('./pet');
+const { FullscreenWatch } = require('./fullscreen');
 const { createCore } = require('./app-core');
 const { registerIpc } = require('./ipc');
 const logger = require('./core/logger');
@@ -32,7 +33,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-let win = null; let tray = null; let core = null; let quitting = false; let overlay = null; let mapCorner = null; let pet = null;
+let win = null; let tray = null; let core = null; let quitting = false; let overlay = null; let mapCorner = null; let pet = null; let fsWatch = null;
 const startHidden = process.argv.includes('--hidden') && !process.argv.includes('--updated');
 const justUpdated = process.argv.includes('--updated');
 
@@ -96,7 +97,7 @@ function send(type, data) {
   if (mapCorner?.visible && /^(game:|settings:)/.test(type)) mapCorner.send(type, data);
   if (pet?.visible && PET_EVENTS.has(type)) pet.send(type, data);
 }
-const PET_EVENTS = new Set(['pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'overlay:thinking', 'overlay:answer', 'settings:changed']);
+const PET_EVENTS = new Set(['pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'pet:clear', 'voice:standby', 'overlay:thinking', 'overlay:answer', 'settings:changed']);
 
 /** Ausschnitt um den Mauszeiger (Item-Scanner): ~640×420 echte Pixel, Overlays kurz ausgeblendet. */
 async function captureAroundCursor() {
@@ -237,7 +238,7 @@ function forwardEvents() {
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
     'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:standby',
     'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'tts:stream', 'data:imported', 'cloud:usage', 'cloud:state', 'game:stats', 'privacy:capture',
-    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'omnivoice:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data', 'pet:input', 'pet:delta', 'pet:answer', 'pet:signal'];
+    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'omnivoice:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data', 'pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'pet:clear'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }
 
@@ -306,7 +307,15 @@ app.whenReady().then(async () => {
   core.bus.on('game:running', () => applyScanHotkey());
   createWindow();
   if (!isSmoke) { overlay = new Overlay({ core, preload: path.join(__dirname, 'preload.js'), isDev }); mapCorner = new MapCorner({ core, preload: path.join(__dirname, 'preload.js'), isDev, overlay }); core.bus.on('overlay:visible', (d) => send('overlay:visible', d)); }
-  if (!isSmoke && !isE2E) { pet = new Pet({ core, preload: path.join(__dirname, 'preload.js'), isDev, showWindow: () => bringToFront(), uiShown: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(), startVoice: () => send('voice:toggle', {}) }); setTimeout(() => pet.refresh(), 3000); }
+  if (!isSmoke && !isE2E) { pet = new Pet({ core, preload: path.join(__dirname, 'preload.js'), isDev, showWindow: () => bringToFront(), uiShown: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(), display: () => (win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay()), startVoice: () => send('voice:toggle', {}) }); setTimeout(() => pet.refresh(), 3000); }
+  // Vollbild-Programme erkennen: Figur ausblenden; unbekannte Vollbild-Spiele zählen als Zocken
+  if (!isSmoke && !isE2E) {
+    fsWatch = new FullscreenWatch({
+      displays: () => screen.getAllDisplays().flatMap((d) => [d.bounds, { x: Math.round(d.bounds.x * d.scaleFactor), y: Math.round(d.bounds.y * d.scaleFactor), width: Math.round(d.bounds.width * d.scaleFactor), height: Math.round(d.bounds.height * d.scaleFactor) }]),
+      onChange: (info) => core.gaming.context.setFullscreen(info),
+    });
+    fsWatch.start();
+  }
   if (isE2E) global.__jarvis = { win, core, overlay: () => overlay, mapCorner: () => mapCorner };
   if (isSmoke) runSmoke();
   buildTray();
@@ -367,7 +376,7 @@ async function runSmoke() {
 
 app.on('second-instance', () => { showWindow(); });
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); mapCorner?.destroy(); pet?.destroy(); try { core?.stop(); } catch { /* ignore */ } });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); mapCorner?.destroy(); pet?.destroy(); fsWatch?.stop(); try { core?.stop(); } catch { /* ignore */ } });
 app.on('window-all-closed', () => { /* tray keeps running */ });
 process.on('uncaughtException', (e) => logger.scope('main').error('Unerwarteter Fehler', e));
 process.on('unhandledRejection', (e) => logger.scope('main').error('Unbehandelte Ablehnung', e));

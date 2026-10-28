@@ -66,7 +66,10 @@ class Speech {
     const gaming = !!this.s.localLLM?.isGaming?.();
     const gmode = this.s.cloudTts?.gamingMode() || 'cloud';
     const force = ['omnivoice', 'cloud'].includes(override.engine) ? override.engine : null;
-    const order = force ? [force] : gaming && gmode === 'cloud' ? ['cloud'] : ['omnivoice', 'cloud'];
+    // KI-Stimme lädt noch (z. B. kurz nach dem Zocken, ~30 s)? Dann überbrückt die Google-Stimme, statt dass du wartest.
+    const omniLoading = !gaming && this.s.omnivoice?.allowed?.() && !this.s.omnivoice.status?.().running;
+    if (omniLoading) this.s.omnivoice.warmup?.();
+    const order = force ? [force] : gaming && gmode === 'cloud' ? ['cloud'] : omniLoading && !priv && this.s.cloudTts?.available(said.length) ? ['cloud', 'omnivoice'] : ['omnivoice', 'cloud'];
     const errors = [];
     for (const engine of order) {
       if (engine === 'cloud') {

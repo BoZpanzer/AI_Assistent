@@ -2,6 +2,21 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.3.2 – Standby, neue Sprechblase, Figur verschwindet bei Vollbild
+
+- **Standby-Modus:** „Jarvis, geh in den Standby“ (auch „Standby“, „schlaf jetzt“, „mach Pause“, „gute Nacht Jarvis“) oder Rechtsklick auf die Figur → „Standby“. Die Figur legt sich an den Rand und schläft (Zzz), der Sprachmodus ist komplett aus und JARVIS liest nichts mehr vor. „Hey Jarvis“ weckt ihn mit einem neuen Chat, eine getippte Nachricht oder der Mikrofon-Knopf auch.
+- **Figur zeigt Stimmung:** Nach jeder Antwort passt die Pose zum Inhalt – freut sich bei „erledigt“/gewonnen/Dank, macht „oops“ bei Fehlern, Niederlagen oder Warnungen, gestikuliert bei Erklärungen und Listen, winkt bei Begrüßung und beugt sich neugierig vor, wenn JARVIS dir eine Rückfrage stellt (bleibt so, bis du antwortest). Bei schweren Fragen („warum“, „erklär“, „plan“, lange Fragen) nimmt sie beim Nachdenken die zweite Denkpose. Läuft ohne KI, kostet nichts.
+- **Flüssigere Figur:** Neue Bilder mit Übergängen – zwischen Grundhaltung und jeder Pose spielt ein Zwischenbild, Mund und Blinzeln laufen über drei Stufen statt hart umzuschalten. Neu: zweite Denkpose (Arm vor dem Oberkörper) und eine erklärende Geste nach Antworten; beim Losgehen dreht sie sich erst seitlich.
+- **Sprechblase neu:** neben dem Kopf mit kleiner Spitze Richtung Figur, Name oben (Alya / J.A.R.V.I.S.), farbiger Akzent, bei Fehlern orange. „Mach mal die Sprechblase weg“ schließt sie.
+- **Figur läuft:** Sie wohnt am rechten Rand. Zum Reden läuft sie ein Stück nach links, damit die Blase Platz hat; schließt du die Blase, läuft sie zurück an den Rand.
+- **Vollbild:** Bei Videos, Präsentationen und Spielen im Vollbild verschwindet die Figur. Unbekannte Spiele (Vollbild oder laufendes Steam-Spiel ohne eigenes Profil) zählen jetzt auch als Zocken: KI-Stimme wird entladen, die Google-Stimme spricht, das Overlay erscheint.
+- **Klicks gehen durch:** Nur die sichtbare Figur und die Blase fangen die Maus – daneben (z. B. zwischen den Haaren) klickst du wieder auf das, was dahinter liegt.
+- **Mehrere Bildschirme:** Die Figur erscheint auf dem Bildschirm, auf dem zuletzt das JARVIS-Fenster war.
+- **Nach dem Zocken** überbrückt die Google-Stimme die ~30 s, in denen die KI-Stimme noch lädt (nur nicht-private Antworten).
+- **Groq-Minutenlimit:** Ist nur das Limit pro Minute erreicht, wartet JARVIS die paar Sekunden, statt teuer auf Gemini auszuweichen.
+- **Falsch eingeordnet?** Unter jeder Antwort steht, wer geantwortet hat (🔒 lokal / ☁ Groq / ☁ Gemini). Ein Klick auf „↺ privat“ bzw. „↺ öffentlich“ beantwortet dieselbe Frage nochmal auf dem anderen Weg.
+- **Weniger GitHub-Minuten:** Tests und Windows-Build laufen nur noch im PR (nicht nochmal nach dem Mergen), ein neuer Push bricht den alten Lauf ab, reine Text-/Doku-Änderungen bauen gar nicht.
+
 ## 5.3.1 – Figur steuert das Fenster, Prüfungslauf-Fehler behoben
 
 - **JARVIS startet nur als Figur:** Das Fenster bleibt beim Start zu. Doppelklick auf die Figur (oder „Jarvis, zeig dich“ / „öffne das Fenster“) holt es nach vorne – die Figur steht dann unten links im Fenster. Doppelklick auf sie dort (oder „Fenster zu“ / „versteck dich“) schickt JARVIS zurück auf den Desktop. Das Schließen-X beendet JARVIS nicht mehr. Wer das Fenster beim Start will: Einstellungen → Figur → „Beim Start Fenster öffnen“.

@@ -87,6 +87,7 @@ function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, 
     'gemini.usageReport': ({ days } = {}) => s.gemini.usageReport(Math.min(31, Math.max(1, Number(days) || 7))),
 
     // --- chat ---
+    'chat.reroute': ({ conversationId, messageId, as }) => { s.orchestrator.reroute({ conversationId, messageId, as }).catch((e) => log.error('chat.reroute', e)); return { ok: true }; },
     'chat.retry': ({ conversationId, messageId }) => { s.orchestrator.retry({ conversationId, messageId }).catch((e) => log.error('chat.retry', e)); return { ok: true }; },
     'chat.send': async ({ conversationId, text, attachments }) => {
       const files = [];
@@ -591,7 +592,8 @@ function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, 
       s.orchestrator.chat({ conversationId, text, attachments: [], channel: 'voice' }).catch((e) => log.error('chat', e));
       return { text, started: true };
     },
-    'voice.state': () => ({ state: s.voice.state }),
+    'voice.state': () => ({ state: s.voice.state, standby: !!s.voice.standby }),
+    'voice.standby': ({ on } = {}) => (on === false ? { woke: s.voice.wake('ui') } : s.voice.requestStandby({ reason: 'Menü' })),
 
     // --- system ---
     'system.status': () => s.system.status(),

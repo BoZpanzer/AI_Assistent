@@ -71,7 +71,10 @@ class GameContext {
       discussed: discussed && this.profile(discussed.id) && (!active || discussed.id !== active.id) && Date.now() - Date.parse(discussed.at) < 30 * 60000
         ? { ...discussed, profile: this.profile(discussed.id) } : null,
       running: this.running.map((id) => this.profile(id)).filter(Boolean),
-      gaming: this.running.length > 0,
+      // Auch unbekannte Spiele zählen: Steam meldet ein laufendes Spiel ohne Profil, oder ein Vollbild-Programm, das kein Browser/Player ist
+      gaming: this.running.length > 0 || !!this.otherGame,
+      otherGame: this.otherGame || null,
+      fullscreen: !!this.fullscreen?.fullscreen,
     };
     return out;
   }
@@ -96,6 +99,17 @@ class GameContext {
   }
 
   emit() { this.bus.emit('game:context', this.state()); }
+
+  /** Meldung der Vollbild-Erkennung (main/fullscreen.js). */
+  setFullscreen(info) {
+    const wasGaming = this.state().gaming; const wasFs = !!this.fullscreen?.fullscreen;
+    this.fullscreen = info || null;
+    this.otherGame = this.steamOther || (info?.gameLike ? 'fullscreen:' + info.proc : null);
+    if (wasGaming !== this.state().gaming || wasFs !== !!info?.fullscreen) {
+      this.bus.emit('game:running', { running: this.running, started: [], stopped: [], gaming: this.state().gaming, fullscreen: !!info?.fullscreen });
+      this.emit();
+    }
+  }
 
   start() {
     this.stop();
@@ -127,12 +141,15 @@ class GameContext {
       try {
         const appid = await this.steam.runningAppId();
         if (appid) { const sp = this.profiles().find((p) => p.steamAppId === appid || (p.steamAppIds || []).includes(appid)); if (sp && !found.includes(sp.id)) found.push(sp.id); }
+        this.steamOther = appid && !this.profiles().some((p) => p.steamAppId === appid || (p.steamAppIds || []).includes(appid)) ? 'steam:' + appid : null;
       } catch { /* ignore */ }
     }
     const prev = this.running;
+    const wasGaming = this.state().gaming;
     const changed = found.join(',') !== prev.join(',');
     this.running = found;
-    if (changed) this.bus.emit('game:running', { running: this.running, started: found.filter((x) => !prev.includes(x)), stopped: prev.filter((x) => !found.includes(x)) });
+    this.otherGame = this.steamOther || (this.fullscreen?.gameLike ? 'fullscreen:' + this.fullscreen.proc : null);
+    if (changed || wasGaming !== this.state().gaming) this.bus.emit('game:running', { running: this.running, started: found.filter((x) => !prev.includes(x)), stopped: prev.filter((x) => !found.includes(x)), gaming: this.state().gaming });
     const st = safeJson(this.getState('active'), null);
     const explicit = st && ['explicit', 'manual'].includes(st.source);
     if (found.length) {

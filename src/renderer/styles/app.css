@@ -502,3 +502,7 @@ a:hover { text-decoration: underline; }
 .bc-sub { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .bucket-row { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 .scope-tag { opacity: .8; }
+
+.route-btn { margin-left: 6px; border: 0; background: none; color: var(--text-3); font-size: 11px; cursor: pointer; padding: 0 4px; border-radius: 4px; opacity: 0; transition: opacity .15s; }
+.msg:hover .route-btn, .route-btn:focus { opacity: 1; }
+.route-btn:hover { color: var(--cyan-2); background: rgba(56, 225, 255, 0.1); }
