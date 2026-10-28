@@ -36,7 +36,7 @@ class Pet {
     if (this.win && !this.win.isDestroyed()) return this.win;
     this.win = new BrowserWindow({
       width: 800, height: HEIGHT, show: false, frame: false, transparent: true, backgroundColor: '#00000000', resizable: false, movable: false, minimizable: false, maximizable: false,
-      skipTaskbar: true, focusable: false, hasShadow: false, alwaysOnTop: true, title: 'JARVIS Figur',
+      skipTaskbar: true, focusable: false, hasShadow: false, alwaysOnTop: true, title: 'JARVIS Figur', type: process.platform === 'win32' ? 'toolbar' : undefined, // toolbar: nie in Alt+Tab/Taskleiste, auch wenn sie kurz fokussierbar ist
       webPreferences: { preload: this.preload, contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, devTools: this.isDev },
     });
     this.win.setAlwaysOnTop(true, 'screen-saver');
@@ -62,7 +62,7 @@ class Pet {
     if (show === this.visible) return;
     log.info(show ? 'Figur wird gezeigt' : 'Figur wird versteckt (Fenster offen, Spiel oder Vollbild)');
     this.visible = show;
-    if (show) { this.ensure(); this.applyBounds(); this.mouse = false; this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.showInactive(); this.raise(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
+    if (show) { this.ensure(); this.applyBounds(); this.mouse = false; this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.setFocusable(false); this.win.showInactive(); this.raise(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
     else { this.stopPoll(); if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); } }
   }
 
@@ -82,8 +82,10 @@ class Pet {
         if (key !== this.lastCur) { this.lastCur = key; this.win.webContents.send('evt', { type: 'pet:cursor', data: inside ? { x: p.x - b.x, y: p.y - b.y } : { x: -1, y: -1 } }); }
         // andere „immer im Vordergrund“-Fenster (Taskleiste, Overlays) können sie sonst überdecken
         ++this.tick;
-        if (this.tick % 20 === 0) this.win.setIgnoreMouseEvents(!this.mouse, { forward: true }); // Windows verliert den Durchklick-Zustand gern nach Verstecken/Zeigen – einmal pro Sekunde neu setzen
-        if (this.tick % 100 === 0) this.raise();
+        // Windows verliert den Durchklick-Zustand gern nach Verstecken/Zeigen – einmal pro Sekunde neu setzen (nicht, solange die Maus
+        // auf der Figur ist: ein Stilwechsel mitten im Klick/Ziehen bricht den Mausgriff ab)
+        if (this.tick % 20 === 0 && !this.mouse) this.win.setIgnoreMouseEvents(true, { forward: true });
+        if (this.tick % 100 === 0 && !this.mouse) this.raise();
       } catch { /* ignore */ }
     }, 50);
   }
@@ -101,8 +103,11 @@ class Pet {
   /** Maus über Figur/Blase → Fenster nimmt Klicks an; sonst geht alles an die Fenster darunter. */
   setMouse(over) {
     if (!this.win || this.win.isDestroyed()) return;
-    this.mouse = !!over;
+    const was = this.mouse; this.mouse = !!over;
     this.win.setIgnoreMouseEvents(!over, { forward: true });
+    // Windows liefert Linksklicks an nicht-fokussierbare Fenster nicht zuverlässig aus (Rechtsklick schon) – darum ist die Figur
+    // fokussierbar, solange die Maus über ihr ist (wie das Overlay im Bedienmodus). Sonst stiehlt sie keinem Programm den Fokus.
+    if (was !== this.mouse) { try { this.win.setFocusable(this.mouse); } catch { /* ignore */ } }
   }
 
   menu() {

@@ -2,6 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.5.1 – Figur mit Linksklick greifbar
+
+- **Behoben:** Linksklick und Ziehen gingen nur, nachdem man vorher einmal rechts geklickt hatte. Windows gibt Linksklicks an Fenster, die keinen Fokus annehmen dürfen, nicht zuverlässig weiter (Rechtsklick schon). Die Figur darf jetzt den Fokus annehmen, solange die Maus über ihr ist, und gibt ihn danach wieder ab; in Alt+Tab und der Taskleiste taucht sie trotzdem nicht auf.
+- Während die Maus auf der Figur ist, wird das Fenster nicht mehr umgestellt (das konnte einen Klick oder das Ziehen mittendrin abbrechen).
+
 ## 5.5.0 – Lokale KI deutlich schneller, VRAM-Messung, Figur bleibt greifbar
 
 - **Lokale KI: Minuten → Sekunden:** Jede private Anfrage schickte ≈ 8.400 Tokens an Anweisungen und Werkzeug-Beschreibungen mit, bei einem Kontext von nur 4.096 – der Anfang wurde abgeschnitten und das Einlesen dauerte auf der CPU Minuten. Jetzt gehen nur der Grundstock und die zum Thema passenden Werkzeuge mit (Folgefragen wie „ja, bitte“ behalten das Thema), der Kontext ist 8.192 groß (im Spielmodus 4.096), und das versteckte „Nachdenken“ der Qwen-Modelle ist abgeschaltet.
