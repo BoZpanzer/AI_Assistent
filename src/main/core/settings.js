@@ -60,6 +60,8 @@ const SCHEMA = {
       features: { type: 'object', additionalProperties: false, properties: Object.fromEntries(['chat', 'vision', 'research', 'lol', 'news', 'games', 'wikilist', 'study', 'diagnostics', 'meta'].map((k) => [k, { type: 'boolean' }])) },
       maxConcurrent: { type: 'integer', minimum: 1, maximum: 4 }, maxOutputTokens: { type: 'integer', minimum: 256, maximum: 16384 }, timeoutSec: { type: 'integer', minimum: 10, maximum: 300 } } },
     birthdaysToCalendar: { type: 'boolean' },
+    // Desktop-Figur (läuft über der Taskleiste, spricht in Sprechblasen; beim Zocken im Overlay)
+    pet: { type: 'object', properties: { enabled: { type: 'boolean' }, walk: { type: 'boolean' }, overlay: { type: 'boolean' }, size: { type: 'number', minimum: 0.6, maximum: 1.6 } } },
     // Voice
     voice: { type: 'object', properties: {
       inputDeviceId: { type: 'string', maxLength: 300 }, outputDeviceId: { type: 'string', maxLength: 300 },
@@ -153,6 +155,7 @@ const DEFAULTS = {
   availableModels: [], temperature: 0.7, webSearch: true, autoMemory: true, brainAutoLearn: true, birthdaysToCalendar: true, aiCostMode: 'spar', aiBudget: { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, hardStop: true, warnPct: 80, brake: true, usdToEur: 0.86 },
   // Sparsamer Standard: Gemini nur für nicht private Nachrichten; Sprache komplett lokal
   cloud: { mode: 'hybrid', economy: true, liteGamingChat: true, groq: { enabled: true, model: 'openai/gpt-oss-120b' }, features: { chat: true, vision: true, research: true, lol: true, news: true, games: true, wikilist: true, study: true, diagnostics: true, meta: true }, maxConcurrent: 2, maxOutputTokens: 4096, timeoutSec: 90 },
+  pet: { enabled: true, walk: true, overlay: true, size: 1 },
   voice: { inputDeviceId: 'default', outputDeviceId: 'default', speakReplies: false,
     wakeWord: false, wakeSensitivity: 0.5, pushToTalkKey: 'Control+Alt+Space',
     tts: { engine: 'auto', preset: 'standard', voice: 'de_DE-thorsten-medium', style: 'neutral', speaker: 0, speed: 1, pitch: 1, volume: 1, short: true, windowsVoice: '', omni: { enabled: true, preload: true, quality: 'fast', voices: {}, seeds: {} }, cloud: { whileGaming: 'cloud', monthlyChars: 950000, voices: {} } },

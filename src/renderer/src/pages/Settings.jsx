@@ -6,6 +6,7 @@ import { ChatBar, UpdateModal } from '../components/Shell.jsx';
 import { Panel, Field, Toggle, Select, StatusDot, Modal, Spinner, ask, FixText, useNow } from '../components/ui.jsx';
 import { audio, playStartSound } from '../lib/audio.js';
 import { ago } from '../lib/format.js';
+import { PetFigure, genderFor } from '../components/Pet.jsx';
 
 export const upd = (patch) => guard(() => rpc('settings.update', patch));
 
@@ -20,6 +21,27 @@ const PRESET_SAMPLES = {
 const OMNI_ATTR = 'Eigenschaften (Englisch, durch Komma): male/female · child/teenager/young adult/middle-aged/elderly · very low/low/moderate/high/very high pitch · whisper';
 
 /**
+/** Desktop-Figur: läuft über der Taskleiste, antwortet in Sprechblasen; beim Zocken sitzt sie im Overlay. Figur folgt der Stimme. */
+function PetSettings({ s }) {
+  const p = s.pet || {};
+  const set = (patch) => upd({ pet: patch });
+  const [demo, setDemo] = useState('wave');
+  useEffect(() => { const states = ['wave', 'talk', 'think', 'walk', 'happy', 'idle']; let i = 0; const t = setInterval(() => setDemo(states[++i % states.length]), 2200); return () => clearInterval(t); }, []);
+  return (
+    <Panel icon={Sparkles} title="Figur" sub="JARVIS als kleine Figur auf dem Desktop – spricht in Sprechblasen, die bis zu deiner nächsten Eingabe stehen bleiben. Männlich bei J.A.R.V.I.S./Standard, weiblich bei Alya.">
+      <div class="row gap" style={{ alignItems: 'flex-end' }}>
+        <PetFigure gender={genderFor(s)} state={demo} size={96} />
+        <div class="col grow" style={{ gap: 2 }}>
+          <Field label="Auf dem Desktop" hint="über der Taskleiste; Klick öffnet JARVIS, ziehen verschiebt, Rechtsklick = Menü"><Toggle checked={p.enabled !== false} onChange={(v) => set({ enabled: v })} /></Field>
+          <Field label="Läuft herum"><Toggle checked={p.walk !== false} onChange={(v) => set({ walk: v })} /></Field>
+          <Field label="Im Overlay beim Zocken"><Toggle checked={p.overlay !== false} onChange={(v) => set({ overlay: v })} /></Field>
+          <Field label={`Größe · ${Math.round((p.size || 1) * 100)} %`}><input class="range" type="range" min="0.6" max="1.6" step="0.1" value={p.size || 1} onChange={(e) => set({ size: Number(e.currentTarget.value) })} /></Field>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 /**
  * Stimme beim Zocken: OmniVoice braucht die Grafikkarte – darum spricht dann standardmäßig die Google-Stimme
  * (Chirp 3 HD, gratis bis 1 Mio. Zeichen/Monat, JARVIS hört vorher auf). Private Antworten kommen dann nur ins Overlay.
@@ -144,6 +166,7 @@ export function Settings() {
         <div class="settings-grid">
           <General s={s} />
           <VoiceSettings s={s} />
+          <PetSettings s={s} />
           <Speech s={s} />
           <LocalAI s={s} />
           <Ai s={s} secrets={secrets} />

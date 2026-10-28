@@ -1,9 +1,11 @@
 import { render } from 'preact';
 import { useEffect, useState, useRef } from 'preact/hooks';
-import { Timer, Trophy, Sparkles, Swords, Bell, Mic, Loader2, MapPin, Check, X } from 'lucide-preact';
+import { Timer, Trophy, Sparkles, Swords, Bell, Mic, MapPin, Check, X } from 'lucide-preact';
 import { rpc, on, useRpc, useEvent } from './lib/api.js';
 import { renderMarkdown } from './lib/markdown.js';
 import { countdown } from './lib/format.js';
+import { PetFigure, PetBubble, genderFor } from './components/Pet.jsx';
+import { usePetMood } from './lib/pet-mood.js';
 
 /** Kompaktes In-Game-HUD. Nur lesen/anzeigen – keine Eingaben nötig. */
 function useNow(ms) { const [n, set] = useState(Date.now()); useEffect(() => { const t = setInterval(() => set(Date.now()), ms); return () => clearInterval(t); }, [ms]); return n; }
@@ -47,6 +49,18 @@ function OvScan({ s }) {
   </>);
 }
 
+/** JARVIS als Figur mit Sprechblase – die Blase bleibt bis zur nächsten Eingabe stehen. */
+function OvPet({ settings }) {
+  const mood = usePetMood({ max: 600 });
+  if (settings?.pet?.overlay === false) return null;
+  return (
+    <div class="ov-pet">
+      <PetFigure gender={genderFor(settings)} state={mood.state} size={78} />
+      {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} tail="left" /> : <span class="grow" />}
+    </div>
+  );
+}
+
 /** Objective-Timer: Spielzeit zwischen den Abfragen (alle 5 s) lokal weiterzählen. */
 function Objectives({ live, now }) {
   const drift = Math.max(0, (now - (live.receivedAt || now)) / 1000);
@@ -66,20 +80,15 @@ function Objectives({ live, now }) {
 function App() {
   const [game, setGame] = useState(null);
   const [voice, setVoice] = useState('off');
-  const [answer, setAnswer] = useState(null);
-  const [thinking, setThinking] = useState(null);
   const [champ, setChamp] = useState(null);
   const [review, setReview] = useState(null);
   const [live, setLive] = useState(null);
   const [interactive, setInteractive] = useState(false);
-  const [transcript, setTranscript] = useState(null);
   const [notes, setNotes] = useState([]);
   const now = useNow(1000);
   useEffect(() => { rpc('game.state').then(setGame); rpc('voice.state').then((v) => setVoice(v.state)); }, []);
   useEvent('game:context', setGame);
   useEvent('voice:state', (v) => setVoice(v.state));
-  useEvent('overlay:thinking', (d) => { setThinking(d.question); setAnswer(null); });
-  useEvent('overlay:answer', (d) => { setThinking(null); setAnswer({ ...d, at: Date.now() }); });
   useEvent('lol:champselect', (d) => setChamp(d?.active ? d : null));
   useEvent('lol:review', (d) => setReview({ ...d, at: Date.now() }));
   useEvent('lol:live', (d) => setLive(d?.connected ? d : null));
@@ -88,7 +97,6 @@ function App() {
   useEvent('eft:raid', setRaid);
   useEvent('eft:scan', (d) => setScan({ ...d, shownAt: Date.now() }));
   useEvent('overlay:interactive', (d) => setInteractive(d.interactive));
-  useEvent('voice:transcript', (t) => { if (t.role === 'done') setTimeout(() => setTranscript(null), 6000); else setTranscript((x) => ({ ...(x || {}), [t.role]: t.text })); });
   useEvent('notification', (n) => { setNotes((x) => [{ ...n, at: Date.now() }, ...x].slice(0, 3)); });
   const active = game?.active?.profile;
   const [timers] = useRpc('game.timers', {}, { events: ['game:timers'], initial: [] });
@@ -98,7 +106,6 @@ function App() {
   const open = (timers || []).filter((t) => !t.fired || Date.parse(t.endsAt) > now - 600000).sort((a, b) => (a.game === active?.id ? -1 : 0) - (b.game === active?.id ? -1 : 0)).slice(0, 5);
   const highlights = (prog?.items || []).filter((x) => x.status === 'in_progress' || x.status === 'todo' || (!x.status && x.value)).slice(0, 5);
   const recentNotes = notes.filter((n) => now - n.at < 20000);
-  const showAnswer = answer && now - answer.at < 25000;
   return (
     <div class={`ov ${interactive ? 'interactive' : ''}`}>
       <div class="ov-top">
@@ -109,9 +116,7 @@ function App() {
         {voice !== 'off' && voice !== 'standby' && <span class={`ov-voice ${voice}`}><Mic size={12} />{({ listening: 'hört zu', speaking: 'spricht', thinking: 'denkt', connecting: 'verbindet' })[voice] || voice}</span>}
       </div>
 
-      {thinking && <Card icon={Loader2} title="Schaue mir das an …"><div class="ov-dim">{thinking}</div></Card>}
-      {showAnswer && <Card icon={Sparkles} title="JARVIS" accent="var(--cyan)" onClose={() => setAnswer(null)}><div class="ov-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer.answer) }} /></Card>}
-      {transcript?.assistant && <Card icon={Mic} title="JARVIS sagt"><div class="ov-dim">{transcript.assistant}</div></Card>}
+      <OvPet settings={cfg} />
 
       {champ && (
         <Card icon={Swords} title={`Championauswahl${champ.myChampion ? ' · ' + champ.myChampion : ''}`} accent="#c8aa6e">

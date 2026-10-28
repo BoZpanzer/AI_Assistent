@@ -15,7 +15,7 @@ fs.mkdirSync(ortDst, { recursive: true });
 for (const f of ['ort.wasm.min.mjs', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) fs.copyFileSync(path.join(ortSrc, f), path.join(ortDst, f));
 
 const opts = {
-  entryPoints: { app: r('src', 'renderer', 'src', 'main.jsx'), overlay: r('src', 'renderer', 'src', 'overlay.jsx') },
+  entryPoints: { app: r('src', 'renderer', 'src', 'main.jsx'), overlay: r('src', 'renderer', 'src', 'overlay.jsx'), pet: r('src', 'renderer', 'src', 'pet.jsx') },
   bundle: true, format: 'esm', target: 'chrome130', outdir: r('src', 'renderer', 'dist'), splitting: true, chunkNames: 'chunks/[name]-[hash]',
   jsx: 'automatic', jsxImportSource: 'preact', minify: !watch, sourcemap: watch ? 'inline' : false,
   legalComments: 'eof', logLevel: 'info', define: { 'process.env.NODE_ENV': watch ? '"development"' : '"production"' },

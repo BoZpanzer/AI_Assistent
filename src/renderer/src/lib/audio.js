@@ -154,14 +154,14 @@ class AudioEngine {
     this.localConversationId = conversationId;
     this.mode.local = true;
     this.stopSpeech(); // eigene Sprachausgabe nicht mit aufnehmen
-    setState({ voice: 'recording-local' });
+    setState({ voice: 'recording-local' }); this.petSignal('listening', true);
     toast('Ich höre zu (lokal). Nach einer Sprechpause wird automatisch erkannt – oder Mikrofon erneut drücken.');
   }
   cancelLocalVoice(msg) {
     if (!this.mode.local) return;
     this.mode.local = false; this.localChunks = []; this.localSamples = 0; this.localConversationId = null;
     this.releaseMicIfIdle();
-    setState({ voice: 'off' });
+    setState({ voice: 'off' }); this.petSignal('listening', false);
     if (msg) toast(msg);
   }
   async stopLocalVoice() {
@@ -175,7 +175,7 @@ class AudioEngine {
     this.localSamples = 0;
     this.localConversationId = null;
     this.releaseMicIfIdle();
-    setState({ voice: 'transcribing-local' });
+    setState({ voice: 'transcribing-local' }); this.petSignal('listening', false);
     try {
       if (samples < 8000) throw new Error('Bitte mindestens eine halbe Sekunde sprechen.');
       if (getState().conversationId !== conversationId) throw new Error('Chat wurde gewechselt; Aufnahme nicht gesendet.');
@@ -190,7 +190,7 @@ class AudioEngine {
       toast(String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, ''), 'error', 8500);
     } finally {
       this.localWorking = false;
-      setState({ voice: 'off' });
+      setState({ voice: 'off' }); this.petSignal('listening', false);
     }
   }
   /** Optional local wake word (openWakeWord in a worker). */
@@ -311,11 +311,20 @@ class AudioEngine {
     const gain = ctx.createGain(); gain.gain.value = Math.max(0, Math.min(1.5, volume));
     const an = ctx.createAnalyser(); an.fftSize = 256;
     src.connect(gain); gain.connect(an); an.connect(ctx.destination);
-    this.tts.src = src; this.playing = true;
+    this.tts.src = src; this.playing = true; this.petSignal('speaking', true);
     const data = new Float32Array(an.fftSize);
     const meter = setInterval(() => { an.getFloatTimeDomainData(data); let sum = 0; for (const v of data) sum += v * v; const rms = Math.sqrt(sum / data.length); this.outRms = rms; setState({ outLevel: Math.min(1, rms * 6) }); }, 80);
     try { await new Promise((res) => { src.onended = res; src.start(); }); }
-    finally { clearInterval(meter); if (this.tts.src === src) this.tts.src = null; this.playing = false; }
+    finally { clearInterval(meter); if (this.tts.src === src) this.tts.src = null; this.playing = false; this.petSignal('speaking', false, 450); }
+  }
+
+  /** Figur (Desktop/Overlay) wissen lassen, ob JARVIS gerade zuhört oder spricht – nur bei Änderung, Ende leicht verzögert (Satzpausen). */
+  petSignal(kind, on, delay = 0) {
+    this.pet = this.pet || {};
+    const p = (this.pet[kind] = this.pet[kind] || { on: false, t: null });
+    clearTimeout(p.t);
+    const apply = () => { if (p.on === on) return; p.on = on; rpc('pet.signal', { kind, on }).catch(() => {}); };
+    if (!on && delay) p.t = setTimeout(() => { if (kind !== 'speaking' || !this.playing) apply(); }, delay); else apply();
   }
 
   stopSpeech() {
