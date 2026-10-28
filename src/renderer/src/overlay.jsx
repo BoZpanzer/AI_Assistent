@@ -56,7 +56,7 @@ function OvPet({ settings }) {
   return (
     <div class="ov-pet">
       <PetFigure gender={genderFor(settings)} state={mood.state} size={92} />
-      {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} side="right" name={bubbleName(settings)} style={{ '--link': '16px' }} /> : <span class="grow" />}
+      {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} side="right" name={bubbleName(settings)} /> : <span class="grow" />}
     </div>
   );
 }

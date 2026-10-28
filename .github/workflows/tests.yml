@@ -2,9 +2,12 @@ name: Tests
 
 # Schnell und günstig (Linux): Unit-, Integrations- und Wake-Word-Tests bei jedem Push.
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:

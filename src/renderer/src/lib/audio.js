@@ -20,6 +20,12 @@ class AudioEngine {
     this.localHeard = 0; this.localSilentMs = 0;
     on('tts:speak', ({ text, private: priv }) => this.speakLocal(text, { private: !!priv }));
     on('tts:stream', (d) => this.speakStream(d));
+    // Standby: Aufnahme aus, nichts mehr vorlesen (die Bestätigung kurz danach darf noch), nur das Wake-Word hört
+    on('voice:standby', ({ on: st }) => {
+      this.standby = !!st; this.standbyAt = Date.now();
+      if (st) { this.cancelLocalVoice(); setState({ voice: 'standby' }); } else if (getState().voice === 'standby') setState({ voice: 'off' });
+    });
+    rpc('voice.state').then((v) => { if (v?.standby) { this.standby = true; setState({ voice: 'standby' }); } }).catch(() => {});
     this.tts = { gen: 0, ctx: null, src: null, speaking: false, warned: false };
   }
 
@@ -126,6 +132,18 @@ class AudioEngine {
   async toggleVoice() {
     if (this.localWorking) { toast('JARVIS erkennt deine Sprache noch lokal.'); return; }
     if (this.mode.local) return this.stopLocalVoice();
+    if (this.standby) return this.wakeUp('mic');
+    return this.startVoice();
+  }
+  /** „Hey Jarvis“ bzw. Mikrofon-Knopf: aus dem Standby mit neuem Chat, sonst normal zuhören. */
+  async wakeUp(source = 'wake') {
+    if (this.standby || !getState().conversationId) {
+      try {
+        if (this.standby) await rpc('voice.standby', { on: false });
+        this.standby = false;
+        const c = await rpc('conv.create', {}); setState({ conversationId: c.id, voice: 'off' });
+      } catch { /* trotzdem zuhören */ }
+    }
     return this.startVoice();
   }
   async startVoice() {
@@ -210,7 +228,7 @@ class AudioEngine {
         if (m.type === 'ready') this.wakeReady = true;
         if (m.type === 'error') { toast('Wake-Word: ' + m.error, 'error'); this.setWakeWord(false); }
         // Eigene Sprachausgabe/Wiedergabe darf das Wake-Word nicht auslösen (Rückkopplung)
-        if (m.type === 'wake' && !this.mode.local && !this.localWorking && !this.playing && !this.tts.speaking) { chime(); this.startVoice(); }
+        if (m.type === 'wake' && !this.mode.local && !this.localWorking && !this.playing && !this.tts.speaking) { chime(); this.wakeUp('wake'); }
         if (m.type === 'score') setState({ wakeScore: m.score });
       };
       this.wakeWorker.postMessage({ type: 'init', threshold: sens });
@@ -227,6 +245,7 @@ class AudioEngine {
    */
   async speakLocal(text, { full = false, override = null, private: priv = false, preview = false } = {}) {
     if (!text || this.mode.local) return;
+    if (this.standby && !preview && Date.now() - (this.standbyAt || 0) > 2000) return;
     this.stopSpeech();
     const gen = this.tts.gen;
     const st = { ...(getState().settings?.voice?.tts || {}), ...(override || {}) };
@@ -257,6 +276,7 @@ class AudioEngine {
    */
   speakStream({ id, text, done, private: priv }) {
     if (this.mode.local || id === this.stoppedStream) return; // abgebrochen → Rest nicht mehr vorlesen
+    if (this.standby) return;
     if (!this.sq || this.sq.id !== id) {
       this.stopSpeech();
       this.sq = { id, gen: this.tts.gen, queue: [], ended: false, chain: Promise.resolve(), wake: null, private: !!priv };

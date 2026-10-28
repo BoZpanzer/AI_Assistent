@@ -9,8 +9,8 @@ const { BrowserWindow, Menu, screen } = require('electron');
 const HEIGHT = 520;
 
 class Pet {
-  constructor({ core, preload, isDev, showWindow, startVoice, uiShown = () => false }) {
-    this.core = core; this.preload = preload; this.isDev = isDev; this.showWindow = showWindow; this.startVoice = startVoice; this.uiShown = uiShown;
+  constructor({ core, preload, isDev, showWindow, startVoice, uiShown = () => false, display = () => screen.getPrimaryDisplay() }) {
+    this.core = core; this.preload = preload; this.isDev = isDev; this.showWindow = showWindow; this.startVoice = startVoice; this.uiShown = uiShown; this.display = display;
     this.win = null; this.visible = false;
     core.bus.on('game:running', () => this.refresh());
     core.bus.on('settings:changed', ({ keys }) => { if (keys.includes('pet') || keys.includes('setupComplete')) this.refresh(); });
@@ -23,7 +23,9 @@ class Pet {
   shouldShow() {
     if (this.cfg().enabled === false || !this.core.settings.get('setupComplete')) return false;
     // Ist die Oberfläche offen, steht die Figur dort im Systemstatus; auf dem Desktop nur, solange das Fenster zu ist
-    return !this.core.gaming.context.state().gaming && !this.uiShown();
+    const st = this.core.gaming.context.state();
+    // Bei Vollbild-Programmen (Video, Präsentation, Spiel) und beim Zocken verschwindet sie
+    return !st.gaming && !st.fullscreen && !this.uiShown();
   }
 
   ensure() {
@@ -44,7 +46,8 @@ class Pet {
 
   applyBounds() {
     if (!this.win || this.win.isDestroyed()) return;
-    const wa = screen.getPrimaryDisplay().workArea;
+    // Auf dem Bildschirm, auf dem zuletzt das JARVIS-Fenster war (sonst Hauptbildschirm)
+    let wa; try { wa = (this.display() || screen.getPrimaryDisplay()).workArea; } catch { wa = screen.getPrimaryDisplay().workArea; }
     this.win.setBounds({ x: wa.x, y: wa.y + wa.height - HEIGHT, width: wa.width, height: HEIGHT });
   }
 
@@ -68,6 +71,7 @@ class Pet {
       { label: 'JARVIS öffnen', click: () => this.showWindow() },
       { label: 'Beim Start Fenster öffnen', type: 'checkbox', checked: cfg.uiAtStart === true, click: (i) => this.core.settings.update({ pet: { uiAtStart: i.checked } }) },
       { label: 'Sprechen', click: () => this.startVoice?.() },
+      this.core.voice?.standby ? { label: 'Aufwecken', click: () => this.core.voice.wake('menu') } : { label: 'Standby (schlafen)', click: () => this.core.voice?.requestStandby({ reason: 'Menü' }) },
       { type: 'separator' },
       { label: 'Herumlaufen', type: 'checkbox', checked: cfg.walk !== false, click: (i) => this.core.settings.update({ pet: { walk: i.checked } }) },
       { label: 'Figur ausblenden', click: () => this.core.settings.update({ pet: { enabled: false } }) },

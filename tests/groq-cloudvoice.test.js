@@ -138,12 +138,33 @@ test('Spiel startet → OmniVoice wird entladen; Spiel endet → wieder vorgelad
     core.omnivoice.status = () => ({ running: true });
     core.omnivoice.stop = () => { stopped++; };
     core.omnivoice.warmup = () => { warmed++; };
+    core.gaming.context.running = ['league'];
     core.bus.emit('game:running', { running: ['league'], started: ['league'], stopped: [] });
     assert.equal(stopped, 1);
+    core.gaming.context.running = [];
     core.bus.emit('game:running', { running: [], started: [], stopped: ['league'] });
     assert.equal(warmed, 1);
     core.settings.update({ voice: { tts: { cloud: { whileGaming: 'omnivoice' } } } });
+    core.gaming.context.running = ['league'];
     core.bus.emit('game:running', { running: ['league'], started: ['league'], stopped: [] });
     assert.equal(stopped, 1, 'bei „KI-Stimme auch beim Zocken“ bleibt sie geladen');
+  } finally { cleanup(); }
+});
+
+test('Groq-Minutenlimit (429, wenige Sekunden): kurz warten und nochmal Groq – kein Ausweichen auf Gemini', async () => {
+  let n = 0;
+  const fetch = async (url) => {
+    if (!String(url).includes('api.groq.com')) throw new Error('offline');
+    n++;
+    if (n === 1) return { ok: false, status: 429, headers: { get: (h) => (h === 'retry-after' ? '1' : null) }, text: async () => 'Rate limit reached: tokens per minute (TPM)' };
+    return sse(textChunks('Antwort nach kurzer Pause.'));
+  };
+  const { core, fake, cleanup } = tempCore({ fetch });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-x'); await core.gemini.discover();
+    core.secrets.set('groq.api_key', 'gsk_test');
+    const before = fake.requests.length;
+    const m = await core.orchestrator.chat({ conversationId: core.conversations.create('C').id, text: 'Erklär mir Wave-Management in LoL' });
+    assert.match(m.content, /kurzer Pause/); assert.equal(n, 2); assert.equal(fake.requests.length, before);
   } finally { cleanup(); }
 });

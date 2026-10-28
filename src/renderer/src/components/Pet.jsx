@@ -208,7 +208,7 @@ function PetImage({ art, state, facing, size, handlers }) {
   };
   const h = Math.round(size * PET_ART_RATIO);
   // Nur die seitlichen Laufbilder spiegeln – sonst stünde „JARVIS“ auf dem Shirt verkehrt herum
-  const fx = !art[state] && ['happy', 'sleep', 'oops', 'listen', 'wave'].includes(state);
+  const fx = state === 'sleep' || (!art[state] && ['happy', 'oops', 'listen', 'wave'].includes(state));
   return (
     <div class={`pet-fig pet-img s-${state}${art[state] ? ' has-pose' : ''}`} style={{ width: size + 'px', height: h + 'px', transform: facing < 0 && state === 'walk' ? 'scaleX(-1)' : undefined }} {...handlers}>
       <div class="body"><img src={pick()} width={size} height={h} draggable={false} alt="" /></div>
@@ -240,7 +240,7 @@ export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 
 }
 
 /**
- * Sprechblase neben dem Kopf: Name oben, Text darunter (Markdown), kleiner Verbindungsstrich zur Figur.
+ * Sprechblase neben dem Kopf: Name oben, Text darunter (Markdown), kleine Spitze Richtung Figur.
  * side: 'left' = Blase links der Figur (Strich nach rechts), 'right' = rechts der Figur (Strich nach links).
  * Bleibt bis zur nächsten Eingabe, × oder „mach die Sprechblase weg“.
  */
@@ -248,7 +248,6 @@ export function PetBubble({ bubble, html, onClose, side = 'right', name = 'JARVI
   if (!bubble) return null;
   return (
     <div class={`pet-bubble side-${side}${bubble.error ? ' is-error' : ''}`} style={style}>
-      <i class="pet-bubble-link" aria-hidden="true"><b /></i>
       <div class="pet-bubble-head"><span class="pet-bubble-name">{name}</span>{onClose && <button class="pet-bubble-x" title="Sprechblase schließen" onClick={onClose}>×</button>}</div>
       {bubble.kind === 'think'
         ? <div class="pet-dots"><i /><i /><i /></div>

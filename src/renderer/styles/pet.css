@@ -75,12 +75,10 @@
 .pet-bubble::before { content: ''; position: absolute; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: linear-gradient(180deg, #38e1ff, #6366f1); }
 .pet-bubble.side-right::before { left: 0; } .pet-bubble.side-left::before { right: 0; }
 .pet-bubble.is-error::before { background: linear-gradient(180deg, #fb923c, #ef4444); }
-/* Verbindungsstrich: von der Blasenseite Richtung Gesicht, mit Punkt am Ende */
-.pet-bubble-link { position: absolute; bottom: 22px; width: var(--link, 24px); height: 2px; pointer-events: none; }
-.pet-bubble.side-right .pet-bubble-link { right: 100%; background: linear-gradient(270deg, rgba(56, 189, 248, 0.9), rgba(56, 225, 255, 0.35)); transform-origin: right center; transform: rotate(12deg); }
-.pet-bubble.side-left .pet-bubble-link { left: 100%; background: linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(56, 225, 255, 0.35)); transform-origin: left center; transform: rotate(-12deg); }
-.pet-bubble-link b { position: absolute; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: #38e1ff; box-shadow: 0 0 6px #38e1ff; }
-.pet-bubble.side-right .pet-bubble-link b { left: -3px; } .pet-bubble.side-left .pet-bubble-link b { right: -3px; }
+/* Spitze: kleines Dreieck an der Blasenseite, zeigt Richtung Gesicht */
+.pet-bubble::after { content: ''; position: absolute; bottom: 16px; width: 13px; height: 13px; background: #f6fafd; border: 1px solid rgba(56, 189, 248, 0.55); transform: rotate(45deg); }
+.pet-bubble.side-right::after { left: -7.5px; border-top: 0; border-right: 0; }
+.pet-bubble.side-left::after { right: -7.5px; border-bottom: 0; border-left: 0; }
 .pet-bubble-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
 .pet-bubble-name { font: 700 10.5px/1 'Segoe UI', system-ui, sans-serif; letter-spacing: 1.4px; text-transform: uppercase; color: #0891b2; }
 .pet-bubble.is-error .pet-bubble-name { color: #ea580c; }
@@ -102,12 +100,13 @@
 .pet-desk .pet-walker { position: absolute; bottom: 0; }
 .pet-desk .pet-walker .pet-fig { cursor: grab; }
 .pet-desk .pet-walker.drag .pet-fig { cursor: grabbing; }
-.pet-desk .pet-bubble { position: absolute; max-width: 340px; }
+.pet-desk .pet-bubble-wrap { position: absolute; }
+.pet-desk .pet-bubble { max-width: 340px; }
 .pet-desk .pet-bubble-text { max-height: 230px; overflow-y: auto; }
 
 /* Overlay: Figur links, Blase rechts daneben */
 .ov-pet { display: flex; align-items: flex-start; gap: 18px; }
 .ov-pet .pet-fig { flex: none; }
 .ov-pet .pet-bubble { flex: 1; min-width: 0; margin-top: 2px; font-size: 13px; }
-.ov-pet .pet-bubble-link { bottom: auto; top: 18px; }
+.ov-pet .pet-bubble::after { bottom: auto; top: 16px; }
 .ov-pet .pet-bubble-text { max-height: 280px; overflow: hidden; }

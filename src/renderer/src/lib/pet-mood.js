@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useEvent } from './api.js';
+import { useEvent, rpc } from './api.js';
 import { bubbleText } from '../components/Pet.jsx';
 
 /**
@@ -32,12 +32,19 @@ export function usePetMood({ max = 700 } = {}) {
     showFlash(d.error ? 'oops' : 'happy');
   });
   useEvent('overlay:answer', (d) => { if (d?.answer) { setBubble({ kind: 'text', text: bubbleText(d.answer, max) }); showFlash(/^⚠️/.test(d.answer) ? 'oops' : 'happy'); } });
-  useEvent('pet:clear', () => { msg.current = null; setBubble(null); });
+  // Von dir geschlossen (× oder „mach die Sprechblase weg“) → closed zählt hoch (Desktop-Figur läuft zurück an den Rand)
+  const [closed, setClosed] = useState(0);
+  // Standby: Figur schläft, bis „Hey Jarvis“ oder eine neue Nachricht kommt
+  const [standby, setStandby] = useState(false);
+  useEffect(() => { rpc('voice.state').then((v) => setStandby(!!v?.standby)).catch(() => {}); }, []);
+  useEvent('voice:standby', (d) => { setStandby(!!d.on); if (d.on) { msg.current = null; setBubble(null); } else showFlash('wave'); });
+  const close = () => { msg.current = null; setBubble(null); setClosed((n) => n + 1); };
+  useEvent('pet:clear', close);
   useEvent('pet:signal', (d) => {
     if (d.kind === 'speaking') setSpeaking(!!d.on);
     if (d.kind === 'listening') { setListening(!!d.on); if (d.on) { msg.current = null; setBubble(null); } }
   });
 
-  const state = listening ? 'listen' : speaking ? 'talk' : bubble?.kind === 'think' ? 'think' : flash || 'idle';
-  return { state, bubble, speaking, listening, flash, clear: () => setBubble(null) };
+  const state = speaking ? 'talk' : standby ? 'sleep' : listening ? 'listen' : bubble?.kind === 'think' ? 'think' : flash || 'idle';
+  return { state, bubble, speaking, listening, flash, closed, close, standby, clear: () => setBubble(null) };
 }

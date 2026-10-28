@@ -57,3 +57,18 @@ test('„Mach mal die Sprechblase weg“ blendet die Blase aus (ohne KI), Fragen
     assert.deepEqual(ev, ['pet:answer', 'pet:clear']);
   } finally { cleanup(); }
 });
+
+test('Standby: „geh in den Standby“ ohne KI → Figur schläft, Sprache aus; neue Nachricht weckt', async () => {
+  const { parseStandbyCommand: p } = require('../src/main/agent/window-command');
+  for (const t of ['Jarvis, geh in den Standby', 'Standby', 'schlaf jetzt', 'mach mal Pause', 'Gute Nacht Jarvis', 'Standby-Modus']) assert.equal(p(t), true, t);
+  for (const t of ['Was ist der Standby-Verbrauch meines PCs?', 'Wie viel Pause brauche ich beim Lernen?', 'schlafen Katzen viel']) assert.equal(p(t), false, t);
+  const { core, cleanup } = tempCore();
+  try {
+    const ev = []; core.bus.on('voice:standby', (d) => ev.push(d.on));
+    const cid = core.conversations.create('X').id;
+    const m = await core.orchestrator.chat({ conversationId: cid, text: 'Jarvis, geh in den Standby', channel: 'voice' });
+    assert.match(m.content, /Pause/); assert.equal(core.voice.standby, true); assert.deepEqual(ev, [true]);
+    await core.orchestrator.chat({ conversationId: cid, text: 'Hallo', channel: 'text' });
+    assert.equal(core.voice.standby, false); assert.deepEqual(ev, [true, false]);
+  } finally { cleanup(); }
+});

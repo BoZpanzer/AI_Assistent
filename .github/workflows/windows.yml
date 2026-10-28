@@ -3,11 +3,14 @@ name: Windows Build & Test
 # Vollständiger Windows-Build inkl. Installations-/Deinstallationstest – manuell
 # startbar (Actions → „Windows Build & Test“ → Run workflow) und bei Pull Requests.
 # Releases baut release.yml (Tag v*), schnelle Tests laufen in tests.yml.
+# Kein zweiter Lauf nach dem Mergen (spart GitHub-Minuten – Windows zählt doppelt); neuer Push im PR bricht den alten Lauf ab.
 on:
   pull_request:
-  push:
-    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
+concurrency:
+  group: windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:

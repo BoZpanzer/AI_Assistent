@@ -18,6 +18,19 @@ const TOOL_LABEL = {
 const CARD_ICON = { task: SquareCheckBig, check: CircleCheck, brain: Brain, timer: Timer, game: Gamepad2, note: NotebookPen, link: LinkIcon, study: BookOpen };
 
 /** Live message list for a conversation (streaming deltas, cards, voice transcripts). */
+/** Wer hat geantwortet (lokal / Groq / Gemini) – und falls falsch eingeordnet: mit einem Klick andersherum beantworten. */
+function RouteTag({ m, streaming }) {
+  const local = m.meta.scope === 'private' || m.meta.local;
+  const who = local ? '🔒 lokal' : /gpt-oss|groq|llama|qwen\/|kimi/i.test(m.meta.model || '') ? '☁ Groq' : '☁ Gemini';
+  const title = local ? 'Als privat erkannt – nur das lokale Modell, bleibt auf dem PC' : 'Als nicht privat erkannt – ohne deine privaten Nachrichten beantwortet';
+  return (
+    <span class="scope-tag" title={title}> · {who}
+      {!streaming && m.conversationId && <button class="route-btn" title={local ? 'War nicht privat? Öffentlich (Groq/Gemini) beantworten' : 'War privat? Nur lokal beantworten'}
+        onClick={() => rpc('chat.reroute', { conversationId: m.conversationId, messageId: m.id, as: local ? 'public' : 'private' })}>{local ? '↺ öffentlich' : '↺ privat'}</button>}
+    </span>
+  );
+}
+
 export function useConversation(cid) {
   const [msgs, setMsgs] = useState([]);
   const [tools, setTools] = useState({});
@@ -73,7 +86,7 @@ export function Message({ m, tool }) {
     <div class={`msg ${user ? 'user' : ''}`}>
       <div class="who">{user ? initial() : <Spark />}</div>
       <div class="bubble" style={user ? undefined : { flex: 1 }}>
-        <span class="time">{m.channel === 'voice' && <Mic size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}{fmtTime(m.createdAt)}{!user && m.meta?.scope && <span class="scope-tag" title={m.meta.scope === 'private' ? 'Privat – nur das lokale Modell, bleibt auf dem PC' : 'Nicht privat – von Gemini beantwortet (ohne deine privaten Nachrichten)'}>{m.meta.scope === 'private' || m.meta.local ? ' · 🔒 lokal' : ' · ☁ Gemini'}</span>}</span>
+        <span class="time">{m.channel === 'voice' && <Mic size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}{fmtTime(m.createdAt)}{!user && m.meta?.scope && <RouteTag m={m} streaming={streaming} />}</span>
         {m.content ? <div class="msg-body selectable" onClick={(e) => onMarkdownClick(e, rpc)} dangerouslySetInnerHTML={{ __html: html }} /> : streaming ? <div class="typing"><i /><i /><i /></div> : null}
         {streaming && m.content && <span class="cursor" />}
         {tool && <div class="tool-trace"><Wrench size={12} /> {TOOL_LABEL[tool] || tool} …</div>}

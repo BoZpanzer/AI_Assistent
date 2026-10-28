@@ -28,4 +28,10 @@ function parseBubbleCommand(text) {
   if (!t || t.length > 70 || /\?\s*$/.test(t) || !/\b(?:sprech)?blase\b|\bbubble\b/.test(t)) return false;
   return /\b(?:weg|zu|aus|schließ\w*|schliess\w*|ausblend\w*|ausmach\w*|verschwind\w*|entfern\w*|lösch\w*|minimier\w*)\b/.test(t);
 }
-module.exports = { parseWindowCommand, parseBubbleCommand };
+/** „geh in den Standby“, „Standby“, „schlaf jetzt“, „mach Pause“, „gute Nacht Jarvis“ → true */
+function parseStandbyCommand(text) {
+  const t = String(text || '').toLowerCase().replace(/^(?:hey\s+)?jarvis[,!.\s]+/, '').replace(/[,!.]+\s*(?:jarvis)?\s*$/, '').trim();
+  if (!t || t.length > 60 || /\?\s*$/.test(t)) return false;
+  return /^(?:(?:geh|wechsel|schalt)\w*\s+(?:mal\s+)?(?:in\s+den\s+|auf\s+)?stand-?by(?:[\s-]*modus)?|stand-?by(?:[\s-]*modus)?(?:\s+bitte)?|(?:geh\s+)?schlaf(?:en)?(?:\s+(?:jetzt|gehen|mal))?|leg\s+dich\s+schlafen|(?:mach|mache)\s+(?:mal\s+)?(?:eine\s+)?pause|pause(?:\s+bitte)?|gute\s+nacht(?:\s+jarvis)?|ruhe(?:modus)?)$/.test(t);
+}
+module.exports = { parseWindowCommand, parseBubbleCommand, parseStandbyCommand };

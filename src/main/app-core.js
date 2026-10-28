@@ -142,10 +142,10 @@ function createCore(opts) {
   s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
   s.cloudTts = new (require('./voice/cloud-tts').CloudTts)(s);
   // Spiel läuft → OmniVoice entladen (Grafikspeicher fürs Spiel), danach wieder vorladen
-  bus.on('game:running', ({ running = [] } = {}) => {
+  bus.on('game:running', () => {
     try {
       if (s.cloudTts.gamingMode() === 'omnivoice') return;
-      if (running.length) { if (s.omnivoice.status().running || s.omnivoice.starting) { s.omnivoice.stop(); require('./core/logger').scope('voice').info('Spiel läuft – KI-Stimme entladen, Grafikkarte frei'); } }
+      if (s.gaming.context.state().gaming) { if (s.omnivoice.status().running || s.omnivoice.starting) { s.omnivoice.stop(); require('./core/logger').scope('voice').info('Spiel läuft – KI-Stimme entladen, Grafikkarte frei'); } }
       else s.omnivoice.warmup();
     } catch { /* nie das Spiel stören */ }
   });
