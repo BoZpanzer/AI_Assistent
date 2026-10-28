@@ -29,6 +29,12 @@ def main(src):
         base = Image.open(os.path.join(d, 'idle.png')).convert('RGBA') if os.path.exists(os.path.join(d, 'idle.png')) else None
         if base is None: print('übersprungen (idle.png fehlt):', folder); continue
         ax, ay = anchor(base)
+        def cx(im):
+            a = np.asarray(im.getchannel('A')) > 40
+            xs = np.nonzero(a)[1]
+            return float(xs.mean()) if len(xs) else im.width / 2
+        w1 = os.path.join(d, 'walk1.png')
+        walk_cx = cx(Image.open(w1).convert('RGBA')) if os.path.exists(w1) else None
         out = os.path.join(root, 'src', 'renderer', 'assets', 'pet', folder)
         os.makedirs(out, exist_ok=True)
         art[key] = {}
@@ -42,7 +48,8 @@ def main(src):
             if im.size != base.size: im = im.resize(base.size, Image.LANCZOS)
             a = anchor(im)
             if a:
-                dx = 0 if pose.startswith('walk') else round(ax - a[0])
+                # Laufbilder untereinander an der Körpermitte ausrichten, Standbilder an den Füßen von idle
+                dx = (round(walk_cx - cx(im)) if walk_cx is not None else 0) if pose.startswith('walk') else round(ax - a[0])
                 dy = round(ay - a[1])
                 if abs(dx) > im.width * 0.08: dx = 0  # Pose weicht stark ab → nur die Höhe angleichen
                 c = Image.new('RGBA', im.size); c.alpha_composite(im, (dx, dy)); im = c
