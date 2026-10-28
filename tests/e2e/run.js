@@ -32,6 +32,17 @@ async function step(name, fn) {
 
 app.whenReady().then(async () => {
   const { win, core } = await waitFor(() => global.__jarvis);
+  // Seit 5.0 gehen private Fragen (Termine, Tagesüberblick) ans lokale Modell – im Test dieselbe Fake-KI auch lokal
+  {
+    const Fake = require('./fake-genai.js').GoogleGenAI; const fake = new Fake();
+    core.settings.update({ localLLM: { model: 'fake-lokal' } });
+    core.localLLM.stepStream = async ({ contents, onText = () => {} }) => {
+      const it = await fake.models.generateContentStream({ contents });
+      let text = ''; const functionCalls = [];
+      for await (const ch of it) for (const p of ch.candidates[0].content.parts) { if (p.text) { text += p.text; onText(p.text); } if (p.functionCall) functionCalls.push(p.functionCall); }
+      return { text, functionCalls, parts: [...(text ? [{ text }] : []), ...functionCalls.map((functionCall) => ({ functionCall }))] };
+    };
+  }
   win.setSize(1600, 1000);
   win.webContents.on('console-message', (e) => { const lvl = e.level ?? e; if (lvl === 'error' || lvl === 3) errors.push(e.message); });
   win.webContents.on('preload-error', (_e, p, err) => errors.push('preload: ' + err.message));
@@ -326,8 +337,6 @@ app.whenReady().then(async () => {
   await step('Kalender: Campus Dual verbinden (Anleitung sichtbar)', async () => {
     await nav('calendar');
     await waitFor(() => js(`document.body.textContent.includes('Bei Campus Dual anmelden')`), 5000);
-    await js(`[...document.querySelectorAll('.btn')].find(b=>b.textContent.includes('Matrikelnummer + Hash'))?.click()`);
-    await waitFor(() => js(`document.body.textContent.includes('im Filter „room“')`), 5000);
     win.setSize(1280, 800); await sleep(500); await shot('46-campusdual'); win.setSize(1600, 1000); await sleep(300);
   });
   await step('Kalender: ganztägiger Geburtstag mit Farbe + eigenes Dropdown', async () => {

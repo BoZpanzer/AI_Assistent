@@ -209,7 +209,7 @@ test('Orchestrator: Werkzeugschleife, Bestätigungspflicht, Einmal-Token, Quelle
 test('Orchestrator ohne Schlüssel: klare Meldung statt Absturz', async () => {
   const { core, cleanup } = tempCore();
   const m = await core.orchestrator.chat({ text: 'Meine Miete ist zu hoch' });
-  assert.match(m.content, /Ollama/, 'private Nachricht → lokales Modell (nicht eingerichtet)');
+  assert.match(m.content, /Keine lokale KI eingerichtet.*Lokale KI/, 'private Nachricht → lokales Modell (nicht eingerichtet)');
   const g = await core.orchestrator.chat({ conversationId: core.conversations.create().id, text: 'Hallo' });
   assert.match(g.content, /Gemini-API-Schlüssel/, 'nicht private Nachricht → Gemini');
   const cloud = core.conversations.create('Uni', 'study');
