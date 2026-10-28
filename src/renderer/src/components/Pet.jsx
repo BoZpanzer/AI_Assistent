@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'preact/hooks';
+import { PET_ART, PET_ART_RATIO } from '../pet-art.js';
 /**
  * JARVIS als Anime-Figur (eigene Gestaltung, reines SVG): feste Outline, Cel-Shading, Kopf zu Körper ca. 1 : 5,
  * Shirt mit JARVIS-Schriftzug. gender: 'male' (J.A.R.V.I.S./Standard) | 'female' (Alya).
@@ -176,8 +178,52 @@ function Male({ state }) {
 }
 
 export const PET_W = 120; export const PET_H = 260;
+/** Höhe der Figur bei gegebener Breite (Bilder 2 : 3, Ersatzfigur 120 : 260). */
+export const petHeight = (gender, size) => Math.round(size * (PET_ART[gender]?.idle ? PET_ART_RATIO : PET_H / PET_W));
+
+/**
+ * Figur aus Bildern (eigene Zeichnungen, siehe scripts/import-pet-art.py): je Zustand ein Bild, Bewegung durch Umschalten –
+ * Blinzeln (idle↔blink), Mund (talk↔idle), Laufen (walk1↔walk2) – plus Atmen/Wippen per CSS. Fehlt ein Bild, nimmt sie idle + Effekt.
+ */
+function PetImage({ art, state, facing, size, handlers }) {
+  const [tick, setTick] = useState(0);
+  const [blink, setBlink] = useState(false);
+  useEffect(() => { Object.values(art).forEach((src) => { const i = new Image(); i.src = src; }); }, [art]);
+  useEffect(() => {
+    if (state !== 'talk' && state !== 'walk') return undefined;
+    const t = setInterval(() => setTick((n) => n + 1), state === 'talk' ? 150 + Math.random() * 60 : 300);
+    return () => clearInterval(t);
+  }, [state]);
+  useEffect(() => {
+    let t; let u;
+    const loop = () => { t = setTimeout(() => { setBlink(true); u = setTimeout(() => { setBlink(false); loop(); }, 140); }, 2600 + Math.random() * 3200); };
+    loop();
+    return () => { clearTimeout(t); clearTimeout(u); };
+  }, []);
+  const pick = () => {
+    if (state === 'walk') return art.walk2 && tick % 2 ? art.walk2 : art.walk1 || art.idle;
+    if (state === 'talk') return tick % 2 ? art.idle : art.talk || art.idle;
+    if (art[state]) return art[state];
+    return blink && art.blink ? art.blink : art.idle;
+  };
+  const h = Math.round(size * PET_ART_RATIO);
+  const fx = !art[state] && ['happy', 'sleep', 'oops', 'listen', 'wave'].includes(state);
+  return (
+    <div class={`pet-fig pet-img s-${state}${art[state] ? ' has-pose' : ''}`} style={{ width: size + 'px', height: h + 'px', transform: facing < 0 ? 'scaleX(-1)' : undefined }} {...handlers}>
+      <div class="body"><img src={pick()} width={size} height={h} draggable={false} alt="" /></div>
+      {fx && <svg class="pet-fx" viewBox="0 0 120 180" width={size} height={h}>
+        <g class="zzz" fill="#cfeaf5" font-family="sans-serif" font-weight="700"><text x="84" y="22" font-size="11">z</text><text x="94" y="12" font-size="15">Z</text></g>
+        <g class="waves" fill="none" stroke="#38e1ff" stroke-width="2.2" stroke-linecap="round"><path d="M92 26 Q98 34 92 42" /><path d="M98 21 Q106 34 98 47" /></g>
+        <g class="sparkle" fill="#facc15"><path d="M14 30 L16 36 L22 38 L16 40 L14 46 L12 40 L6 38 L12 36Z" /><path d="M104 22 L105.5 26 L109.5 27.5 L105.5 29 L104 33 L102.5 29 L98.5 27.5 L102.5 26Z" /></g>
+        <path class="sweat" d="M86 18 Q90 26 86.5 29 Q83 26 86 18Z" fill="#9fe3ff" stroke="#4cb8e6" stroke-width="0.8" />
+      </svg>}
+    </div>
+  );
+}
 
 export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 100, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
+  const art = PET_ART[gender];
+  if (art?.idle) return <PetImage art={art} state={state} facing={facing} size={size} handlers={{ onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }} />;
   return (
     <svg class={`pet-fig s-${state} g-${gender}`} width={size} height={Math.round(size * PET_H / PET_W)} viewBox={`0 0 ${PET_W} ${PET_H}`}
       style={{ transform: facing < 0 ? 'scaleX(-1)' : undefined }} onPointerDown={onPointerDown} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>

@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc, useEvent } from './lib/api.js';
 import { renderMarkdown } from './lib/markdown.js';
-import { PetFigure, PetBubble, genderFor } from './components/Pet.jsx';
+import { PetFigure, PetBubble, genderFor, petHeight } from './components/Pet.jsx';
 import { usePetMood } from './lib/pet-mood.js';
 
 /**
@@ -86,7 +86,7 @@ function Desk() {
       {mood.bubble && (
         <div onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)}>
           <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} onClose={mood.clear}
-            style={{ left: bx + 'px', bottom: size * 170 / 120 + 14 + 'px', width: bw + 'px', '--tail-x': tailX + 'px' }} />
+            style={{ left: bx + 'px', bottom: petHeight(gender, size) + 10 + 'px', width: bw + 'px', '--tail-x': tailX + 'px' }} />
         </div>
       )}
       <div class={`pet-walker ${drag ? 'drag' : ''}`} style={{ left: x + 'px', transition: walk ? `left ${walk.dur}s linear` : 'none' }}>

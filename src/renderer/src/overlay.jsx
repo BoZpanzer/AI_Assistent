@@ -55,7 +55,7 @@ function OvPet({ settings }) {
   if (settings?.pet?.overlay === false) return null;
   return (
     <div class="ov-pet">
-      <PetFigure gender={genderFor(settings)} state={mood.state} size={78} />
+      <PetFigure gender={genderFor(settings)} state={mood.state} size={92} />
       {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} tail="left" /> : <span class="grow" />}
     </div>
   );
