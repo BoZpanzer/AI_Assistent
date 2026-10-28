@@ -110,7 +110,7 @@ test('Beim Zocken: Google-Stimme statt OmniVoice, Zeichen werden gezählt, Grenz
     // privat → nie Google (und beim Zocken auch keine KI-Stimme)
     await assert.rejects(core.speech.synthesize('Dein Termin ist um acht.', { private: true }), /privat/);
     // Grenze erreicht → keine Stimme, kein Google-Aufruf
-    core.settings.update({ voice: { tts: { cloud: { monthlyChars: 30 } } } });
+    core.settings.update({ voice: { tts: { cloud: { monthlyChars: 30, payBeyondFree: false } } } });
     await assert.rejects(core.speech.synthesize('Ein ganz anderer, deutlich längerer Satz über den Raid.'), /Monatskontingent/);
     assert.equal(sent.length, 1);
     assert.equal(core.orchestrator.quietPublic(), true, 'dann auch öffentliche Antworten nur ins Overlay');
@@ -166,5 +166,28 @@ test('Groq-Minutenlimit (429, wenige Sekunden): kurz warten und nochmal Groq –
     const before = fake.requests.length;
     const m = await core.orchestrator.chat({ conversationId: core.conversations.create('C').id, text: 'Erklär mir Wave-Management in LoL' });
     assert.match(m.content, /kurzer Pause/); assert.equal(n, 2); assert.equal(fake.requests.length, before);
+  } finally { cleanup(); }
+});
+
+test('Google-Stimme über dem Gratis-Kontingent: Kosten zählen ins gemeinsame Cloud-Budget, bei erreichter Grenze stumm', async () => {
+  const sent = [];
+  const fetch = async (url, init) => {
+    if (String(url).includes('texttospeech.googleapis.com')) { sent.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ audioContent: Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(60)]).toString('base64') }) }; }
+    throw new Error('offline');
+  };
+  const { core, cleanup } = tempCore({ fetch });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test');
+    core.settings.update({ aiBudget: { monthlyEur: 8.5, dailyEur: 1, sessionEur: 0 }, voice: { tts: { cloud: { monthlyChars: 10 } } } });
+    const text = 'Ein Satz über dem Gratis-Kontingent.';
+    await core.cloudTts.synthesize(text);
+    assert.equal(sent.length, 1);
+    const row = core.db.get("SELECT feature, model, status, usd FROM ai_ledger WHERE feature='tts'");
+    assert.equal(row.model, 'chirp3-hd'); assert.equal(row.status, 'done');
+    assert.ok(Math.abs(row.usd - (text.length - 10) * 30 / 1e6) < 1e-9, 'nur Zeichen über dem Kontingent, 30 $/Mio.');
+    // Budget aufgebraucht → keine weiteren Google-Aufrufe
+    core.settings.update({ aiBudget: { dailyEur: 0.0001 } });
+    await assert.rejects(core.cloudTts.synthesize('Noch ein ganz anderer Satz.'), /Budget/);
+    assert.equal(sent.length, 1);
   } finally { cleanup(); }
 });

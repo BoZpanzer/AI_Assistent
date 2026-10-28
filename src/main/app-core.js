@@ -160,6 +160,11 @@ function createCore(opts) {
     const old = path.join(data, 'voices');
     if (fs.existsSync(old) && fs.readdirSync(old).every((f) => /^de_DE-.*\.onnx(\.json)?$|\.part$/.test(f))) fs.rmSync(old, { recursive: true, force: true });
     if (s.secrets.has('elevenlabs.api_key')) s.secrets.delete('elevenlabs.api_key');
+    // 5.6.1: ein gemeinsames Monatsbudget für Gemini + Google-Stimme, 8,50 € statt 5 € (nur wenn noch der alte Wert gesetzt ist)
+    if (!s.db.get("SELECT 1 x FROM meta WHERE key='migr:budget-8.5'")) {
+      if (Number(s.settings.get('aiBudget')?.monthlyEur) === 5) s.settings.update({ aiBudget: { monthlyEur: 8.5 } });
+      s.db.run("INSERT OR REPLACE INTO meta(key,value) VALUES('migr:budget-8.5','1')");
+    }
   } catch { /* nicht kritisch */ }
   // Lokaler Modus: laufende Gemini-Aufrufe sofort beenden (Backend, nicht nur UI)
   bus.on('settings:changed', ({ keys }) => {

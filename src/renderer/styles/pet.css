@@ -117,3 +117,9 @@
 .ov-pet .pet-bubble { flex: 1; min-width: 0; margin-top: 2px; font-size: 13px; }
 .ov-pet .pet-bubble::after { bottom: auto; top: 16px; }
 .ov-pet .pet-bubble-text { max-height: 280px; overflow: hidden; }
+
+/* Durchsichtige Fenster (Desktop-Figur, Overlay): keine Dauer-Animationen. Jede laufende CSS-Animation zwingt Windows,
+   das ganze durchsichtige Fenster ~60× pro Sekunde neu zusammenzusetzen – das hat die Grafikkarte im Sekundentakt
+   ausgelastet und den PC ruckeln lassen. Bewegung kommt dort nur noch aus den Bildwechseln (Blinzeln, Mund, Schritte). */
+.pet-desk .pet-fig, .pet-desk .pet-fig *, .ov-pet .pet-fig, .ov-pet .pet-fig *, .pet-desk .pet-dots i, .ov-pet .pet-dots i { animation: none !important; }
+.pet-desk .pet-fig .zzz, .ov-pet .pet-fig .zzz { opacity: 0.85; }

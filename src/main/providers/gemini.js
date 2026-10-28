@@ -370,9 +370,13 @@ class Gemini {
    * One-shot request. Personal/private content and the „life“ functions stay on the local model
    * (Ollama); there is no automatic cloud fallback if the local model fails.
    */
-  async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low', background = false, maxOut, dedupe = false, tier = null }) {
+  async generate({ model, system, contents, json, schema, temperature, tools, feature = 'other', effort = 'low', background = false, maxOut, dedupe = false, tier = null, cloudPrivate = false }) {
     const privacy = require('../core/privacy');
-    const local = privacy.isPrivate() || feature === 'life' || privacy.privateText(JSON.stringify(contents));
+    const local = !cloudPrivate && (privacy.isPrivate() || feature === 'life' || privacy.privateText(JSON.stringify(contents)));
+    // Lokale KI ausgeschaltet → private Einmal-Aufgaben bewusst über Gemini (außerhalb der „privat“-Sperre)
+    if (local && this.cloudCfg().mode !== 'local' && privacy.privateViaCloud(this.settings)) {
+      return privacy.cloud(() => this.generate({ model, system, contents, json, schema, temperature, tools, feature: feature === 'life' ? 'other' : feature, effort, background, maxOut, dedupe, tier, cloudPrivate: true }));
+    }
     if (local || (this.cloudCfg().mode === 'local' && feature !== 'vision')) {
       if (!this.localLLM) throw new CloudBlocked('Kein lokales Modell eingerichtet (Einstellungen → Lokale KI).');
       return this.localLLM.generate({ system, contents, json, schema, tools, background });

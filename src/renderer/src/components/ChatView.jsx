@@ -20,12 +20,14 @@ const CARD_ICON = { task: SquareCheckBig, check: CircleCheck, brain: Brain, time
 /** Live message list for a conversation (streaming deltas, cards, voice transcripts). */
 /** Wer hat geantwortet (lokal / Groq / Gemini) – und falls falsch eingeordnet: mit einem Klick andersherum beantworten. */
 function RouteTag({ m, streaming }) {
-  const local = m.meta.scope === 'private' || m.meta.local;
-  const who = local ? '🔒 lokal' : /gpt-oss|groq|llama|qwen\/|kimi/i.test(m.meta.model || '') ? '☁ Groq' : '☁ Gemini';
-  const title = local ? 'Als privat erkannt – nur das lokale Modell, bleibt auf dem PC' : 'Als nicht privat erkannt – ohne deine privaten Nachrichten beantwortet';
+  // Privat über die Cloud (lokale KI ausgeschaltet): meta.local === false trotz scope 'private'
+  const privCloud = m.meta.scope === 'private' && m.meta.local === false;
+  const local = !privCloud && (m.meta.scope === 'private' || m.meta.local);
+  const who = local ? '🔒 lokal' : (/gpt-oss|groq|llama|qwen\/|kimi/i.test(m.meta.model || '') ? '☁ Groq' : '☁ Gemini') + (privCloud ? ' · privat' : '');
+  const title = local ? 'Als privat erkannt – nur das lokale Modell, bleibt auf dem PC' : privCloud ? 'Privat, aber lokale KI ist ausgeschaltet – über Gemini beantwortet' : 'Als nicht privat erkannt – ohne deine privaten Nachrichten beantwortet';
   return (
     <span class="scope-tag" title={title}> · {who}
-      {!streaming && m.conversationId && <button class="route-btn" title={local ? 'War nicht privat? Öffentlich (Groq/Gemini) beantworten' : 'War privat? Nur lokal beantworten'}
+      {!streaming && m.conversationId && !privCloud && <button class="route-btn" title={local ? 'War nicht privat? Öffentlich (Groq/Gemini) beantworten' : 'War privat? Nur lokal beantworten'}
         onClick={() => rpc('chat.reroute', { conversationId: m.conversationId, messageId: m.id, as: local ? 'public' : 'private' })}>{local ? '↺ öffentlich' : '↺ privat'}</button>}
     </span>
   );
