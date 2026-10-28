@@ -17,6 +17,8 @@ function publicTopic(text, { gameActive = false } = {}) {
   if (STUDY_WORDS.test(t)) return 'study';
   return gameActive ? 'gaming' : null;
 }
+/** Lokale KI ausgeschaltet → private Fragen (und ihre Sprachausgabe) laufen bewusst über Google. */
+const privateViaCloud = (settings) => (settings?.get?.('localLLM') || {}).enabled === false;
 function assertExternal() { if (isPrivate()) throw new Error('Private: externe Zugriffe sind für diese Aktion gesperrt.'); }
 // Nicht-private Nachrichten (Gemini) haben keinen persönlichen Kontext und nur diese geprüften Werkzeuge.
 const CLOUD_TOOLS = new Set(['set_game_context', 'tarkov_lookup', 'tarkov_raid_plan', 'tarkov_item_value', 'tarkov_needed_items', 'update_game_progress', 'voice_standby', 'set_voice', 'game_stats', 'record_raid']);
@@ -50,4 +52,4 @@ function localToolsFor(texts, allowed = LOCAL_TOOLS) {
   for (const [re, names] of TOOL_GROUPS) if (re.test(t)) for (const n of names.split(' ')) out.add(n);
   return new Set([...out].filter((n) => allowed.has(n)));
 }
-module.exports = { localToolsFor, LOCAL_TOOLS, local, cloud, isPrivate, isCloud, assertExternal, privateText, personalText, publicTopic, CLOUD_TOOLS, GAMING_TOOLS, cloudTools, CLOUD_SYSTEM };
+module.exports = { privateViaCloud, localToolsFor, LOCAL_TOOLS, local, cloud, isPrivate, isCloud, assertExternal, privateText, personalText, publicTopic, CLOUD_TOOLS, GAMING_TOOLS, cloudTools, CLOUD_SYSTEM };

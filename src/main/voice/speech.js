@@ -69,11 +69,11 @@ class Speech {
     // KI-Stimme lädt noch (z. B. kurz nach dem Zocken, ~30 s)? Dann überbrückt die Google-Stimme, statt dass du wartest.
     const omniLoading = !gaming && this.s.omnivoice?.allowed?.() && !this.s.omnivoice.status?.().running;
     if (omniLoading) this.s.omnivoice.warmup?.();
-    const order = force ? [force] : gaming && gmode === 'cloud' ? ['cloud'] : omniLoading && !priv && this.s.cloudTts?.available(said.length) ? ['cloud', 'omnivoice'] : ['omnivoice', 'cloud'];
+    const order = force ? [force] : gaming && gmode === 'cloud' ? ['cloud'] : omniLoading && (!priv || require('../core/privacy').privateViaCloud(this.s.settings)) && this.s.cloudTts?.available(said.length) ? ['cloud', 'omnivoice'] : ['omnivoice', 'cloud'];
     const errors = [];
     for (const engine of order) {
       if (engine === 'cloud') {
-        if (priv) { errors.push('privat – nicht an Google'); continue; }
+        if (priv && !require('../core/privacy').privateViaCloud(this.s.settings)) { errors.push('privat – nicht an Google'); continue; }
         if (!this.s.cloudTts?.available(said.length)) { errors.push('Google-Stimme nicht verfügbar' + (this.s.cloudTts?.lastError ? ': ' + this.s.cloudTts.lastError : !this.s.cloudTts?.key() ? ' (kein Schlüssel)' : ' (Monatskontingent erreicht)')); continue; }
         try {
           const voice = this.s.cloudTts.voiceFor(c.preset);

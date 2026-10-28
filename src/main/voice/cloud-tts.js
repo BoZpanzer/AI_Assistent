@@ -3,8 +3,11 @@ const log = require('../core/logger').scope('cloud-tts');
 
 /**
  * Stimme beim Zocken: Google Cloud Text-to-Speech (Chirp 3 HD) – rechnet auf Googles Servern, der PC bleibt frei fürs Spiel.
- * - Kostenlos bis 1 Mio. Zeichen pro Monat (Chirp 3 HD, Stand Okt. 2026). JARVIS zählt selbst mit und hört bei
- *   `monthlyChars` (Standard 950 000) auf – danach bleibt JARVIS beim Zocken stumm (Antwort im Overlay). Bereits gesprochene Sätze kommen aus dem Cache (kostet nichts).
+ * - Kostenlos bis 1 Mio. Zeichen pro Monat (Chirp 3 HD), danach 30 $ pro 1 Mio. Zeichen (Stand Okt. 2026,
+ *   cloud.google.com/text-to-speech/pricing). JARVIS zählt selbst mit: bis `monthlyChars` (Standard 950 000, etwas Puffer)
+ *   gratis; darüber – nur mit `payBeyondFree` – zählt jeder Satz mit seinem Preis ins gemeinsame Cloud-Budget (CostGuard,
+ *   zusammen mit Gemini). Ist das Budget erreicht, bleibt JARVIS stumm (Antwort im Overlay/Chat).
+ *   Bereits gesprochene Sätze kommen aus dem Cache (kostet nichts).
  * - Nie für private Antworten: die kommen beim Zocken nur als Text ins Overlay (siehe Orchestrator).
  * - Schlüssel: eigener Google-Cloud-Schlüssel (google.tts_api_key), sonst der Gemini-Schlüssel, falls dort die
  *   Text-to-Speech-API freigeschaltet ist.
@@ -12,11 +15,12 @@ const log = require('../core/logger').scope('cloud-tts');
 const ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize';
 const FREE_CHARS = 1_000_000;
 const DEFAULT_LIMIT = 950_000;
+const USD_PER_CHAR = 30 / 1_000_000; // Chirp 3 HD über dem Gratis-Kontingent
 const VOICES = Object.freeze({ standard: 'de-DE-Chirp3-HD-Achird', jarvis: 'de-DE-Chirp3-HD-Charon', alya: 'de-DE-Chirp3-HD-Leda' });
 
 class CloudTts {
   constructor(s) { this.s = s; this.pausedUntil = 0; this.lastError = ''; }
-  cfg() { return { whileGaming: 'cloud', monthlyChars: DEFAULT_LIMIT, voices: {}, ...(this.s.settings.get('voice')?.tts?.cloud || {}) }; }
+  cfg() { return { whileGaming: 'cloud', monthlyChars: DEFAULT_LIMIT, payBeyondFree: true, voices: {}, ...(this.s.settings.get('voice')?.tts?.cloud || {}) }; }
   /** Was beim Zocken spricht: 'cloud' (Google) oder 'omnivoice' (lokal, braucht die Grafikkarte). */
   gamingMode() { return this.cfg().whileGaming === 'omnivoice' ? 'omnivoice' : 'cloud'; }
   key() { return this.s.secrets.get('google.tts_api_key') || this.s.secrets.get('gemini.api_key') || ''; }
@@ -31,7 +35,14 @@ class CloudTts {
     if (!this.key() || this.pausedUntil > Date.now()) return false;
     if ((this.s.settings.get('cloud') || {}).mode === 'local') return false;
     if (require('../core/privacy').isPrivate()) return false;
-    return this.used() + chars <= this.limit();
+    if (this.used() + chars <= this.limit()) return true;
+    // Über dem Gratis-Kontingent: nur mit Freigabe und solange das gemeinsame Cloud-Budget (Gemini + Google-Stimme) reicht
+    return this.cfg().payBeyondFree !== false && !!this.s.costGuard && !this.s.costGuard.exceeded();
+  }
+  /** Kosten (USD) für die Zeichen über dem Gratis-Kontingent. */
+  billableUsd(chars) {
+    const over = Math.max(0, this.used() + chars - this.limit()) - Math.max(0, this.used() - this.limit());
+    return over * USD_PER_CHAR;
   }
 
   /** Satz → WAV (24 kHz, 16 bit). */
@@ -40,12 +51,20 @@ class CloudTts {
     if (!t) throw new Error('Kein Text');
     if (!this.available(t.length)) {
       const why = !this.key() ? 'Kein Google-Schlüssel für die Google-Stimme hinterlegt (Einstellungen → Stimme → „Google-Cloud-Schlüssel“).'
-        : this.used() + t.length > this.limit() ? 'Gratis-Kontingent der Google-Stimme für diesen Monat aufgebraucht – ab dem 1. geht es weiter.'
+        : this.used() + t.length > this.limit() ? (this.cfg().payBeyondFree === false ? 'Gratis-Kontingent der Google-Stimme für diesen Monat aufgebraucht – ab dem 1. geht es weiter.' : 'Cloud-Budget erreicht (Gemini + Google-Stimme) – die Google-Stimme ist bis zum Budget-Neustart aus. Grenze: Einstellungen → Gemini / KI.')
           : (this.s.settings.get('cloud') || {}).mode === 'local' ? 'Strikt lokaler Modus ist an – die Google-Stimme ist dann aus (Einstellungen → Gemini / KI → Modus).'
             : this.pausedUntil > Date.now() ? (this.lastError || 'Google-Stimme kurz pausiert nach einem Fehler – gleich nochmal versuchen.') : 'Google-Stimme ist für private Inhalte gesperrt.';
       throw new Error(why);
     }
     const name = this.voiceFor(preset);
+    // Über dem Gratis-Kontingent: Kosten vorher im gemeinsamen Budget reservieren (wirft bei erreichter Grenze)
+    const usd = this.billableUsd(t.length);
+    const ledger = usd > 0 ? this.s.costGuard.reserve({ feature: 'tts', model: 'chirp3-hd', estUsd: usd }) : null;
+    try { const r = await this.call(name, t, speed); if (ledger) this.s.costGuard.settle(ledger); return r; }
+    catch (e) { if (ledger) this.s.costGuard.settle(ledger, { status: 'failed' }); throw e; }
+  }
+
+  async call(name, t, speed) {
     const res = await this.s.fetch(ENDPOINT, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': this.key() },
       body: JSON.stringify({ input: { text: t }, voice: { languageCode: name.slice(0, 5), name }, audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: 24000, speakingRate: Math.max(0.75, Math.min(1.5, Number(speed) || 1)) } }),
@@ -75,7 +94,7 @@ class CloudTts {
   }
 
   status() {
-    return { hasKey: !!this.key(), ownKey: this.ownKey(), whileGaming: this.gamingMode(), used: this.used(), limit: this.limit(), free: FREE_CHARS, month: this.month(), lastError: this.lastError, voices: { ...VOICES, ...(this.cfg().voices || {}) } };
+    return { hasKey: !!this.key(), ownKey: this.ownKey(), whileGaming: this.gamingMode(), used: this.used(), limit: this.limit(), free: FREE_CHARS, payBeyondFree: this.cfg().payBeyondFree !== false, month: this.month(), lastError: this.lastError, voices: { ...VOICES, ...(this.cfg().voices || {}) } };
   }
 }
 

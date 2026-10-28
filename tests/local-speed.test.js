@@ -90,3 +90,27 @@ test('Genaueres Whisper-Modell: Auswahl nur, wenn heruntergeladen; „base“ se
     wm.use('base'); assert.equal(cfg.whisperModel, '');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Lokale KI aus: private Frage geht mit Kontext an Gemini (sichtbar markiert), private Sprache darf an Google', async () => {
+  const { tempCore } = require('./helpers');
+  const tts = [];
+  const fetch = async (url, init) => {
+    if (String(url).includes('texttospeech.googleapis.com')) { tts.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ audioContent: Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(60)]).toString('base64') }) }; }
+    throw new Error('offline');
+  };
+  const { core, fake, cleanup } = tempCore({ script: [{ text: 'Deine Miete liegt bei 500 €, Chef.' }], fetch });
+  try {
+    core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
+    await core.gemini.discover();
+    // an: private Stimme nie an Google
+    await assert.rejects(core.speech.synthesize('Dein Termin ist um acht.', { private: true }), /privat/);
+    core.settings.update({ localLLM: { enabled: false, model: 'qwen3.5:4b' } });
+    assert.equal(core.localLLM.cfg().model, '', 'aus = kein lokales Modell');
+    const m = await core.orchestrator.chat({ text: 'Meine Miete ist zu hoch' });
+    assert.equal(m.meta.scope, 'private'); assert.equal(m.meta.local, false);
+    assert.match(m.content, /500/);
+    assert.equal(fake.requests.length, 1, 'Gemini wurde gefragt');
+    const r = await core.speech.synthesize('Dein Termin ist um acht.', { private: true });
+    assert.equal(r.engine, 'cloud'); assert.equal(tts.length, 1);
+  } finally { cleanup(); }
+});

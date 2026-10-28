@@ -97,10 +97,12 @@ export function Calendar() {
                      if (!v && !(await ask('„' + label + '“ nicht mehr übertragen? Die von JARVIS angelegten Kopien werden aus dem Google-Kalender „JARVIS · ' + label + '“ entfernt (in Google geänderte bleiben).', '', { confirmOnly: true, okLabel: 'Nicht mehr übertragen' }))) { e.currentTarget.checked = true; return; }
                      const saved = await guard(() => rpc('settings.update', { google: { exportKinds: { [k]: v } } }));
                      if (saved) guard(() => rpc('calendar.sync'));
-                   }} /><span class="grow">{label}</span>{on && r && <span class="tiny muted">{r.entries} in Google{r.conflicts ? ' · ' + r.conflicts + ' in Google geändert' : ''}</span>}</label>;
+                   }} /><span class="grow">{label}</span>{on && r && <span class="tiny muted" title={r.entries + ' Einträge aus JARVIS'}>{/* nur, was wirklich in Google liegt – nicht, was übertragen werden sollte */}{(r.created || 0) + (r.updated || 0) + (r.unchanged || 0)} in Google{r.failed ? <span class="err"> · {r.failed} fehlgeschlagen</span> : ''}{r.conflicts ? ' · ' + r.conflicts + ' in Google geändert' : ''}</span>}</label>;
                  })}
                  <div class="tiny muted">Todos = offene Aufgaben mit Fälligkeit · Erinnerungen = Aufgaben mit Erinnerungszeit (Google meldet sich zur selben Zeit) · Uni = Vorlesungen, Prüfungen, Lernen, Abgaben · Zeitraum: letzte 30 bis nächste 180 Tage, Geburtstage jährlich</div>
                </div>}
+               {status?.mirror?.failed > 0 && <div class="small err">{status.mirror.failed} Eintrag/Einträge nicht übertragen: {Object.entries(status.mirror.reasons || {}).slice(0, 3).map(([why, n]) => `${why} (${n}×)`).join(' · ')}</div>}
+               {appSettings?.google?.exportLocalToGoogle && <div class="tiny muted mt">Nicht im Google Kalender zu sehen? Die Kalender heißen „JARVIS · Uni“, „JARVIS · Termine“ usw. – am Handy in der Google-Kalender-App unter Einstellungen → dein Konto einschalten, im Browser links unter „Meine Kalender“ anhaken.</div>}
                {status?.mirror?.conflicts > 0 && <div class="small warn">{status.mirror.conflicts} Google-Kopie(n) wurden in Google verändert und daher nicht überschrieben.</div>}
                {status?.mirror?.createdCalendars?.length > 0 && <div class="small muted">Neu in Google angelegt: {status.mirror.createdCalendars.join(', ')}</div>}
               <button class="btn sm mt" disabled={!appSettings?.google?.exportLocalToGoogle || status?.syncing} title={!appSettings?.google?.exportLocalToGoogle ? 'Zuerst die Übertragung einschalten' : ''} onClick={async () => {

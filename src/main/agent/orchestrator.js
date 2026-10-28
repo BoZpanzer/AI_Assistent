@@ -158,7 +158,7 @@ class Orchestrator {
   }
 
   /** Läuft ein Spiel und spricht dabei die Google-Stimme? Dann private Antworten nur als Text ins Overlay. */
-  quietPrivate() { try { return !!this.s.localLLM?.isGaming?.() && this.s.cloudTts?.gamingMode() === 'cloud'; } catch { return false; } }
+  quietPrivate() { try { if (privacy.privateViaCloud(this.s.settings)) return this.quietPublic(); return !!this.s.localLLM?.isGaming?.() && this.s.cloudTts?.gamingMode() === 'cloud'; } catch { return false; } }
   /** Beim Zocken ohne verfügbare Google-Stimme (kein Schlüssel / Kontingent leer): auch öffentliche Antworten nur ins Overlay. */
   quietPublic() { try { return this.quietPrivate() && !this.s.cloudTts.available(60); } catch { return false; } }
 
@@ -249,7 +249,8 @@ class Orchestrator {
    * Funktion aus, Budget) das lokale Modell mit sichtbarem Hinweis. Ein lokaler Fehler löst nie einen Cloud-Aufruf aus.
    */
   route(cid, images = [], scope = this.legacyScope(cid)) {
-    if (scope === 'private') return { provider: 'local', tools: 'private' };
+    // Privat → lokales Modell; ist die lokale KI ausgeschaltet, bewusst Gemini (mit allem Kontext, kein Groq)
+    if (scope === 'private') return privacy.privateViaCloud(this.s.settings) ? this.routeGemini(images, 'private') : { provider: 'local', tools: 'private' };
     // Öffentlich und ohne Bild: zuerst Groq (kostenlos, schnell), sonst Gemini, sonst lokal
     if (!images.length && this.s.groq?.available()) return { provider: 'groq', tools: scope };
     return this.routeGemini(images, scope);
@@ -284,7 +285,7 @@ class Orchestrator {
     const spar = this.s.settings.get('aiCostMode') !== 'max';
     // Gemini sieht nur nicht-private Nachrichten; das lokale Modell sieht alles.
     // Groq-Gratiskontingent zählt Token pro Minute → etwas kürzerer Verlauf
-    const contents = conversations.history(cid, isGroq ? 8 : spar ? 10 : 14, isGroq ? 9000 : spar ? 16000 : 24000, upTo, { publicOnly: !isLocal, legacyPrivate: conversations.get(cid)?.privacy === 'private' });
+    const contents = conversations.history(cid, isGroq ? 8 : spar ? 10 : 14, isGroq ? 9000 : spar ? 16000 : 24000, upTo, { publicOnly: !isLocal && !isPrivateConv, legacyPrivate: conversations.get(cid)?.privacy === 'private' });
     if (images.length) {
       const lastUser = [...contents].reverse().find((c) => c.role === 'user');
       if (lastUser) lastUser.parts.unshift(...images.slice(0, 3).map((im) => ({ inlineData: { mimeType: im.mimeType || 'image/jpeg', data: im.data } })));

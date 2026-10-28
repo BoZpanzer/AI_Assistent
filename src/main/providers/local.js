@@ -36,7 +36,13 @@ function jsonSchema(s) { if (!s || typeof s !== 'object') return s; if (Array.is
  */
 class LocalLLM {
   constructor(settings) { this.settings = settings; this.busy = 0; this.queue = []; this.isGaming = () => false; }
-  cfg() { return { port: 11434, model: '', keepAlive: '2m', threads: 4, numCtx: 8192, whileGaming: 'cpu', ...(this.settings.get('localLLM') || {}) }; }
+  cfg() {
+    const c = { port: 11434, model: '', keepAlive: '2m', threads: 4, numCtx: 8192, whileGaming: 'cpu', ...(this.settings.get('localLLM') || {}) };
+    // Lokale KI ausgeschaltet → überall „kein lokales Modell“ (private Fragen gehen dann an Gemini, siehe Orchestrator.route)
+    return c.enabled === false ? { ...c, model: '' } : c;
+  }
+  /** Ausdrücklich ausgeschaltet (Einstellungen → Lokale KI)? Dann gehen private Fragen in die Cloud. */
+  off() { return (this.settings.get('localLLM') || {}).enabled === false; }
   /** Ollama-Optionen je Anfrage (beim Spielen: weniger Threads, auf Wunsch nur CPU, sofort entladen). */
   runtimeOptions() {
     const c = this.cfg(); const gaming = this.isGaming();

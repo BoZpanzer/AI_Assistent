@@ -86,7 +86,7 @@ class BudgetError extends Error {
 }
 
 /** Sparsamer Standardmodus (dokumentiert in docs/KOSTEN_UND_DATENSCHUTZ.md). */
-const DEFAULT_BUDGET = { monthlyEur: 5, dailyEur: 0.25, sessionEur: 0.15, warnPct: 80, hardStop: true, usdToEur: 0.86, brake: true };
+const DEFAULT_BUDGET = { monthlyEur: 8.5, dailyEur: 0.25, sessionEur: 0.15, warnPct: 80, hardStop: true, usdToEur: 0.86, brake: true };
 
 class CostGuard {
   constructor(s, { now = () => new Date() } = {}) {

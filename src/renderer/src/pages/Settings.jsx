@@ -47,9 +47,10 @@ function PetSettings({ s }) {
  * Stimme beim Zocken: OmniVoice braucht die Grafikkarte – darum spricht dann standardmäßig die Google-Stimme
  * (Chirp 3 HD, gratis bis 1 Mio. Zeichen/Monat, JARVIS hört vorher auf). Private Antworten kommen dann nur ins Overlay.
  */
-function GamingVoice({ t }) {
+function GamingVoice({ t, localVoice = true }) {
   const c = t.cloud || {};
-  const mode = c.whileGaming || 'cloud';
+  // Ohne lokale Sprachausgabe gibt es nur die Google-Stimme – dann keine Auswahl fürs Zocken
+  const mode = localVoice ? c.whileGaming || 'cloud' : 'cloud';
   const secrets = useStore((x) => x.secrets) || {};
   const [st, reload] = useRpc('cloudtts.status', {}, { events: ['settings:changed'] });
   const [k, setK] = useState('');
@@ -57,9 +58,9 @@ function GamingVoice({ t }) {
   const test = async () => { await guard(() => rpc('cloudtts.test'), 'Google-Stimme funktioniert'); reload(); };
   const pct = st ? Math.min(100, Math.round((st.used / Math.max(1, st.limit)) * 100)) : 0;
   return <>
-    <Field label="Beim Zocken spricht" hint={mode === 'cloud' ? 'Google rechnet die Stimme – dein PC bleibt frei fürs Spiel. Private Antworten kommen dann nur als Text ins Overlay.' : 'KI-Stimme lokal – braucht 2–3 GB Grafikspeicher neben dem Spiel'}>
+    {localVoice && <Field label="Beim Zocken spricht" hint={mode === 'cloud' ? 'Google rechnet die Stimme – dein PC bleibt frei fürs Spiel. Private Antworten kommen dann nur als Text ins Overlay.' : 'KI-Stimme lokal – braucht 2–3 GB Grafikspeicher neben dem Spiel'}>
       <Select value={mode} onChange={(v) => upd({ voice: { tts: { cloud: { whileGaming: v } } } }).then(reload)} options={[{ value: 'cloud', label: 'Google-Stimme (gratis)' }, { value: 'omnivoice', label: 'KI-Stimme (OmniVoice)' }]} />
-    </Field>
+    </Field>}
     {mode === 'cloud' && <div class="col" style={{ gap: 6, marginBottom: 6 }}>
       {st && <div class="tiny muted">Diesen Monat {st.used.toLocaleString('de-DE')} von {st.limit.toLocaleString('de-DE')} Gratis-Zeichen · danach kommen Antworten beim Zocken bis Monatsende nur ins Overlay</div>}
       {st && <div class="bar"><i style={{ width: pct + '%' }} /></div>}
@@ -68,6 +69,7 @@ function GamingVoice({ t }) {
           <button class="btn xs" disabled={!k} onClick={() => save(k)}>Speichern</button>{secrets['google.tts_api_key'] && <button class="btn xs ghost" onClick={() => save('')}>Entfernen</button>}
           <button class="btn xs ghost" disabled={!st?.hasKey} onClick={test}>Testen</button></div>
       </Field>
+      <Field label="Über das Gratis-Kontingent hinaus" hint="Ab 950 000 Zeichen im Monat kostet die Google-Stimme 30 $ pro Mio. Zeichen – das zählt dann ins gemeinsame Cloud-Budget (Gemini + Stimme) unter Gemini / KI"><Toggle checked={c.payBeyondFree !== false} onChange={(v) => upd({ voice: { tts: { cloud: { payBeyondFree: v } } } }).then(reload)} /></Field>
       {st?.lastError && <div class="notice tiny">{st.lastError}</div>}
       <div class="tiny muted">Stimmen: J.A.R.V.I.S. = Charon, Alya = Leda, Standard = Achird (Google Chirp 3 HD). Gesprochene Sätze werden gemerkt und kosten beim zweiten Mal nichts.</div>
     </div>}
@@ -96,38 +98,43 @@ function VoiceSettings({ s }) {
   };
   const ins = om_?.installing;
   const omniOn = om_?.installed && om_?.enabled;
+  // Schalter „Lokale Sprachausgabe“: aus → nur Google-Stimme, alle KI-Stimmen-Felder verschwinden (und OmniVoice wird entladen)
+  const localVoice = om.enabled !== false;
   return (
-    <Panel icon={Volume2} title="Stimme" sub="Wie JARVIS klingt: KI-Stimme lokal, beim Zocken die Google-Stimme. Auch per Sprache: „Jarvis, Stimme auf Alya“.">
+    <Panel icon={Volume2} title="Stimme" sub={localVoice ? 'Wie JARVIS klingt: KI-Stimme lokal, beim Zocken die Google-Stimme. Auch per Sprache: „Jarvis, Stimme auf Alya“.' : 'Wie JARVIS klingt: immer die Google-Stimme. Auch per Sprache: „Jarvis, Stimme auf Alya“.'}>
+      {om_?.supported !== false && <Field label="Lokale Sprachausgabe (KI-Stimme)" hint={localVoice ? 'spricht auf deinem PC (ca. 2–3 GB Grafikspeicher, Download ca. ' + (om_?.sizeGB ?? 6) + ' GB)' : 'aus – es spricht immer die Google-Stimme' + (s.localLLM?.enabled === false ? ' (auch private Antworten, weil die lokale KI aus ist)' : '; private Antworten stehen dann nur im Chat')}>
+        <Toggle checked={localVoice} onChange={(v) => setOmni({ enabled: v })} />
+      </Field>}
       {presets.map((p) => (
         <div class="row gap-s" style={{ padding: '5px 0', alignItems: 'center' }}>
           <input type="radio" name="voice-preset" checked={cur === p.id} onChange={() => set({ preset: p.id })} />
           <span class="grow small" style={{ cursor: 'pointer' }} onClick={() => set({ preset: p.id })}><b>{p.label}</b><div class="tiny muted">{p.description}</div></span>
-          <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe KI-Stimme'} onClick={() => play(p.id, { engine: 'omnivoice' })}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
+          {localVoice && <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe KI-Stimme'} onClick={() => play(p.id, { engine: 'omnivoice' })}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>}
           <button class="btn xs ghost" title={busy === p.id + ':g' ? 'Stopp' : 'Hörprobe Google-Stimme (beim Zocken)'} onClick={() => play(p.id, { engine: 'cloud' })}>{busy === p.id + ':g' ? <Spinner size={12} /> : <><Play size={12} />G</>}</button>
         </div>
       ))}
       <div class="hr" />
-      {/* KI-Stimme (OmniVoice) */}
+      {/* KI-Stimme (OmniVoice) – nur, wenn die lokale Sprachausgabe an ist */}
       {om_ && !om_.supported && <div class="tiny muted">KI-Stimme nur unter Windows – es spricht die Google-Stimme.</div>}
-      {om_?.supported && !om_.installed && !ins && <div class="notice tiny">
+      {localVoice && om_?.supported && !om_.installed && !ins && <div class="notice tiny">
         <div class="row gap-s" style={{ alignItems: 'center' }}><span class="grow"><b>KI-Stimme fehlt noch</b> – bis dahin spricht die Google-Stimme (nur nicht-private Antworten). Natürlich, auch beim Zocken (ca. 2–3 GB Grafikspeicher), Download ca. {om_.sizeGB} GB.</span>
           <button class="btn sm" onClick={installOmni}><Download size={14} />Installieren</button></div>
       </div>}
-      {ins && <div class="col" style={{ gap: 6 }}>
+      {localVoice && ins && <div class="col" style={{ gap: 6 }}>
         <div class="small"><Spinner size={12} /> KI-Stimme · Schritt {ins.index + 1} von {ins.total}: <b>{ins.label}</b> · {Math.floor((now - ins.startedAt) / 60000)} min</div>
         <div class="bar"><i style={{ width: `${Math.round(((ins.index + 0.5) / ins.total) * 100)}%` }} /></div>
         {ins.detail && <div class="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.detail}</div>}
       </div>}
-      {om_?.error && <div class="notice tiny mt"><FixText text={'KI-Stimme: ' + om_.error} /></div>}
-      {om_?.installed && !ins && <Field label="KI-Stimme (OmniVoice)" hint={!om_.enabled ? 'aus – es spricht die Google-Stimme' : om_.running ? `bereit (${/cuda/.test(om_.device) ? 'Grafikkarte' : 'Prozessor'})` : om_.starting ? 'wird geladen …' : 'startet beim nächsten Satz'}><Toggle checked={om_.enabled} onChange={(v) => setOmni({ enabled: v })} /></Field>}
-      <GamingVoice t={t} />
+      {localVoice && om_?.error && <div class="notice tiny mt"><FixText text={'KI-Stimme: ' + om_.error} /></div>}
+      {localVoice && om_?.installed && !ins && <Field label="KI-Stimme (OmniVoice)"><span class="small muted">{om_.running ? `bereit (${/cuda/.test(om_.device) ? 'Grafikkarte' : 'Prozessor'})` : om_.starting ? 'wird geladen …' : 'startet beim nächsten Satz'}</span></Field>}
+      <GamingVoice t={t} localVoice={localVoice} />
       <Field label={`Lautstärke · ${Math.round((t.volume ?? 1) * 100)} %`}><input class="range" type="range" min="0.2" max="1.5" step="0.05" value={t.volume ?? 1} onChange={(e) => set({ volume: Number(e.currentTarget.value) })} /></Field>
       <Field label={`Tempo · ${Math.round((t.speed ?? 1) * 100)} %`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={t.speed ?? 1} onChange={(e) => set({ speed: Number(e.currentTarget.value) })} /></Field>
       <Field label="Lange Antworten kurz vorlesen" hint="liest die ersten Sätze, Rest steht im Chat"><Toggle checked={t.short !== false} onChange={(x) => set({ short: x })} /></Field>
 
       <details class="mt">
         <summary class="small">Erweitert</summary>
-        {om_?.installed && <>
+        {localVoice && om_?.installed && <>
           <div class="hud-label mt">KI-Stimmen anpassen</div>
           {presets.map((p) => (
             <div class="col" style={{ gap: 4, padding: '4px 0' }}>
@@ -303,7 +310,7 @@ function BudgetField({ s }) {
       <div class="hr" />
       {num('dailyEur', 'Tagesbudget (€)', 'lokaler Kalendertag; danach sperrt JARVIS weitere Gemini-Aufrufe bis Mitternacht (0 = aus)')}
       {num('sessionEur', 'Sitzungsbudget (€)', 'seit dem Start von JARVIS (0 = aus)')}
-      {num('monthlyEur', 'Monatsbudget (€)', 'Warnung ab 80 %, ab 95 % Sparstufe, bei 100 % Sperre', 0.5)}
+      {num('monthlyEur', 'Monatsbudget (€)', 'Gemini + Google-Stimme zusammen (Stimme erst über ihrem Gratis-Kontingent). Warnung ab 80 %, ab 95 % Sparstufe, bei 100 % Sperre', 0.5)}
       <Field label="Bei Erreichen sperren" hint="lokale Sperre – keine garantierte Abrechnungsgrenze bei Google"><Toggle checked={b.hardStop !== false} onChange={(v) => upd({ aiBudget: { hardStop: v } }).then(reload)} /></Field>
       {st && <Field label="Verbrauch (Schätzung)"><span class="small" style={{ color, textAlign: 'right' }}>heute {eur(st.today)} / {eur(st.dailyBudget)} · Sitzung {eur(st.session)} / {eur(st.sessionBudget)} · Monat {eur(st.eur)} / {eur(st.budget)}{st.projected != null ? ` · Hochrechnung ${eur(st.projected)}` : ''}{st.blocked ? ' · GESPERRT' : st.braking ? ' · Sparstufe' : ''}{st.inflight ? ` · ${st.inflight} laufend` : ''}</span></Field>}
       {st && <div class="tiny muted">Geschätzt aus gemeldeten Token × offiziellen Listenpreisen (Stand {st.pricesAsOf}, USD) × Kurs {String(st.usdToEur).replace('.', ',')} €/$. Googles Abrechnung kann abweichen (Zeitzone, Rundung, Preisänderungen, Suche).</div>}
@@ -996,7 +1003,7 @@ export function LocalAI({ s }) {
   };
   useEffect(() => { refresh(); }, []);
   // Ollama gerade erst gestartet/beendet? Solange es nicht erreichbar ist, alle paar Sekunden neu prüfen
-  useEffect(() => { if (status && !status.online) { const t = setInterval(refresh, 5000); return () => clearInterval(t); } return undefined; }, [status?.online]);
+  useEffect(() => { if (status && !status.online && s.localLLM?.enabled !== false) { const t = setInterval(refresh, 5000); return () => clearInterval(t); } return undefined; }, [status?.online, s.localLLM?.enabled]);
   const [pull, setPull] = useState(null);
   useEvent('local:pull', (p) => setPull(p));
   const tiers = status?.tiers || [
@@ -1022,7 +1029,12 @@ export function LocalAI({ s }) {
   };
   const already = !!(selected && status?.installed?.includes(selected));
   const pct = pull?.total ? Math.min(100, Math.floor((pull.completed / pull.total) * 100)) : null;
-  return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub="Gemini für allgemeine Chats · Private Daten ausschließlich lokal">
+  const on = s.localLLM?.enabled !== false;
+  return <Panel icon={ShieldCheck} title="Lokale KI & Private" sub={on ? 'Private Fragen nur auf deinem PC (Ollama) · alles andere über Gemini' : 'Lokale KI aus – auch private Fragen gehen an Gemini'}>
+    <Field label="Lokale KI verwenden" hint={on ? 'private Fragen (Termine, Finanzen, eigene Daten) beantwortet nur das Modell auf deinem PC' : 'aus: kein Ollama, kein Grafikspeicher – private Fragen gehen an Gemini (Google trainiert nicht damit, speichert aber ca. 55 Tage; kostet Budget). Terminfragen beantwortet JARVIS weiterhin ohne KI.'}>
+      <Toggle checked={on} onChange={async (v) => { if (!v && !(await ask('Lokale KI ausschalten? Private Fragen (Termine, Finanzen, eigene Daten, Anhänge) gehen dann an Google Gemini. Google trainiert nicht damit, speichert sie aber rund 55 Tage zur Missbrauchserkennung. Das kostet außerdem Budget.', '', { confirmOnly: true, okLabel: 'Ausschalten' }))) return; upd({ localLLM: { enabled: v } }); }} />
+    </Field>
+    {on && <>
     <p class="small">Gemini bleibt für normale Gespräche aktiv. Private Gespräche verwenden nur Ollama auf diesem Rechner – ohne Cloud-Fallback. Modelle werden erst nach Klick heruntergeladen.</p>
     <Field label="Ollama-Port (nur 127.0.0.1)"><input class="inp" type="number" min="1" max="65535" value={s.localLLM?.port || 11434} onChange={e => upd({ localLLM: { port: Number(e.currentTarget.value) } })} /></Field>
     <div class="row gap-s mt">
@@ -1053,5 +1065,6 @@ export function LocalAI({ s }) {
     </Field>
     <Field label="Modell im Speicher halten" hint="danach entlädt Ollama das Modell wieder"><Select value={s.localLLM?.keepAlive || '2m'} onChange={(keepAlive) => upd({ localLLM: { keepAlive } })} options={[['30s', '30 Sekunden'], ['2m', '2 Minuten'], ['10m', '10 Minuten']].map(([value, label]) => ({ value, label }))} /></Field>
     <p class="tiny muted mt">Die 27B-Stufe benötigt viel Arbeitsspeicher und kann langsam sein. Modelle und Kontext benötigen zusätzlich RAM/VRAM. Ollama muss zunächst separat installiert sein; Downloads können mehrere GB groß sein. Private Daten bleiben lokal, sofern du keine separate externe Weitergabe erlaubst.</p>
+    </>}
   </Panel>;
 }
