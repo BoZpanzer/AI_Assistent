@@ -1,0 +1,11 @@
+Fetching 13 files:  77%|███████▋  | 10/13 [00:00<00:00, 91.87it/s]Fetching 13 files: 100%|██████████| 13/13 [00:18<00:00,  1.45s/it]
+Loading weights:   0%|          | 0/313 [00:00<?, ?it/s]Loading weights: 100%|██████████| 313/313 [00:00<00:00, 8221.34it/s]
+Loading weights:   0%|          | 0/527 [00:00<?, ?it/s]Loading weights: 100%|██████████| 527/527 [00:00<00:00, 6045.78it/s]
+model loaded on cpu 20.2 s
+synth 159 chars 16 steps 313.62 s for 9.8 s audio, RTF 32.07
+KI-Stimme_JARVIS 323.2 s
+synth 159 chars 16 steps 309.96 s for 9.8 s audio, RTF 31.5
+KI-Stimme_Alya 324.2 s
+reference created standard-1
+synth 159 chars 16 steps 191.81 s for 10.0 s audio, RTF 19.26
+KI-Stimme_Standard 339.6 s
