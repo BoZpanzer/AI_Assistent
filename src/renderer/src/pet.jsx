@@ -120,32 +120,37 @@ function Desk() {
   // Stammplatz geladen/geändert → dorthin laufen (nicht während sie redet)
   useEffect(() => { if (settings && !hadBubble.current && !drag) walkTo(home()); }, [cfg.homeX, !!settings]);
 
-  // Maus nur über sichtbaren Pixeln (Figur) oder der Blase annehmen
+  // Maus nur über sichtbaren Pixeln (Figur) oder der Blase annehmen. Der Hauptprozess meldet die Zeigerposition (pet:cursor);
+  // die Mausereignisse des Fensters selbst gelten zusätzlich. „über mir“ wird regelmäßig neu gemeldet, falls es mal auseinanderläuft.
+  const sent = useRef(0);
   const setOver = (on) => {
-    if (over.current === on) return;
-    over.current = on; rpc('pet.mouse', { over: on }).catch(() => {});
+    const now = Date.now();
+    if (over.current === on && !(on && now - sent.current > 1500)) return;
+    over.current = on; sent.current = now; rpc('pet.mouse', { over: on }).catch(() => {});
     if (on && idleAct === 'sleep') { lastActive.current = Date.now(); setIdleAct(null); }
   };
+  const hit = (cx, cy) => {
+    const b = bubbleBox.current?.getBoundingClientRect();
+    if (b && cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom) return true;
+    const el = walker.current?.querySelector('.pet-lift')?.firstElementChild; const r = el?.getBoundingClientRect();
+    if (!r || cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return false;
+    const img = el.querySelector('img');
+    if (!img) return true; // Ersatzfigur (SVG): ganze Fläche
+    let fx = (cx - r.left) / r.width; const fy = (cy - r.top) / r.height;
+    if (getComputedStyle(el).transform.startsWith('matrix(-1')) fx = 1 - fx;
+    return alphaAt(img, fx, fy) > 40;
+  };
+  const dragRef = useRef(null); dragRef.current = drag;
+  useEvent('pet:cursor', (d) => { if (!dragRef.current) setOver(d.x >= 0 && hit(d.x, d.y)); });
   useEffect(() => {
-    const move = (e) => {
-      if (drag) return;
-      const b = bubbleBox.current?.getBoundingClientRect();
-      if (b && e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) return setOver(true);
-      const el = walker.current?.querySelector('.pet-lift')?.firstElementChild; const r = el?.getBoundingClientRect();
-      if (!r || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return setOver(false);
-      const img = el.querySelector('img');
-      if (!img) return setOver(true); // Ersatzfigur (SVG): ganze Fläche
-      let fx = (e.clientX - r.left) / r.width; const fy = (e.clientY - r.top) / r.height;
-      if (getComputedStyle(el).transform.startsWith('matrix(-1')) fx = 1 - fx;
-      setOver(alphaAt(img, fx, fy) > 40);
-    };
-    const leave = () => setOver(false);
+    const move = (e) => { if (!dragRef.current) setOver(hit(e.clientX, e.clientY)); };
+    const leave = () => { if (!dragRef.current) setOver(false); };
     addEventListener('mousemove', move); document.addEventListener('mouseleave', leave);
     return () => { removeEventListener('mousemove', move); document.removeEventListener('mouseleave', leave); };
-  }, [drag, idleAct]);
+  }, [idleAct]);
 
   const down = (e) => {
-    if (e.button !== 0 || !over.current) return;
+    if (e.button !== 0 || !(over.current || hit(e.clientX, e.clientY))) return;
     e.preventDefault();
     const start = { mx: e.clientX, x, moved: false };
     clearTimeout(walkTimer.current); setWalk(null); setDrag(start);
@@ -174,7 +179,7 @@ function Desk() {
     };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   };
-  const menu = (e) => { if (!over.current) return; e.preventDefault(); rpc('pet.menu').catch(() => {}); };
+  const menu = (e) => { if (!(over.current || hit(e.clientX, e.clientY))) return; e.preventDefault(); rpc('pet.menu').catch(() => {}); };
 
   const state = drag?.moved || (drag && tilt) ? 'oops' : mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : ['talk', 'listen', 'think', 'think_high'].includes(mood.state) ? mood.state : walk ? 'walk' : mood.state !== 'idle' ? mood.state : drag ? 'wave' : idleAct || 'idle';
   const gender = genderFor(settings);

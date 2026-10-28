@@ -92,8 +92,21 @@ class LocalLLM {
       return { online: false, installed: [], tiers: LOCAL_TIERS, ramGB, recommended: recommendedTier(ramGB), selected: this.cfg().model };
     }
   }
+  /** Ollama im Hintergrund starten (Windows: die installierte App, sonst `ollama serve`) und warten, bis es antwortet. */
+  async startOllama() {
+    if ((await this.status()).online) return { online: true };
+    const { spawn } = require('node:child_process'); const fs = require('node:fs'); const path = require('node:path');
+    const app = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Ollama', 'ollama app.exe') : '';
+    const run = (cmd, args) => new Promise((resolve) => {
+      try { const c = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true, shell: false }); c.on('error', () => resolve(false)); c.unref(); setTimeout(() => resolve(true), 400); } catch { resolve(false); }
+    });
+    const started = (app && fs.existsSync(app) && await run(app, [])) || await run('ollama', ['serve']);
+    if (!started) throw new Error('Ollama ist nicht installiert. Installiere es über „Ollama installieren (Windows)“ oder von ollama.com.');
+    for (let i = 0; i < 30; i++) { await new Promise((r) => setTimeout(r, 1000)); if ((await this.status()).online) return { online: true }; }
+    throw new Error('Ollama wurde gestartet, antwortet aber nicht auf Port ' + this.cfg().port + '. Port in den Einstellungen prüfen oder Ollama manuell starten.');
+  }
   /** Explicit user action only. Never pull an arbitrary URL or remote/cloud model. */
-  async installTier(model) {
+  async installTier(model, onProgress = () => {}) {
     if (!LOCAL_TIERS.some(t => t.model === model)) throw new Error('Unbekanntes lokales Modell');
     const { port } = this.cfg();
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Ungültiger lokaler Port');
@@ -101,16 +114,21 @@ class LocalLLM {
       const req = http.request({ hostname: '127.0.0.1', port, path: '/api/pull', method: 'POST',
         headers: { 'Content-Type': 'application/json' } }, res => {
         let body = ''; res.setEncoding('utf8');
-        res.on('data', chunk => { body += chunk; if (body.length > 1024 * 1024) req.destroy(new Error('Antwort zu groß')); });
+        // Ollama streamt Fortschritt als Zeilen-JSON ({status, completed, total}) – wir geben ihn weiter
+        let buf = ''; let err = ''; let last = null;
+        const line = (l) => { if (!l.trim()) return; try { const j = JSON.parse(l); if (j.error) err = String(j.error); else { last = j; onProgress({ model, status: j.status || '', completed: j.completed || 0, total: j.total || 0 }); } } catch { /* ignore */ } };
+        res.on('data', chunk => { buf += chunk; let i; while ((i = buf.indexOf('\n')) >= 0) { line(buf.slice(0, i)); buf = buf.slice(i + 1); } if (buf.length > 1024 * 1024) req.destroy(new Error('Antwort zu groß')); });
         res.on('end', () => {
-          if (res.statusCode !== 200) return reject(new Error('Ollama-Download fehlgeschlagen (HTTP ' + res.statusCode + ')'));
-          try { const result = JSON.parse(body); if (result.error) throw new Error(result.error); resolve(result); }
-          catch (e) { reject(e); }
+          line(buf);
+          if (res.statusCode !== 200) return reject(new Error('Ollama-Download fehlgeschlagen (HTTP ' + res.statusCode + (err ? ': ' + err : '') + ')'));
+          if (err) return reject(new Error(err));
+          if (!last || last.status !== 'success') return reject(new Error('Download wurde unterbrochen. Beim erneuten Klick macht Ollama dort weiter, wo es aufgehört hat.'));
+          resolve({ status: 'success' });
         });
       });
-      req.setTimeout(30 * 60 * 1000, () => req.destroy(new Error('Modell-Download: Zeitlimit erreicht')));
-      req.on('error', reject);
-      req.end(JSON.stringify({ model, stream: false }));
+      req.setTimeout(30 * 60 * 1000, () => req.destroy(new Error('Modell-Download: Zeitlimit erreicht (30 Minuten ohne Daten)')));
+      req.on('error', (e) => reject(new Error(/ECONNREFUSED|ECONNRESET/.test(e.code || '') ? 'Ollama ist nicht erreichbar (läuft es?).' : e.message)));
+      req.end(JSON.stringify({ model, stream: true }));
     });
   }
   async models(signal) {

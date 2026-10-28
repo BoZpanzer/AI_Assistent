@@ -2,9 +2,11 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
-## 5.3.3 – Figur umsetzen, Stimmwechsel-Fix
+## 5.4.0 – Figur frei platzierbar, Ollama-Download repariert, Figur bleibt greifbar
 
-- **Behoben:** Nach dem Stimmwechsel stand beim Minimieren/Schließen noch die alte Figur auf dem Desktop, ließ sich nicht mehr greifen und per Doppelklick ließ sich JARVIS nicht mehr öffnen. Die Desktop-Figur bekommt Einstellungen jetzt auch, solange sie versteckt ist, und setzt beim Wiederauftauchen ihren Maus-Zustand zurück.
+- **Ollama-Download:** Der Knopf war grau (Zeiger mit rotem Strich), sobald Ollama nicht lief – ohne zu sagen, warum. Jetzt startet er Ollama bei Bedarf selbst, zeigt Fortschritt in Prozent, meldet Fehler lesbar (z. B. unterbrochener Download) und sagt „✓ Modell ist installiert“, wenn es schon da ist. Zusätzlich gibt es einen Knopf „Ollama starten“, und die Anzeige prüft alle paar Sekunden neu, solange Ollama nicht erreichbar ist.
+- **Figur nicht mehr „fest“:** Die Zeigerposition wird jetzt vom Hauptprozess alle 50 ms abgefragt, statt sich auf Mausereignisse zu verlassen, die Windows bei durchklickbaren Fenstern manchmal nicht mehr weitergibt. Der Zustand „Maus über der Figur“ wird regelmäßig neu abgeglichen, und das Fenster wird ab und zu wieder nach oben geholt, falls ein anderes „immer im Vordergrund“-Fenster sie überdeckt.
+- **Behoben:** Nach dem Stimmwechsel stand beim Minimieren/Schließen noch die alte Figur auf dem Desktop und ließ sich nicht mehr greifen. Die Desktop-Figur bekommt Einstellungen jetzt auch, solange sie versteckt ist, und setzt beim Wiederauftauchen ihren Maus-Zustand zurück.
 - **Figur frei platzieren:** Zieh sie unten nach links, rechts oder in die Mitte – sie merkt sich den Platz, bummelt von dort aus herum und kehrt nach dem Schließen der Sprechblase dorthin zurück.
 - **Süße Zieh-Animation:** Beim Hochnehmen baumelt und zappelt sie (schräg in Zugrichtung), beim Loslassen plumpst sie federnd auf und freut sich kurz.
 

@@ -126,7 +126,11 @@ function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, 
     'omnivoice.restart': async () => { s.omnivoice.stop(); await s.omnivoice.start(); return s.omnivoice.status(); },
     'tts.presets': () => ({ presets: require('./voice/voice-presets').publicPresets() }),
     'local.installOllama': () => s.localLLM.installOllama(),
-    'local.installTier': ({ model }) => s.localLLM.installTier(model),
+    'local.startOllama': () => s.localLLM.startOllama(),
+    'local.installTier': ({ model }) => {
+      let t = 0;
+      return s.localLLM.installTier(model, (p) => { const n = Date.now(); if (n - t > 400 || p.status === 'success') { t = n; s.bus.emit('local:pull', p); } });
+    },
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),
     'conv.remove': ({ id }) => s.conversations.remove(id),
     'conv.export': async ({ id }) => {
