@@ -95,7 +95,7 @@ function send(type, data) {
   if (win && !win.isDestroyed()) win.webContents.send('evt', { type, data });
   if (overlay?.visible && !OVERLAY_SKIP.has(type)) overlay.send(type, data);
   if (mapCorner?.visible && /^(game:|settings:)/.test(type)) mapCorner.send(type, data);
-  if (pet?.visible && PET_EVENTS.has(type)) pet.send(type, data);
+  if (pet && PET_EVENTS.has(type)) pet.send(type, data);
 }
 const PET_EVENTS = new Set(['pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'pet:clear', 'voice:standby', 'overlay:thinking', 'overlay:answer', 'settings:changed']);
 

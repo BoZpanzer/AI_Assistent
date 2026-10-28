@@ -61,7 +61,7 @@ const SCHEMA = {
       maxConcurrent: { type: 'integer', minimum: 1, maximum: 4 }, maxOutputTokens: { type: 'integer', minimum: 256, maximum: 16384 }, timeoutSec: { type: 'integer', minimum: 10, maximum: 300 } } },
     birthdaysToCalendar: { type: 'boolean' },
     // Desktop-Figur (läuft über der Taskleiste, spricht in Sprechblasen; beim Zocken im Overlay)
-    pet: { type: 'object', properties: { enabled: { type: 'boolean' }, uiAtStart: { type: 'boolean' }, walk: { type: 'boolean' }, overlay: { type: 'boolean' }, size: { type: 'number', minimum: 0.6, maximum: 1.6 } } },
+    pet: { type: 'object', properties: { enabled: { type: 'boolean' }, uiAtStart: { type: 'boolean' }, walk: { type: 'boolean' }, overlay: { type: 'boolean' }, size: { type: 'number', minimum: 0.6, maximum: 1.6 }, homeX: { type: 'number', minimum: 0, maximum: 1 } } },
     // Voice
     voice: { type: 'object', properties: {
       inputDeviceId: { type: 'string', maxLength: 300 }, outputDeviceId: { type: 'string', maxLength: 300 },

@@ -55,7 +55,7 @@ class Pet {
     const show = this.shouldShow();
     if (show === this.visible) return;
     this.visible = show;
-    if (show) { this.ensure(); this.applyBounds(); this.win.showInactive(); } else if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); }
+    if (show) { this.ensure(); this.applyBounds(); this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.showInactive(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); } else if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); }
   }
 
   /** Maus über Figur/Blase → Fenster nimmt Klicks an; sonst geht alles an die Fenster darunter. */
@@ -78,7 +78,11 @@ class Pet {
     ]).popup({ window: this.win });
   }
 
-  send(type, data) { if (this.visible && this.win && !this.win.isDestroyed()) this.win.webContents.send('evt', { type, data }); }
+  /** Einstellungen/Standby kommen immer an (sonst zeigt sie nach dem Stimmwechsel die alte Figur); Blasen nur, solange sie sichtbar ist. */
+  send(type, data) {
+    if (!this.win || this.win.isDestroyed()) return;
+    if (this.visible || type === 'settings:changed' || type === 'voice:standby') this.win.webContents.send('evt', { type, data });
+  }
   destroy() { try { this.win?.destroy(); } catch { /* ignore */ } }
 }
 

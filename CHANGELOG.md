@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.3.3 – Figur umsetzen, Stimmwechsel-Fix
+
+- **Behoben:** Nach dem Stimmwechsel stand beim Minimieren/Schließen noch die alte Figur auf dem Desktop, ließ sich nicht mehr greifen und per Doppelklick ließ sich JARVIS nicht mehr öffnen. Die Desktop-Figur bekommt Einstellungen jetzt auch, solange sie versteckt ist, und setzt beim Wiederauftauchen ihren Maus-Zustand zurück.
+- **Figur frei platzieren:** Zieh sie unten nach links, rechts oder in die Mitte – sie merkt sich den Platz, bummelt von dort aus herum und kehrt nach dem Schließen der Sprechblase dorthin zurück.
+- **Süße Zieh-Animation:** Beim Hochnehmen baumelt und zappelt sie (schräg in Zugrichtung), beim Loslassen plumpst sie federnd auf und freut sich kurz.
+
 ## 5.3.2 – Standby, neue Sprechblase, Figur verschwindet bei Vollbild
 
 - **Standby-Modus:** „Jarvis, geh in den Standby“ (auch „Standby“, „schlaf jetzt“, „mach Pause“, „gute Nacht Jarvis“) oder Rechtsklick auf die Figur → „Standby“. Die Figur legt sich an den Rand und schläft (Zzz), der Sprachmodus ist komplett aus und JARVIS liest nichts mehr vor. „Hey Jarvis“ weckt ihn mit einem neuen Chat, eine getippte Nachricht oder der Mikrofon-Knopf auch.
