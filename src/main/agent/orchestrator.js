@@ -196,6 +196,11 @@ class Orchestrator {
       const w = require('./window-command').parseWindowCommand(text);
       if (w) { this.s.bus.emit('ui:window', { show: w === 'show' }); return { text: w === 'show' ? 'Hier bin ich.' : 'Alles klar, ich warte auf dem Desktop.', deterministic: 'window' }; }
     } catch (e) { log.debug('window command', e); }
+    // „Was hab ich heute/morgen/nächste Woche zu tun?“ – direkt aus Kalender + Aufgaben (schnell, ohne erfundene Termine)
+    try {
+      const ag = require('./agenda'); const q = ag.parseAgendaQuery(text);
+      if (q) return { text: ag.buildAgenda(this.s, q), deterministic: 'agenda' };
+    } catch (e) { log.debug('agenda', e); }
     try { return this.s.gaming?.stats?.answer(text) || null; } catch (e) { log.debug('deterministic', e); return null; }
   }
 

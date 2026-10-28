@@ -14,3 +14,23 @@ test('Freie Zeitfenster über die Zeitumstellung: jeder Tag genau einmal, Beginn
     assert.deepEqual(days, ['24. 8:00', '25. 8:00', '26. 8:00', '27. 8:00']);
   } finally { cleanup(); }
 });
+
+test('Agenda ohne KI: „Was hab ich nächste Woche zu tun?“ listet die echten Termine nach Tagen, Aktionen gehen an die KI', async () => {
+  const { parseAgendaQuery, buildAgenda } = require('../src/main/agent/agenda');
+  const now = new Date(2026, 9, 28, 22, 0); // Mi 28.10.2026
+  const q = parseAgendaQuery('Was hab ich nächste Woche alles zu tun?', now);
+  assert.equal(q.label, 'Nächste Woche'); assert.equal(q.from.getDate(), 2); assert.equal(q.to.getDate(), 9);
+  assert.equal(parseAgendaQuery('Was kann ich heute alles tun?', now).label, 'Heute');
+  assert.equal(parseAgendaQuery('Welche Termine hab ich am Freitag?', now).from.getDate(), 30);
+  assert.equal(parseAgendaQuery('Trag mir nächste Woche Mathe ein', now), null);
+  assert.equal(parseAgendaQuery('Wie spät ist es?', now), null);
+  const { core, cleanup } = tempCore();
+  try {
+    core.calendar.create({ title: 'VS Betriebssysteme', start: new Date(2026, 10, 3, 9, 0).toISOString(), end: new Date(2026, 10, 3, 10, 30).toISOString(), location: '204 PC-Kabinett, Staatliche Studienakademie' });
+    core.calendar.create({ title: 'Stochastik', start: new Date(2026, 10, 6, 8, 0).toISOString(), end: new Date(2026, 10, 6, 9, 30).toISOString() });
+    const txt = buildAgenda(core, q, now);
+    assert.match(txt, /Dienstag, 3\.11\.[\s\S]*09:00–10:30 VS Betriebssysteme \(204 PC-Kabinett\)/);
+    assert.match(txt, /Freitag, 6\.11\.[\s\S]*08:00–09:30 Stochastik/);
+    assert.doesNotMatch(txt, /Samstag/);
+  } finally { cleanup(); }
+});

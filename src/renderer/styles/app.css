@@ -270,9 +270,10 @@ a:hover { text-decoration: underline; }
 .msg { display: flex; gap: 14px; align-items: flex-start; }
 .msg .who { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none; border: 1px solid var(--line-strong); background: radial-gradient(circle, rgba(34, 211, 238, 0.22), rgba(8, 47, 73, 0.5)); color: var(--cyan-2); font-weight: 700; box-shadow: var(--glow-sm); }
 .msg.user .who { background: radial-gradient(circle, rgba(56, 189, 248, 0.25), rgba(15, 40, 70, 0.7)); color: white; }
-.msg .bubble { position: relative; flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 70px 10px 14px; background: rgba(8, 24, 42, 0.75); }
+.msg .bubble { position: relative; flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: rgba(8, 24, 42, 0.75); }
 .msg.user .bubble { background: rgba(10, 32, 54, 0.85); flex: 0 1 auto; max-width: 86%; }
-.msg .time { position: absolute; right: 12px; top: 10px; font-size: 11.5px; color: var(--text-3); }
+/* Uhrzeit + „lokal/öffentlich“ rechts oben – als Float, damit der Text daneben umbricht statt darunter zu liegen */
+.msg .time { float: right; margin: 1px 0 4px 14px; white-space: nowrap; font-size: 11.5px; color: var(--text-3); }
 .msg .tools { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity .15s; }
 .msg:hover .tools { opacity: 1; }
 .msg-body { line-height: 1.55; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }

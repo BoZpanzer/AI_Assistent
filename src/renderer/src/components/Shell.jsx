@@ -312,7 +312,8 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
   useEvent('ui:focus-input', () => ref.current?.focus());
   useEffect(() => { if (draft != null) { setText(draft); setState({ chatDraft: null }); setTimeout(() => ref.current?.focus(), 0); } }, [draft]);
   const localVoiceOn = voice === 'recording-local';
-  const voiceOn = localVoiceOn;
+  const cont = useStore((x) => x.voiceContinuous); // Sprachmodus als Schalter an
+  const voiceOn = localVoiceOn || cont;
   const send = async () => {
     const t = text.trim();
     if (!t && !files.length) return;
@@ -341,7 +342,7 @@ export function ChatBar({ actions, placeholder = 'Nachricht an JARVIS …', onSu
           <textarea ref={ref} rows={1} placeholder={localVoiceOn ? '🔒 Offline-Aufnahme läuft – zum Erkennen erneut auf das Mikrofon klicken …' : voice === 'transcribing-local' ? '🔒 Sprache wird offline erkannt …' : placeholder} value={text}
             onInput={(e) => { setText(e.currentTarget.value); e.currentTarget.style.height = '52px'; e.currentTarget.style.height = Math.min(140, e.currentTarget.scrollHeight) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />
-          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local'} onClick={() => audio.toggleVoice()} title={localVoiceOn ? 'Aufnahme stoppen und senden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : '🔒 Spracheingabe (lokal erkannt, privat bleibt lokal)'}>
+          <button class={`mic ${voiceOn ? 'on' : voice === 'standby' ? 'standby' : ''}`} disabled={voice === 'transcribing-local' && !cont} onClick={() => audio.toggleVoice()} title={cont ? 'Sprachmodus beenden' : localVoiceOn ? 'Aufnahme stoppen und senden' : voice === 'transcribing-local' ? 'Offline-Spracherkennung läuft …' : '🔒 Spracheingabe (lokal erkannt, privat bleibt lokal)'}>
             {voiceOn ? <CircleStop size={22} /> : <Mic size={22} />}
           </button>
           <button class="send" onClick={send} title="Senden (Enter)"><SendHorizontal size={24} /></button>

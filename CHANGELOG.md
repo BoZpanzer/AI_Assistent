@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.6.1 – Kein Ruckeln mehr, Sprachmodus als Schalter, Terminfragen ohne KI
+
+- **PC ruckelt nicht mehr:** Die Desktop-Figur hat in ihrem großen durchsichtigen Fenster dauernd kleine Animationen abgespielt (Atmen, Leuchten) und das Fenster jede Sekunde umgestellt. Windows musste das Fenster dafür ständig neu zusammensetzen – die Grafikkarte sprang im Sekundentakt auf Volllast und alles ruckelte. Jetzt bewegt sich die Figur dort nur noch über ihre Bildwechsel, das Fenster wird nur noch bei echten Änderungen umgestellt, und der systemweite Maus-Hook ist weg (die Zeigerposition kommt aus einer leichten Abfrage). Gilt auch für die Figur im Overlay.
+- **Sprachmodus als Schalter:** Einmal aufs Mikrofon (oder den Hotkey) = Sprachmodus an: JARVIS hört zu, antwortet, hört wieder zu – bis du nochmal drückst, „Standby“ sagst oder 2 Minuten lang nichts kommt.
+- **„Was hab ich heute / morgen / nächste Woche / am Freitag zu tun?“** wird jetzt sofort und ohne KI aus Kalender und Aufgaben beantwortet, Tag für Tag mit Uhrzeit und Raum. Das lokale Modell hatte hier Zeiträume verwechselt, Termine übersehen und Dinge erfunden. Für alle anderen Fragen bekommt die KI die Termine jetzt zusätzlich in Ortszeit („Fr 30.10. 09:00–10:30“) statt nur als UTC-Zeitstempel.
+- **Chat:** Uhrzeit und „lokal/öffentlich“ überlappen den Antworttext nicht mehr.
+
 ## 5.6.0 – Flüssigeres Vorlesen, bessere Spracherkennung, „Chat auf öffentlich“
 
 - **Kalender: „Uni am Samstag“ behoben:** Ab der Zeitumstellung (25. Oktober, ein Tag mit 25 Stunden) war die Monats- und Wochenansicht um einen Tag verrutscht – Freitagsvorlesungen standen beim Samstag, der 26. hieß „25“. Tage werden jetzt per Kalender gezählt statt mit „+ 24 Stunden“. Dasselbe betraf die Suche nach freien Zeitfenstern (Lernblöcke), ganztägige Termine bei der Google-Übertragung und die „noch X Tage“-Anzeige bei Klausuren.

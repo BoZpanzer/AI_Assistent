@@ -1,5 +1,11 @@
 'use strict';
 const { startOfDay, endOfDay, truncate } = require('../core/util');
+/** Ortszeit lesbar („Fr 30.10. 09:00–10:30“) – kleine lokale Modelle rechnen UTC-Zeitstempel sonst falsch um. */
+function localWhen(e) {
+  const d = new Date(e.start); const en = new Date(e.end); const w = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()];
+  const hm = (x) => String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0');
+  return `${w} ${d.getDate()}.${d.getMonth() + 1}.` + (e.allDay ? ' ganztägig' : ` ${hm(d)}–${hm(en)}`);
+}
 const { TASK_SCHEMA } = require('../services/tasks');
 const { EVENT_SCHEMA } = require('../services/calendar');
 const { WIDGETS } = require('../services/gaming');
@@ -52,7 +58,7 @@ function buildTools(s) {
       const d = day ? new Date(day) : new Date();
       return {
         date: d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }),
-        events: s.calendar.list(startOfDay(d), endOfDay(d)).map((e) => ({ title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location, calendar: e.calendarName })),
+        events: s.calendar.list(startOfDay(d), endOfDay(d)).map((e) => ({ title: e.title, when: localWhen(e), start: e.start, end: e.end, allDay: e.allDay, location: e.location, calendar: e.calendarName })),
         tasksDue: s.tasks.list({ filter: 'today' }).map((t) => ({ id: t.id, title: t.title, due: t.dueAt, priority: t.priority, overdue: t.overdue, category: t.category })),
         overdue: s.tasks.counts().overdue,
         gameTimers: s.gaming.timers().filter((t) => !t.fired).map((t) => ({ game: t.gameName, label: t.label, endsAt: t.endsAt, note: 'Zeitabschätzung' })),
@@ -94,7 +100,7 @@ function buildTools(s) {
     run: ({ from, to, query }) => {
       let ev = s.calendar.list(new Date(from), new Date(to));
       if (query) ev = ev.filter((e) => (e.title + ' ' + e.description).toLowerCase().includes(query.toLowerCase()));
-      return { events: ev.slice(0, 80).map((e) => ({ id: e.instanceOf || e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location, calendar: e.calendarName, source: e.source })), googleConnected: s.calendar.connected() };
+      return { events: ev.slice(0, 80).map((e) => ({ id: e.instanceOf || e.id, title: e.title, when: localWhen(e), start: e.start, end: e.end, allDay: e.allDay, location: e.location, calendar: e.calendarName, source: e.source })), googleConnected: s.calendar.connected() };
     } });
 
   def({ name: 'find_free_slots', mode: 'read', description: 'Freie Zeitfenster im Kalender finden (berücksichtigt Termine).',

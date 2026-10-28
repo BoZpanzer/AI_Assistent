@@ -42,7 +42,7 @@ class Pet {
     this.win.setAlwaysOnTop(true, 'screen-saver');
     this.win.on('unresponsive', () => { log.warn('Figurfenster reagiert nicht – wird neu aufgebaut'); this.recover(); });
     this.win.webContents.on('render-process-gone', (_e, d) => { log.warn('Figur-Renderer beendet: ' + d.reason); this.recover(); });
-    this.win.setIgnoreMouseEvents(true, { forward: true });
+    this.win.setIgnoreMouseEvents(true);
     this.win.loadURL('app://jarvis/pet.html');
     this.win.webContents.on('will-navigate', (e) => e.preventDefault());
     this.win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -54,7 +54,8 @@ class Pet {
     if (!this.win || this.win.isDestroyed()) return;
     // Auf dem Bildschirm, auf dem zuletzt das JARVIS-Fenster war (sonst Hauptbildschirm)
     let wa; try { wa = (this.display() || screen.getPrimaryDisplay()).workArea; } catch { wa = screen.getPrimaryDisplay().workArea; }
-    this.win.setBounds({ x: wa.x, y: wa.y + wa.height - HEIGHT, width: wa.width, height: HEIGHT });
+    this.bounds = { x: wa.x, y: wa.y + wa.height - HEIGHT, width: wa.width, height: HEIGHT };
+    this.win.setBounds(this.bounds);
   }
 
   refresh() {
@@ -62,32 +63,28 @@ class Pet {
     if (show === this.visible) return;
     log.info(show ? 'Figur wird gezeigt' : 'Figur wird versteckt (Fenster offen, Spiel oder Vollbild)');
     this.visible = show;
-    if (show) { this.ensure(); this.applyBounds(); this.mouse = false; this.win.setIgnoreMouseEvents(true, { forward: true }); this.win.setFocusable(false); this.win.showInactive(); this.raise(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
+    if (show) { this.ensure(); this.applyBounds(); this.mouse = false; this.win.setIgnoreMouseEvents(true); this.win.setFocusable(false); this.win.showInactive(); this.raise(); this.win.webContents.send('evt', { type: 'pet:shown', data: {} }); this.startPoll(); }
     else { this.stopPoll(); if (this.win && !this.win.isDestroyed()) { this.setMouse(false); this.win.hide(); } }
   }
 
   /**
    * Mauszeiger selbst abfragen statt sich auf weitergeleitete Mausereignisse zu verlassen: Unter Windows bleiben die bei
    * durchklickbaren Fenstern manchmal ganz aus (z. B. nach Verstecken/Zeigen oder Fokuswechsel) – dann war die Figur nicht mehr greifbar.
-   * Alle 50 ms die Zeigerposition an die Figur melden (nur bei Änderung) und das Fenster ab und zu wieder nach oben holen.
+   * Alle 60 ms die Zeigerposition an die Figur melden (nur bei Änderung). Keine regelmäßigen Fenster-Umstellungen mehr: jedes
+   * setIgnoreMouseEvents/moveTop zwingt Windows, das große durchsichtige Fenster neu zusammenzusetzen (Ruckler).
+   * Ohne „forward“: kein systemweiter Maus-Hook – die Zeigerposition kommt ja aus dieser Abfrage.
    */
   startPoll() {
     if (this.poll) return;
     this.poll = setInterval(() => {
       if (!this.visible || !this.win || this.win.isDestroyed()) return;
       try {
-        const p = screen.getCursorScreenPoint(); const b = this.win.getBounds();
+        const p = screen.getCursorScreenPoint(); const b = this.bounds || this.win.getBounds();
         const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
         const key = inside ? p.x + ',' + p.y : 'out';
         if (key !== this.lastCur) { this.lastCur = key; this.win.webContents.send('evt', { type: 'pet:cursor', data: inside ? { x: p.x - b.x, y: p.y - b.y } : { x: -1, y: -1 } }); }
-        // andere „immer im Vordergrund“-Fenster (Taskleiste, Overlays) können sie sonst überdecken
-        ++this.tick;
-        // Windows verliert den Durchklick-Zustand gern nach Verstecken/Zeigen – einmal pro Sekunde neu setzen (nicht, solange die Maus
-        // auf der Figur ist: ein Stilwechsel mitten im Klick/Ziehen bricht den Mausgriff ab)
-        if (this.tick % 20 === 0 && !this.mouse) this.win.setIgnoreMouseEvents(true, { forward: true });
-        if (this.tick % 100 === 0 && !this.mouse) this.raise();
       } catch { /* ignore */ }
-    }, 50);
+    }, 60);
   }
   /** Ganz nach oben, auch über das Overlay (gleiche Ebene, aber zuletzt nach vorn geholt). */
   raise() { if (this.visible && this.win && !this.win.isDestroyed()) { try { this.win.setAlwaysOnTop(true, 'screen-saver'); this.win.moveTop(); } catch { /* ignore */ } } }
@@ -103,11 +100,12 @@ class Pet {
   /** Maus über Figur/Blase → Fenster nimmt Klicks an; sonst geht alles an die Fenster darunter. */
   setMouse(over) {
     if (!this.win || this.win.isDestroyed()) return;
-    const was = this.mouse; this.mouse = !!over;
-    this.win.setIgnoreMouseEvents(!over, { forward: true });
+    if (this.mouse === !!over) return; // nur bei echter Änderung umstellen (jede Umstellung kostet Windows einen Neuaufbau)
+    this.mouse = !!over;
+    this.win.setIgnoreMouseEvents(!over);
     // Windows liefert Linksklicks an nicht-fokussierbare Fenster nicht zuverlässig aus (Rechtsklick schon) – darum ist die Figur
     // fokussierbar, solange die Maus über ihr ist (wie das Overlay im Bedienmodus). Sonst stiehlt sie keinem Programm den Fokus.
-    if (was !== this.mouse) { try { this.win.setFocusable(this.mouse); } catch { /* ignore */ } }
+    try { this.win.setFocusable(this.mouse); } catch { /* ignore */ }
   }
 
   menu() {

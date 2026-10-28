@@ -18,12 +18,14 @@ class AudioEngine {
     this.micGeneration = 0;
     // Lokale Aufnahme: automatisch beenden nach Sprechpause (für Wake-Word/Freihand beim Gaming)
     this.localHeard = 0; this.localSilentMs = 0;
+    // Sprachmodus als Schalter: an → zuhören, antworten, wieder zuhören … bis du ihn ausschaltest
+    this.continuous = false; this.contHeardAt = 0;
     on('tts:speak', ({ text, private: priv }) => this.speakLocal(text, { private: !!priv }));
     on('tts:stream', (d) => this.speakStream(d));
     // Standby: Aufnahme aus, nichts mehr vorlesen (die Bestätigung kurz danach darf noch), nur das Wake-Word hört
     on('voice:standby', ({ on: st }) => {
       this.standby = !!st; this.standbyAt = Date.now();
-      if (st) { this.cancelLocalVoice(); setState({ voice: 'standby' }); } else if (getState().voice === 'standby') setState({ voice: 'off' });
+      if (st) { this.continuous = false; this.cancelLocalVoice(); setState({ voice: 'standby' }); } else if (getState().voice === 'standby') setState({ voice: 'off' });
     });
     rpc('voice.state').then((v) => { if (v?.standby) { this.standby = true; setState({ voice: 'standby' }); } }).catch(() => {});
     this.tts = { gen: 0, ctx: null, src: null, speaking: false, warned: false };
@@ -114,10 +116,15 @@ class AudioEngine {
       this.localChunks.push(pcm);
       this.localSamples += pcm.length;
       const speech = rms > Math.max(0.012, this.noiseFloor * 4);
-      if (speech) { this.localHeard += 80; this.localSilentMs = 0; } else this.localSilentMs += 80;
+      if (speech) { this.localHeard += 80; this.localSilentMs = 0; this.contHeardAt = Date.now(); } else this.localSilentMs += 80;
       if (this.localSamples >= 16000 * 30) this.stopLocalVoice();
       else if (this.localHeard >= 400 && this.localSilentMs >= 1200) this.stopLocalVoice(); // Satz zu Ende
-      else if (!this.localHeard && this.localSamples >= 16000 * 8) this.cancelLocalVoice('Nichts gehört – Aufnahme beendet.');
+      else if (!this.localHeard && this.localSamples >= 16000 * 8) {
+        // Dauerbetrieb: einfach weiter zuhören (Puffer leeren); nach 2 Minuten Stille geht der Sprachmodus von selbst aus
+        if (!this.continuous) this.cancelLocalVoice('Nichts gehört – Aufnahme beendet.');
+        else if (Date.now() - this.contHeardAt > 120000) this.endContinuous('Sprachmodus aus – 2 Minuten nichts gehört.');
+        else { this.localChunks = []; this.localSamples = 0; }
+      }
       return;
     }
     if (this.mode.wake && this.wakeWorker) {
@@ -130,10 +137,39 @@ class AudioEngine {
 
   /** Mikrofon an/aus: Aufnahme bis zur Sprechpause, Erkennung lokal (whisper.cpp), danach wie getippter Text. */
   async toggleVoice() {
+    // Schalter: einmal drücken = Sprachmodus an (bleibt an, auch während JARVIS antwortet), nochmal = aus
+    if (this.continuous) return this.endContinuous('Sprachmodus aus.');
     if (this.localWorking) { toast('JARVIS erkennt deine Sprache noch lokal.'); return; }
     if (this.mode.local) return this.stopLocalVoice();
+    this.continuous = true; this.contHeardAt = Date.now();
+    setState({ voiceContinuous: true });
+    toast('Sprachmodus an – sprich einfach. Nochmal drücken (oder „Standby“) zum Beenden.');
     if (this.standby) return this.wakeUp('mic');
     return this.startVoice();
+  }
+  endContinuous(msg) {
+    this.continuous = false; setState({ voiceContinuous: false });
+    clearTimeout(this.contTimer); this.contOff?.(); this.contOff = null;
+    if (this.mode.local) this.cancelLocalVoice(msg); else if (msg) toast(msg);
+  }
+  /** Nach deiner Frage: warten, bis JARVIS fertig geantwortet und vorgelesen hat – dann wieder zuhören. */
+  resumeAfterAnswer(conversationId) {
+    if (!this.continuous) return;
+    this.contOff?.();
+    const deadline = Date.now() + 240000;
+    const listenAgain = () => {
+      this.contOff?.(); this.contOff = null;
+      let quiet = 0;
+      const check = () => {
+        if (!this.continuous || this.standby) return;
+        quiet = this.tts.speaking || this.playing || this.sq ? 0 : quiet + 250;
+        if (quiet >= 600 || Date.now() > deadline) { if (!this.mode.local && !this.localWorking) this.startVoice(); return; }
+        this.contTimer = setTimeout(check, 250);
+      };
+      this.contTimer = setTimeout(check, 500);
+    };
+    this.contOff = on('chat:done', (d) => { if (!d?.conversationId || d.conversationId === conversationId) listenAgain(); });
+    this.contTimer = setTimeout(listenAgain, 240000); // Sicherheitsnetz, falls keine Antwort kommt
   }
   /** „Hey Jarvis“ bzw. Mikrofon-Knopf: aus dem Standby mit neuem Chat, sonst normal zuhören. */
   async wakeUp(source = 'wake') {
@@ -155,7 +191,7 @@ class AudioEngine {
     finally { this.starting = false; }
   }
   /** Laufende Aufnahme verwerfen (z. B. Chatwechsel, Mikrofon weg). */
-  async stopVoice() { this.startGeneration++; this.cancelLocalVoice(); this.flush(); this.releaseMicIfIdle(); }
+  async stopVoice() { this.startGeneration++; this.endContinuous(); this.cancelLocalVoice(); this.flush(); this.releaseMicIfIdle(); }
   async startLocalVoice(conversationId, generation = this.startGeneration) {
     const available = await rpc('voice.localStatus');
     if (!available.ready) {
@@ -173,7 +209,7 @@ class AudioEngine {
     this.mode.local = true;
     this.stopSpeech(); // eigene Sprachausgabe nicht mit aufnehmen
     setState({ voice: 'recording-local' }); this.petSignal('listening', true);
-    toast('Ich höre zu (lokal). Nach einer Sprechpause wird automatisch erkannt – oder Mikrofon erneut drücken.');
+    if (!this.continuous) toast('Ich höre zu (lokal). Nach einer Sprechpause wird automatisch erkannt – oder Mikrofon erneut drücken.');
   }
   cancelLocalVoice(msg) {
     if (!this.mode.local) return;
@@ -203,9 +239,13 @@ class AudioEngine {
       let binary = '';
       for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
       const result = await rpc('voice.transcribeLocal', { conversationId, audio: btoa(binary) });
-      if (result?.started) toast('Sprache lokal erkannt und gesendet.');
+      if (result?.started && !this.continuous) toast('Sprache lokal erkannt und gesendet.');
+      if (result?.started) this.resumeAfterAnswer(conversationId);
     } catch (e) {
-      toast(String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, ''), 'error', 8500);
+      const m = String(e?.message || e).replace(/^Error invoking remote method 'rpc': (Error: )?/, '');
+      // Dauerbetrieb: „nichts erkannt“ ist kein Grund aufzuhören – direkt weiter zuhören
+      if (this.continuous && /Keine Sprache erkannt|halbe Sekunde/.test(m)) setTimeout(() => this.continuous && this.startVoice(), 300);
+      else toast(m, 'error', 8500);
     } finally {
       this.localWorking = false;
       setState({ voice: 'off' }); this.petSignal('listening', false);
