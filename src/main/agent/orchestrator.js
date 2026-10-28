@@ -112,7 +112,7 @@ class Orchestrator {
       bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) {
-        if (scope === 'private' && this.quietPrivate()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true });
+        if (scope === 'private' ? this.quietPrivate() : this.quietPublic()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true });
         else bus.emit('tts:speak', { text: det.text, private: scope === 'private' });
       }
       return conversations.messages(cid, { limit: 1 })[0];
@@ -144,6 +144,8 @@ class Orchestrator {
 
   /** Läuft ein Spiel und spricht dabei die Google-Stimme? Dann private Antworten nur als Text ins Overlay. */
   quietPrivate() { try { return !!this.s.localLLM?.isGaming?.() && this.s.cloudTts?.gamingMode() === 'cloud'; } catch { return false; } }
+  /** Beim Zocken ohne verfügbare Google-Stimme (kein Schlüssel / Kontingent leer): auch öffentliche Antworten nur ins Overlay. */
+  quietPublic() { try { return this.quietPrivate() && !this.s.cloudTts.available(60); } catch { return false; } }
 
   /** Deterministic answers (no model): game statistics and their spoken/typed entry. */
   deterministic(text) {
@@ -250,7 +252,7 @@ class Orchestrator {
     const vs0 = this.s.settings.get('voice') || {};
     const wantSpeech = (channel === 'voice' && vs0.speakVoiceReplies !== false) || (!isPrivateConv && vs0.speakReplies && channel === 'text');
     // Beim Zocken spricht die Google-Stimme – private Antworten gehen nicht dorthin, sondern nur als Text ins Overlay
-    const overlayOnly = wantSpeech && isPrivateConv && this.quietPrivate();
+    const overlayOnly = wantSpeech && (isPrivateConv ? this.quietPrivate() : this.quietPublic());
     const speak = wantSpeech && !overlayOnly;
     const talk = speak ? new (require('../voice/sentence-stream').SentenceStream)({ id: msg.id, short: vs0.tts?.short !== false, emit: (e) => bus.emit('tts:stream', { ...e, private: isPrivateConv }) }) : null;
     const cards = []; const sources = []; const used = []; let full = routed.note ? `_(Lokal beantwortet – ${routed.note}.)_\n\n` : '';

@@ -50,4 +50,4 @@ Die Matchup-Karte (Spielphasen, Win-Condition, Gefahren) ist eine **KI-Einschät
 - „Raid überlebt, 3 Kills“ · „Raid gestorben“ · „Run-Through“ (letztere kurz, während Tarkov aktiv ist)
 - „Wie ist meine Winrate in LoL heute?“ · „Konter gegen Draven in LoL“ · „Schwierigste Gegner in LoL“
 
-Antworten auf Spracheingaben werden mit der lokalen Windows-Stimme vorgelesen (abschaltbar: Einstellungen → Sprache). Automatische Statistik-Ansagen gibt es nicht.
+Antworten auf Spracheingaben werden mit der eingestellten Stimme (KI-Stimme bzw. beim Zocken Google-Stimme) vorgelesen (abschaltbar: Einstellungen → Sprache). Automatische Statistik-Ansagen gibt es nicht.

@@ -24,7 +24,7 @@ JARVIS spricht ausschließlich mit `127.0.0.1`, folgt keinen Redirects und verwe
 - Neue Termine werden immer im lokalen Kalender angelegt. Importierte Google-/Feed-Termine sind zum Bearbeiten schreibgeschützt; ausstehende Google-Schreibvorgänge werden blockiert. Bereits früher synchronisierte Daten werden nicht aus Google gelöscht.
 - Drive-Backups enthalten private Daten und werden deshalb als drei getrennte Dateien (Einstellungen *.jarvis-settings, Schlüssel *.jarvis-keys, komplett *.jarvisbak) vor dem Hochladen mit dem eigenen Backup-Passwort verschlüsselt (scrypt + AES-256-GCM). Ohne Backup-Passwort gibt es kein Drive-Backup. Wiederherstellen über „Wiederherstellen…“ mit dem Passwort.
 - Cloud-Embeddings sind gesperrt; die lokale Volltextsuche bleibt verfügbar.
-- Sprache läuft komplett lokal: Erkennung mit Whisper, Antworten mit OmniVoice/Piper. Gemini Live gibt es seit 5.1 nicht mehr.
+- Sprache läuft komplett lokal: Erkennung mit Whisper, Antworten mit OmniVoice. Beim Zocken spricht die Google-Stimme nur nicht-private Antworten; private erscheinen dann nur als Text im Overlay. Gemini Live gibt es seit 5.1 nicht mehr.
 - Automatische Fahrplanung anhand privater Terminorte ist deaktiviert. Manuell abgefragte öffentliche Fahrplandaten bleiben verfügbar.
 - Private Tools dürfen keine externen Zugriffe ausführen, auch nicht nach Bestätigung. Eine explizite Tool-Freigabeliste und ein asynchroner Netzwerk-Kontext verhindern, dass ein lokales Modell private Daten durch Web-/Browser-/Cloud-Tools versendet.
 

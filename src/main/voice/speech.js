@@ -1,8 +1,6 @@
 'use strict';
 /**
- * Sprachausgabe – komplett lokal (Gemini liefert nur noch Text):
- * - „auto“ (Standard): lokale KI-Stimme OmniVoice (falls installiert), sonst Piper.
- * - „piper“: immer Piper; „windows“ übernimmt die Oberfläche.
+ * Sprachausgabe: KI-Stimme (OmniVoice, lokal) oder Google-Stimme (Chirp 3 HD, beim Zocken). Gemini liefert nur Text.
  * - Fertige Audios werden lokal zwischengespeichert (gleiche Sätze, z. B. Ansagen, sofort).
  */
 const fs = require('node:fs');
@@ -56,42 +54,40 @@ class Speech {
   }
 
   /**
-   * Satz → WAV mit dem gewählten Stimmprofil (Standard / J.A.R.V.I.S. / Alya): OmniVoice → Piper.
-   * Keine KI-Anfrage – gesprochen wird die fertige Antwort. override: Hörprobe mit anderem Profil/Engine.
+   * Satz → WAV mit dem gewählten Stimmprofil (Standard / J.A.R.V.I.S. / Alya). Nur zwei Stimmen:
+   * - KI-Stimme (OmniVoice, lokal) – wenn kein Spiel läuft;
+   * - Google-Stimme (Chirp 3 HD) – beim Zocken (Grafikkarte bleibt frei) und als Ersatz, solange die KI-Stimme fehlt.
+   * Private Texte gehen nie an Google. Geht keine Stimme, wird ein Fehler geworfen (die Antwort steht dann nur im Chat/Overlay).
+   * override.engine: 'omnivoice' | 'cloud' erzwingt eine Stimme (Hörprobe in den Einstellungen).
    */
-  async synthesize(text, { override = {}, preview = false, private: priv = false } = {}) {
-    const c = resolve({ ...this.cfg(), ...override }, { isInstalled: (v) => !!this.s.tts.voiceFile?.(v) });
-    const engine = ['piper', 'windows'].includes(c.engine) ? c.engine : 'auto';
-    const clamp = (x) => Math.max(0.8, Math.min(1.25, Number(x) || 1));
-    // Beim Zocken bleibt die Grafikkarte fürs Spiel: Google-Stimme (gratis bis 1 Mio. Zeichen/Monat) oder Piper statt OmniVoice
+  async synthesize(text, { override = {}, private: priv = false } = {}) {
+    const c = resolve({ ...this.cfg(), ...override });
+    const said = localPronunciation(text);
     const gaming = !!this.s.localLLM?.isGaming?.();
-    const gmode = this.s.cloudTts?.gamingMode() || 'omnivoice';
-    if (engine === 'auto' && gaming && gmode === 'cloud' && !priv) {
-      const said = localPronunciation(text);
-      const voice = this.s.cloudTts.voiceFor(c.preset);
-      try {
-        const r = await this.cached(['g', voice, c.speed ?? 1, said], () => this.s.cloudTts.synthesize(said, { preset: c.preset, speed: c.speed }));
-        return { ...r, pitch: 1, engine: 'cloud', preset: c.preset };
-      } catch (e) { log.info('Google-Stimme nicht genutzt: ' + e.message); }
+    const gmode = this.s.cloudTts?.gamingMode() || 'cloud';
+    const force = ['omnivoice', 'cloud'].includes(override.engine) ? override.engine : null;
+    const order = force ? [force] : gaming && gmode === 'cloud' ? ['cloud'] : ['omnivoice', 'cloud'];
+    const errors = [];
+    for (const engine of order) {
+      if (engine === 'cloud') {
+        if (priv) { errors.push('privat – nicht an Google'); continue; }
+        if (!this.s.cloudTts?.available(said.length)) { errors.push('Google-Stimme nicht verfügbar' + (this.s.cloudTts?.lastError ? ': ' + this.s.cloudTts.lastError : !this.s.cloudTts?.key() ? ' (kein Schlüssel)' : ' (Monatskontingent erreicht)')); continue; }
+        try {
+          const voice = this.s.cloudTts.voiceFor(c.preset);
+          const r = await this.cached(['g', voice, c.speed ?? 1, said], () => this.s.cloudTts.synthesize(said, { preset: c.preset, speed: c.speed }));
+          return { ...r, pitch: 1, engine: 'cloud', preset: c.preset };
+        } catch (e) { errors.push('Google-Stimme: ' + e.message); log.info('Google-Stimme nicht genutzt: ' + e.message); }
+      } else {
+        if (!this.s.omnivoice?.allowed()) { errors.push(this.s.omnivoice?.installed?.() ? 'KI-Stimme ist ausgeschaltet' : 'KI-Stimme ist nicht installiert'); continue; }
+        try {
+          const custom = (c.omni?.voices || {})[c.preset];
+          const ref = `${c.preset}-${c.omniSeed}-${crypto.createHash('sha1').update(c.omniInstruct).digest('hex').slice(0, 8)}`;
+          const r = await this.cached(['o', ref, c.speed ?? 1, c.omni?.quality || 'fast', said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref, seed: c.omniSeed, refAudio: this.s.omnivoice.bundledRef(c.preset, c.omniSeed, custom), refText: require('./omnivoice').REF_TEXT, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
+          return { ...r, pitch: 1, engine: 'omnivoice', preset: c.preset };
+        } catch (e) { errors.push('KI-Stimme: ' + e.message); log.info('Lokale KI-Stimme nicht genutzt: ' + e.message); }
+      }
     }
-    if (engine === 'auto' && !(gaming && gmode !== 'omnivoice') && this.s.omnivoice?.allowed()) {
-      try {
-        const said = localPronunciation(text);
-        const custom = (c.omni?.voices || {})[c.preset];
-        const ref = `${c.preset}-${c.omniSeed}-${crypto.createHash('sha1').update(c.omniInstruct).digest('hex').slice(0, 8)}`;
-        const r = await this.cached(['o', ref, c.speed ?? 1, c.omni?.quality || 'fast', said], () => this.s.omnivoice.synthesize(said, { instruct: c.omniInstruct, ref, seed: c.omniSeed, refAudio: this.s.omnivoice.bundledRef(c.preset, c.omniSeed, custom), refText: require('./omnivoice').REF_TEXT, speed: c.speed && c.speed !== 1 ? c.speed : undefined }));
-        return { ...r, pitch: 1, engine: 'omnivoice', preset: c.preset };
-      } catch (e) { log.info('Lokale KI-Stimme nicht genutzt: ' + e.message); }
-    }
-    const local = { ...override, voice: c.voice, pitch: c.pitch, speed: c.speed, style: c.style, speaker: c.speaker };
-    const run = () => this.s.tts.synthesize(localPronunciation(text), local);
-    if (preview) {
-      // Hörproben lokal zwischenspeichern (gleicher Text, gleiche Stimme → sofort)
-      const r = await this.cached(['p', c.voice || '', c.pitch, c.speed, c.style || '', c.speaker ?? '', String(text)], async () => (await run()).wav);
-      return { ...r, pitch: clamp(c.pitch), engine: 'piper', preset: c.preset, fallback: !!c.presetFallback };
-    }
-    const r = await run();
-    return { ...r, engine: 'piper', preset: c.preset, fallback: !!c.presetFallback };
+    throw Object.assign(new Error('Keine Stimme verfügbar – ' + errors.join(' · ')), { code: 'NO_VOICE' });
   }
 }
 

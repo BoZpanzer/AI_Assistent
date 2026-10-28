@@ -34,11 +34,11 @@ function GamingVoice({ t }) {
   const test = async () => { await guard(() => rpc('cloudtts.test'), 'Google-Stimme funktioniert'); reload(); };
   const pct = st ? Math.min(100, Math.round((st.used / Math.max(1, st.limit)) * 100)) : 0;
   return <>
-    <Field label="Beim Zocken spricht" hint={mode === 'cloud' ? 'Google rechnet die Stimme – dein PC bleibt frei fürs Spiel. Private Antworten kommen dann nur als Text ins Overlay.' : mode === 'piper' ? 'einfache Offline-Stimme, braucht kaum Leistung' : 'KI-Stimme lokal – braucht 2–3 GB Grafikspeicher neben dem Spiel'}>
-      <Select value={mode} onChange={(v) => upd({ voice: { tts: { cloud: { whileGaming: v } } } }).then(reload)} options={[{ value: 'cloud', label: 'Google-Stimme (gratis)' }, { value: 'piper', label: 'Einfache Stimme (offline)' }, { value: 'omnivoice', label: 'KI-Stimme (OmniVoice)' }]} />
+    <Field label="Beim Zocken spricht" hint={mode === 'cloud' ? 'Google rechnet die Stimme – dein PC bleibt frei fürs Spiel. Private Antworten kommen dann nur als Text ins Overlay.' : 'KI-Stimme lokal – braucht 2–3 GB Grafikspeicher neben dem Spiel'}>
+      <Select value={mode} onChange={(v) => upd({ voice: { tts: { cloud: { whileGaming: v } } } }).then(reload)} options={[{ value: 'cloud', label: 'Google-Stimme (gratis)' }, { value: 'omnivoice', label: 'KI-Stimme (OmniVoice)' }]} />
     </Field>
     {mode === 'cloud' && <div class="col" style={{ gap: 6, marginBottom: 6 }}>
-      {st && <div class="tiny muted">Diesen Monat {st.used.toLocaleString('de-DE')} von {st.limit.toLocaleString('de-DE')} Gratis-Zeichen · danach spricht bis Monatsende die einfache Stimme</div>}
+      {st && <div class="tiny muted">Diesen Monat {st.used.toLocaleString('de-DE')} von {st.limit.toLocaleString('de-DE')} Gratis-Zeichen · danach kommen Antworten beim Zocken bis Monatsende nur ins Overlay</div>}
       {st && <div class="bar"><i style={{ width: pct + '%' }} /></div>}
       <Field label={<span><KeyRound size={12} /> Google-Cloud-Schlüssel</span>} hint={secrets['google.tts_api_key'] ? 'eigener Schlüssel gespeichert' : st?.hasKey ? 'nutzt deinen Gemini-Schlüssel – falls „nicht freigeschaltet“ kommt: eigenen Schlüssel eintragen' : 'console.cloud.google.com → „Cloud Text-to-Speech API“ aktivieren → API-Schlüssel'}>
         <div class="row gap-s" style={{ width: '100%' }}><input class="inp" type="password" placeholder={secrets['google.tts_api_key'] ? '••••••••••••' : 'AIza… (optional)'} value={k} onInput={(e) => setK(e.currentTarget.value)} />
@@ -63,41 +63,31 @@ function VoiceSettings({ s }) {
   const presets = pr?.presets || [];
   const cur = t.preset || 'standard';
   const [om_, reloadOmni] = useRpc('omnivoice.status', {}, { initial: null, events: ['omnivoice:status'] });
-  const [pip, reloadPiper] = useRpc('tts.status', {}, { initial: null });
   const [busy, setBusy] = useState('');
-  const [winVoices, setWinVoices] = useState([]);
   const now = useNow(1000);
-  useEffect(() => {
-    const load = () => setWinVoices(speechSynthesis.getVoices().filter((x) => x.localService && x.lang?.startsWith('de')).map((x) => x.name));
-    load(); speechSynthesis.addEventListener?.('voiceschanged', load);
-    return () => speechSynthesis.removeEventListener?.('voiceschanged', load);
-  }, []);
   useEffect(() => { if (!om_?.installing && !om_?.starting) return; const id = setInterval(reloadOmni, 2000); return () => clearInterval(id); }, [om_?.installing, om_?.starting]);
-  useEffect(() => { if (!pip?.voices?.some((v) => v.downloading)) return; const id = setInterval(reloadPiper, 1000); return () => clearInterval(id); }, [pip]);
-  const play = async (id, override = {}) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id); try { await audio.speakLocal(PRESET_SAMPLES[id] || SAMPLE, { full: true, preview: true, override: { preset: id, ...override } }); } finally { setBusy(''); } };
+  const play = async (id, override = {}) => { if (busy) { audio.stopSpeech(); setBusy(''); return; } setBusy(id + (override.engine === 'cloud' ? ':g' : '')); try { await audio.speakLocal(PRESET_SAMPLES[id] || SAMPLE, { full: true, preview: true, override: { preset: id, ...override } }); } finally { setBusy(''); } };
   const installOmni = async () => {
     if (!(await ask(`KI-Stimme installieren? Lädt ca. ${om_.sizeGB} GB (Python, PyTorch, Stimmmodell) in den JARVIS-Datenordner. Dauert je nach Leitung 10–30 Minuten, du kannst JARVIS dabei normal nutzen.`, '', { confirmOnly: true, okLabel: 'Installieren' }))) return;
     await guard(() => rpc('omnivoice.install')); reloadOmni();
   };
-  const installPiper = async (id) => { setBusy(id); try { const p = rpc('tts.install', { id }); setTimeout(reloadPiper, 300); await guard(() => p, 'Stimme installiert'); await set({ voice: id }); } finally { setBusy(''); reloadPiper(); } };
-  const engine = ['piper', 'windows'].includes(t.engine) ? t.engine : 'auto';
-  const piperCur = pip?.voices?.find((v) => v.id === (t.voice || pip?.voice)) || pip?.voices?.[0];
   const ins = om_?.installing;
-  const omniOn = om_?.installed && om_?.enabled && engine === 'auto';
+  const omniOn = om_?.installed && om_?.enabled;
   return (
-    <Panel icon={Volume2} title="Stimme" sub="Wie JARVIS klingt – komplett lokal, wirkt sofort. Auch per Sprache: „Jarvis, Stimme auf Alya“.">
+    <Panel icon={Volume2} title="Stimme" sub="Wie JARVIS klingt: KI-Stimme lokal, beim Zocken die Google-Stimme. Auch per Sprache: „Jarvis, Stimme auf Alya“.">
       {presets.map((p) => (
         <div class="row gap-s" style={{ padding: '5px 0', alignItems: 'center' }}>
           <input type="radio" name="voice-preset" checked={cur === p.id} onChange={() => set({ preset: p.id })} />
           <span class="grow small" style={{ cursor: 'pointer' }} onClick={() => set({ preset: p.id })}><b>{p.label}</b><div class="tiny muted">{p.description}</div></span>
-          <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe'} onClick={() => play(p.id)}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
+          <button class="btn xs" title={busy === p.id ? 'Stopp' : 'Hörprobe KI-Stimme'} onClick={() => play(p.id, { engine: 'omnivoice' })}>{busy === p.id ? <Spinner size={12} /> : <Play size={12} />}</button>
+          <button class="btn xs ghost" title={busy === p.id + ':g' ? 'Stopp' : 'Hörprobe Google-Stimme (beim Zocken)'} onClick={() => play(p.id, { engine: 'cloud' })}>{busy === p.id + ':g' ? <Spinner size={12} /> : <><Play size={12} />G</>}</button>
         </div>
       ))}
       <div class="hr" />
       {/* KI-Stimme (OmniVoice) */}
-      {om_ && !om_.supported && <div class="tiny muted">KI-Stimme nur unter Windows – es spricht die einfache Stimme.</div>}
+      {om_ && !om_.supported && <div class="tiny muted">KI-Stimme nur unter Windows – es spricht die Google-Stimme.</div>}
       {om_?.supported && !om_.installed && !ins && <div class="notice tiny">
-        <div class="row gap-s" style={{ alignItems: 'center' }}><span class="grow"><b>KI-Stimme fehlt noch</b> – ohne sie klingen alle Profile wie die einfache Stimme. Natürlich, auch beim Zocken (ca. 2–3 GB Grafikspeicher), Download ca. {om_.sizeGB} GB.</span>
+        <div class="row gap-s" style={{ alignItems: 'center' }}><span class="grow"><b>KI-Stimme fehlt noch</b> – bis dahin spricht die Google-Stimme (nur nicht-private Antworten). Natürlich, auch beim Zocken (ca. 2–3 GB Grafikspeicher), Download ca. {om_.sizeGB} GB.</span>
           <button class="btn sm" onClick={installOmni}><Download size={14} />Installieren</button></div>
       </div>}
       {ins && <div class="col" style={{ gap: 6 }}>
@@ -106,7 +96,7 @@ function VoiceSettings({ s }) {
         {ins.detail && <div class="tiny muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ins.detail}</div>}
       </div>}
       {om_?.error && <div class="notice tiny mt"><FixText text={'KI-Stimme: ' + om_.error} /></div>}
-      {om_?.installed && !ins && <Field label="KI-Stimme (OmniVoice)" hint={!om_.enabled ? 'aus – es spricht die einfache Stimme' : om_.running ? `bereit (${/cuda/.test(om_.device) ? 'Grafikkarte' : 'Prozessor'})` : om_.starting ? 'wird geladen …' : 'startet beim nächsten Satz'}><Toggle checked={om_.enabled} onChange={(v) => setOmni({ enabled: v })} /></Field>}
+      {om_?.installed && !ins && <Field label="KI-Stimme (OmniVoice)" hint={!om_.enabled ? 'aus – es spricht die Google-Stimme' : om_.running ? `bereit (${/cuda/.test(om_.device) ? 'Grafikkarte' : 'Prozessor'})` : om_.starting ? 'wird geladen …' : 'startet beim nächsten Satz'}><Toggle checked={om_.enabled} onChange={(v) => setOmni({ enabled: v })} /></Field>}
       <GamingVoice t={t} />
       <Field label={`Lautstärke · ${Math.round((t.volume ?? 1) * 100)} %`}><input class="range" type="range" min="0.2" max="1.5" step="0.05" value={t.volume ?? 1} onChange={(e) => set({ volume: Number(e.currentTarget.value) })} /></Field>
       <Field label={`Tempo · ${Math.round((t.speed ?? 1) * 100)} %`}><input class="range" type="range" min="0.7" max="1.5" step="0.05" value={t.speed ?? 1} onChange={(e) => set({ speed: Number(e.currentTarget.value) })} /></Field>
@@ -136,27 +126,7 @@ function VoiceSettings({ s }) {
           <div class="row gap-s"><button class="btn xs ghost" onClick={() => guard(() => rpc('omnivoice.restart'), 'Neu gestartet')}>KI-Stimme neu starten</button><span class="grow" /><button class="btn xs ghost" onClick={async () => { if (await ask('KI-Stimme vollständig entfernen (gibt ca. 6 GB frei)?', '', { confirmOnly: true, danger: true, okLabel: 'Entfernen' })) await guard(() => rpc('omnivoice.remove'), 'Entfernt'); }}><Trash2 size={12} />KI-Stimme entfernen</button></div>
           <div class="hr" />
         </>}
-        <div class="hud-label mt">Einfache Stimme (Rückfall)</div>
-        <Field label="Sprechen mit"><Select value={engine} onChange={(x) => set({ engine: x })} options={[{ value: 'auto', label: 'KI-Stimme, sonst einfache Stimme' }, { value: 'piper', label: 'Immer einfache Stimme (Piper)' }, { value: 'windows', label: 'Windows-Stimme' }]} /></Field>
-        {engine !== 'windows' && !pip?.available && <div class="notice tiny">Die einfache Stimme ist in dieser Installation nicht enthalten (Entwicklungsversion).</div>}
-        {engine !== 'windows' && pip?.voices && <>
-          {pip.voices.map((v) => (
-            <div class="row gap-s" style={{ padding: '3px 0', alignItems: 'center' }}>
-              <input type="radio" name="tts-voice" disabled={!v.installed} checked={piperCur?.id === v.id} onChange={() => set({ voice: v.id })} />
-              <span class="grow small">{v.label}<span class="tiny muted"> · {v.quality}{v.bundled ? '' : ` · ${v.sizeMB} MB`}</span></span>
-              {v.installed
-                ? <><button class="btn xs" title="Hörprobe" onClick={() => play('standard', { engine: 'piper', voice: v.id })}><Play size={12} /></button>
-                  {v.removable && <button class="btn xs ghost" title="Stimme entfernen" onClick={() => guard(() => rpc('tts.remove', { id: v.id })).then(reloadPiper)}><Trash2 size={12} /></button>}</>
-                : v.downloading ? <span class="tiny">{Math.round((v.downloading.progress || 0) * 100)} %</span>
-                  : <button class="btn xs" disabled={!!busy} onClick={() => installPiper(v.id)}><Download size={12} />Laden</button>}
-            </div>
-          ))}
-          {piperCur?.styles && <Field label="Stimmung"><Select value={t.style || 'neutral'} onChange={(x) => set({ style: x })} options={piperCur.styles.map((x) => ({ value: x.id, label: x.label }))} /></Field>}
-          {piperCur?.speakers && <Field label={`Sprecher · ${(t.speaker ?? 0) + 1} von ${piperCur.speakers}`}><input class="range" type="range" min="0" max={piperCur.speakers - 1} step="1" value={t.speaker ?? 0} onChange={(e) => set({ speaker: Number(e.currentTarget.value) })} /></Field>}
-          <Field label={`Tonhöhe (einfache Stimme) · ${(t.pitch ?? 1) > 1 ? 'höher' : (t.pitch ?? 1) < 1 ? 'tiefer' : 'normal'}`}><input class="range" type="range" min="0.85" max="1.2" step="0.05" value={t.pitch ?? 1} onChange={(e) => set({ pitch: Number(e.currentTarget.value) })} /></Field>
-        </>}
-        {engine === 'windows' && <Field label="Windows-Stimme" hint="Stimmen hinzufügen: Windows-Einstellungen → Zeit und Sprache → Sprache → Deutsch → Sprachoptionen"><Select value={t.windowsVoice || ''} onChange={(x) => set({ windowsVoice: x })} options={[{ value: '', label: 'Automatisch (beste installierte)' }, ...winVoices.map((n) => ({ value: n, label: n }))]} /></Field>}
-        {!omniOn && <div class="tiny muted mt">Hinweis: Ohne KI-Stimme klingen J.A.R.V.I.S. und Alya nur annähernd (einfache Stimme mit anderer Tonlage).</div>}
+        <div class="tiny muted mt">Ohne KI-Stimme spricht JARVIS mit der Google-Stimme – nur nicht-private Antworten. Private Antworten stehen dann nur im Chat.</div>
       </details>
     </Panel>
   );

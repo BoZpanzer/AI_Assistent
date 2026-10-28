@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.3.0 – Nur noch zwei Stimmen: KI-Stimme und Google-Stimme
+
+- **Einfache Stimme (Piper) und Windows-Stimme entfernt.** JARVIS spricht nur noch mit der KI-Stimme (OmniVoice, lokal) und beim Zocken mit der Google-Stimme (Chirp 3 HD). Fehlt die KI-Stimme noch, spricht die Google-Stimme nicht-private Antworten. Geht gar keine Stimme, steht die Antwort nur im Chat bzw. beim Zocken im Overlay – statt einer Roboterstimme.
+- **Beim Zocken ohne Google-Kontingent:** Ist das Gratis-Kontingent aufgebraucht oder kein Schlüssel da, kommen auch öffentliche Antworten nur als Text ins Overlay.
+- **Hörproben für beide Stimmen:** Unter Stimme gibt es je Profil eine Hörprobe der KI-Stimme und eine der Google-Stimme („G“).
+- Installer ca. 60 MB kleiner; bereits geladene Piper-Stimmen werden beim Start gelöscht.
+
 ## 5.2.0 – Gratis-Stimme beim Zocken, Groq für schnelle Antworten
 
 - **Stimme beim Zocken ohne Grafikkarte:** Sobald ein Spiel läuft, entlädt JARVIS die KI-Stimme (OmniVoice) und gibt den Grafikspeicher frei. Gesprochen wird dann mit Googles Stimme (Chirp 3 HD: J.A.R.V.I.S. = Charon, Alya = Leda), die auf Googles Servern läuft. Kostenlos bis 1 Mio. Zeichen im Monat – JARVIS zählt mit und wechselt bei 950 000 Zeichen auf die einfache Offline-Stimme; schon gesprochene Sätze kosten nichts. Nach dem Spiel lädt die KI-Stimme wieder. Einstellbar unter Stimme → „Beim Zocken spricht“ (Google / einfache Stimme / KI-Stimme).

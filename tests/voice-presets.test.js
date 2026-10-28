@@ -4,30 +4,33 @@ const assert = require('node:assert/strict');
 const { tempCore, fakeSdk } = require('./helpers');
 const { resolve, publicPresets } = require('../src/main/voice/voice-presets');
 
-test('Voice presets: J.A.R.V.I.S./Alya map to own voices per engine (OmniVoice, Piper); unknown preset or missing voice → Standard', () => {
-  const base = { preset: 'jarvis', voice: 'de_DE-thorsten-medium', pitch: 1, speed: 1 };
+test('Voice presets: J.A.R.V.I.S./Alya map to own OmniVoice voices; unknown preset → Standard', () => {
+  const base = { preset: 'jarvis', speed: 1 };
   const j = resolve(base);
-  assert.equal(j.omniInstruct, 'male, middle-aged, low pitch'); assert.equal(j.omniSeed, 1); assert.equal(j.pitch, 0.9);
-  const a = resolve({ ...base, preset: 'alya' }, { isInstalled: () => false });
-  assert.match(a.omniInstruct, /^female/); assert.equal(a.voice, 'de_DE-thorsten-medium', 'Kerstin fehlt → Standardstimme'); assert.equal(a.pitch, 1); assert.equal(a.presetFallback, true);
+  assert.equal(j.omniInstruct, 'male, middle-aged, low pitch'); assert.equal(j.omniSeed, 1);
+  assert.match(resolve({ ...base, preset: 'alya' }).omniInstruct, /^female/);
   assert.equal(resolve({ ...base, preset: 'gibtsnicht' }).preset, 'standard');
   assert.equal(resolve({ ...base, omni: { voices: { jarvis: 'male, elderly' }, seeds: { jarvis: 7 } } }).omniInstruct, 'male, elderly');
   assert.equal(resolve({ ...base, omni: { seeds: { jarvis: 7 } } }).omniSeed, 7);
   assert.deepEqual(publicPresets().map((p) => p.id), ['standard', 'jarvis', 'alya']);
 });
 
-test('Voice output is local only: Gemini is never asked for audio, presets switch without any AI call, previews are cached', async () => {
+test('Nur KI-Stimme und Google-Stimme: ohne beide klare Meldung, kein Gemini-Audio; Google nur für Nicht-Privates; Hörproben im Cache', async () => {
   const sdk = fakeSdk([], { models: ['gemini-3.8-flash', 'gemini-3.8-flash-lite-tts'] });
-  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk });
+  let google = 0;
+  const fetch = async (url) => { if (String(url).includes('texttospeech')) { google++; return { ok: true, status: 200, json: async () => ({ audioContent: Buffer.from('RIFF' + 'x'.repeat(60)).toString('base64') }) }; } throw new Error('offline'); };
+  const { core, cleanup } = tempCore({ genaiSdk: sdk.sdk, fetch });
   try {
-    core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
-    let local = 0; core.tts.synthesize = async (t, o) => { local++; return { wav: Buffer.from('RIFFlocal' + t + o.voice), pitch: o.pitch || 1, voice: o.voice }; };
     core.settings.update({ voice: { tts: { preset: 'jarvis' } } });
+    // KI-Stimme nicht installiert, kein Schlüssel → keine Stimme (kein Piper/Windows mehr)
+    await assert.rejects(core.speech.synthesize('Guten Abend.'), /Keine Stimme verfügbar.*nicht installiert/);
+    core.secrets.set('gemini.api_key', 'PAID'); await core.gemini.discover();
     const r = await core.speech.synthesize('Guten Abend.');
-    assert.equal(r.engine, 'piper', 'ohne OmniVoice → einfache lokale Stimme'); assert.equal(r.preset, 'jarvis');
-    await core.speech.synthesize('Hey!', { override: { preset: 'alya' }, preview: true });
-    const again = await core.speech.synthesize('Hey!', { override: { preset: 'alya' }, preview: true });
-    assert.equal(again.cached, true);
+    assert.equal(r.engine, 'cloud', 'KI-Stimme fehlt → Google-Stimme'); assert.equal(r.preset, 'jarvis');
+    await assert.rejects(core.speech.synthesize('Dein Termin.', { private: true }), /privat/);
+    await core.speech.synthesize('Hey!', { override: { preset: 'alya', engine: 'cloud' } });
+    const again = await core.speech.synthesize('Hey!', { override: { preset: 'alya', engine: 'cloud' } });
+    assert.equal(again.cached, true); assert.equal(google, 2);
     assert.equal(sdk.requests.length, 0, 'keine Gemini-Anfrage für Sprache');
     assert.ok(!core.gemini.model('tts'), 'keine TTS-Rolle mehr');
   } finally { cleanup(); }

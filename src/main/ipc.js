@@ -104,8 +104,7 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'conv.private': ({ id }) => { s.orchestrator.cancel(id); return s.conversations.markPrivate(id); },
     'local.models': () => s.localLLM.models(),
     'local.status': () => s.localLLM.status(),
-    // Lokale Sprachausgabe (Piper): Sprechfassung, Synthese Satz für Satz, Stimmen auf Klick laden
-    'tts.status': () => s.tts.status(),
+    // Sprachausgabe: Sprechfassung, Synthese Satz für Satz (KI-Stimme bzw. Google-Stimme)
     'groq.status': () => s.groq.status(),
     'groq.test': async ({ key } = {}) => s.groq.test(key || s.secrets.get('groq.api_key')),
     'cloudtts.status': () => s.cloudTts.status(),
@@ -124,8 +123,6 @@ function registerIpc({ core: s, getWin, app, showWindow, quit, relaunch, overlay
     'omnivoice.resetVoice': ({ preset }) => s.omnivoice.resetVoice(require('./voice/voice-presets').presetId(preset)),
     'omnivoice.restart': async () => { s.omnivoice.stop(); await s.omnivoice.start(); return s.omnivoice.status(); },
     'tts.presets': () => ({ presets: require('./voice/voice-presets').publicPresets() }),
-    'tts.install': ({ id }) => s.tts.install(String(id || '')),
-    'tts.remove': ({ id }) => s.tts.remove(String(id || '')),
     'local.installOllama': () => s.localLLM.installOllama(),
     'local.installTier': ({ model }) => s.localLLM.installTier(model),
     'conv.rename': ({ id, title }) => s.conversations.rename(id, title),

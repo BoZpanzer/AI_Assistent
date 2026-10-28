@@ -138,7 +138,6 @@ function createCore(opts) {
   s.voice = new VoiceControl(s);
   s.scheduler = new Scheduler(s);
   s.localLLM.isGaming = () => !!s.gaming?.context?.state?.().gaming;
-  s.tts = new (require('./voice/piper').Piper)({ dataDir: data, resourcesPath: opts.resourcesPath ?? process.resourcesPath, fetch: (...x) => s.fetch(...x), settings: s.settings, isGaming: () => s.localLLM.isGaming() });
   s.speech = new (require('./voice/speech').Speech)(s);
   s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
   s.cloudTts = new (require('./voice/cloud-tts').CloudTts)(s);
@@ -151,9 +150,14 @@ function createCore(opts) {
     } catch { /* nie das Spiel stören */ }
   });
   s.learner = new (require('./agent/learner').Learner)(s);
-  // 5.0: Stimme nur noch lokal (OmniVoice → Piper). Alte Cloud-/ElevenLabs-Einstellungen auf „automatisch“, Schlüssel entfernen.
+  // 5.0: Alte Cloud-/ElevenLabs-Einstellungen auf „automatisch“, Schlüssel entfernen.
   try {
     if (['gemini', 'omnivoice'].includes(s.settings.get('voice')?.tts?.engine)) s.settings.update({ voice: { tts: { engine: 'auto' } } });
+    // 5.3: nur noch KI-Stimme (OmniVoice) und Google-Stimme – Piper/Windows-Stimme entfernt, geladene Piper-Stimmen löschen
+    const tv = s.settings.get('voice')?.tts || {};
+    if (['piper', 'windows'].includes(tv.engine) || tv.cloud?.whileGaming === 'piper') s.settings.update({ voice: { tts: { engine: 'auto', ...(tv.cloud?.whileGaming === 'piper' ? { cloud: { whileGaming: 'cloud' } } : {}) } } });
+    const old = path.join(data, 'voices');
+    if (fs.existsSync(old) && fs.readdirSync(old).every((f) => /^de_DE-.*\.onnx(\.json)?$|\.part$/.test(f))) fs.rmSync(old, { recursive: true, force: true });
     if (s.secrets.has('elevenlabs.api_key')) s.secrets.delete('elevenlabs.api_key');
   } catch { /* nicht kritisch */ }
   // Lokaler Modus: laufende Gemini-Aufrufe sofort beenden (Backend, nicht nur UI)

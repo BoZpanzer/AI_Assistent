@@ -2,8 +2,8 @@
 /**
  * Stimmprofile für die Sprachausgabe (Einstellungen → Stimme).
  * Es werden KEINE echten Sprecher nachgebildet: „J.A.R.V.I.S.“ und „Alya“ sind eigenständige, von OmniVoice
- * aus Beschreibungen erzeugte Stimmen. Je Profil Werte für jede Engine (OmniVoice, Piper, Windows);
- * fehlt etwas, gilt „Standard“. Profile werden nur lokal gespeichert.
+ * aus Beschreibungen erzeugte Stimmen; beim Zocken spricht die passende Google-Stimme.
+ * Profile werden nur lokal gespeichert.
  */
 const PRESETS = Object.freeze({
   standard: {
@@ -12,15 +12,11 @@ const PRESETS = Object.freeze({
   },
   jarvis: {
     label: 'J.A.R.V.I.S.', description: 'Tief, ruhig, elegant, britisch anmutend – eine eigenständige KI-Butler-Stimme.',
-    piper: { voice: 'de_DE-thorsten-medium', pitch: 0.9, speed: 0.93 },
     omni: { instruct: 'male, middle-aged, low pitch' },
-    windows: { prefer: 'conrad|killian|stefan|florian|george|ryan|thomas', pitch: 0.85, speed: 0.95 },
   },
   alya: {
     label: 'Alya (Anime)', description: 'Natürlich, freundlich und weich – eine eigenständige, anime-inspirierte Stimme.',
-    piper: { voice: 'de_DE-kerstin-low', pitch: 1.08, speed: 1.02 },
     omni: { instruct: 'female, young adult, high pitch' },
-    windows: { prefer: 'katja|amala|seraphina|hedda|louisa', pitch: 1.2, speed: 1.02 },
   },
 });
 const PRESET_IDS = Object.keys(PRESETS);
@@ -29,27 +25,20 @@ const PRESET_IDS = Object.keys(PRESETS);
 const presetId = (id) => (PRESET_IDS.includes(id) ? id : 'standard');
 
 /**
- * Einstellungen der Sprachausgabe + Profil → wirksame Werte je Engine.
- * isInstalled(voiceId) prüft lokale Piper-Stimmen; fehlt die Profilstimme, bleibt die Standardstimme.
+ * Einstellungen der Sprachausgabe + Profil → wirksame Werte für OmniVoice.
  */
-function resolve(cfg = {}, { isInstalled = () => true } = {}) {
+function resolve(cfg = {}) {
   const id = presetId(cfg.preset);
   const p = PRESETS[id];
   const om = cfg.omni || {};
   const out = { ...cfg, preset: id, label: p.label,
     omniInstruct: String((om.voices || {})[id] || p.omni?.instruct || PRESETS.standard.omni.instruct), omniSeed: Number((om.seeds || {})[id]) || 1 };
-  if (id === 'standard') return out;
-  if (p.piper) {
-    // Profilstimme lokal installiert → mit Tonhöhe/Tempo des Profils; sonst unverändert die Standardstimme
-    if (isInstalled(p.piper.voice)) { out.voice = p.piper.voice; out.pitch = p.piper.pitch; out.speed = p.piper.speed; out.style = undefined; out.speaker = undefined; }
-    else out.presetFallback = true;
-  }
   return out;
 }
 
-/** Für die Oberfläche (keine Schlüssel): Profile mit Beschreibung und Windows-Vorlieben. */
+/** Für die Oberfläche (keine Schlüssel): Profile mit Beschreibung. */
 function publicPresets() {
-  return PRESET_IDS.map((id) => ({ id, label: PRESETS[id].label, description: PRESETS[id].description, windows: PRESETS[id].windows || null, omni: PRESETS[id].omni?.instruct || '' }));
+  return PRESET_IDS.map((id) => ({ id, label: PRESETS[id].label, description: PRESETS[id].description, omni: PRESETS[id].omni?.instruct || '' }));
 }
 
 /**
