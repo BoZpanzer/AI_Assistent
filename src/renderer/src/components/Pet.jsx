@@ -239,18 +239,26 @@ export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 
   );
 }
 
-/** Sprechblase: „denkt …“ oder die Antwort (Markdown). Bleibt, bis die nächste Eingabe kommt. */
-export function PetBubble({ bubble, html, onClose, tail = 'down', style }) {
+/**
+ * Sprechblase neben dem Kopf: Name oben, Text darunter (Markdown), kleiner Verbindungsstrich zur Figur.
+ * side: 'left' = Blase links der Figur (Strich nach rechts), 'right' = rechts der Figur (Strich nach links).
+ * Bleibt bis zur nächsten Eingabe, × oder „mach die Sprechblase weg“.
+ */
+export function PetBubble({ bubble, html, onClose, side = 'right', name = 'JARVIS', style }) {
   if (!bubble) return null;
   return (
-    <div class={`pet-bubble tail-${tail}`} style={style}>
-      {onClose && <button class="pet-bubble-x" title="Schließen" onClick={onClose}>×</button>}
+    <div class={`pet-bubble side-${side}${bubble.error ? ' is-error' : ''}`} style={style}>
+      <i class="pet-bubble-link" aria-hidden="true"><b /></i>
+      <div class="pet-bubble-head"><span class="pet-bubble-name">{name}</span>{onClose && <button class="pet-bubble-x" title="Sprechblase schließen" onClick={onClose}>×</button>}</div>
       {bubble.kind === 'think'
         ? <div class="pet-dots"><i /><i /><i /></div>
         : <div class="pet-bubble-text" dangerouslySetInnerHTML={{ __html: html }} />}
     </div>
   );
 }
+
+/** Name in der Blase: Alya bzw. J.A.R.V.I.S. */
+export const bubbleName = (settings) => (settings?.voice?.tts?.preset === 'alya' ? 'Alya' : 'J.A.R.V.I.S.');
 
 /** Text für die Blase kürzen (Overlay kann nicht scrollen). */
 export function bubbleText(t, max = 700) {

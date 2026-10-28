@@ -22,4 +22,10 @@ function parseWindowCommand(text) {
   if (SHOW.some((re) => re.test(t))) return 'show';
   return null;
 }
-module.exports = { parseWindowCommand };
+/** „mach (mal) die Sprechblase weg“, „Blase zu“, „Sprechblase ausblenden“ → true */
+function parseBubbleCommand(text) {
+  const t = String(text || '').toLowerCase().replace(/^(?:hey\s+)?jarvis[,!.\s]+/, '').trim();
+  if (!t || t.length > 70 || /\?\s*$/.test(t) || !/\b(?:sprech)?blase\b|\bbubble\b/.test(t)) return false;
+  return /\b(?:weg|zu|aus|schließ\w*|schliess\w*|ausblend\w*|ausmach\w*|verschwind\w*|entfern\w*|lösch\w*|minimier\w*)\b/.test(t);
+}
+module.exports = { parseWindowCommand, parseBubbleCommand };

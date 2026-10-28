@@ -32,6 +32,7 @@ export function usePetMood({ max = 700 } = {}) {
     showFlash(d.error ? 'oops' : 'happy');
   });
   useEvent('overlay:answer', (d) => { if (d?.answer) { setBubble({ kind: 'text', text: bubbleText(d.answer, max) }); showFlash(/^⚠️/.test(d.answer) ? 'oops' : 'happy'); } });
+  useEvent('pet:clear', () => { msg.current = null; setBubble(null); });
   useEvent('pet:signal', (d) => {
     if (d.kind === 'speaking') setSpeaking(!!d.on);
     if (d.kind === 'listening') { setListening(!!d.on); if (d.on) { msg.current = null; setBubble(null); } }

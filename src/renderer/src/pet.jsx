@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc, useEvent } from './lib/api.js';
 import { renderMarkdown } from './lib/markdown.js';
-import { PetFigure, PetBubble, genderFor, petHeight } from './components/Pet.jsx';
+import { PetFigure, PetBubble, genderFor, petHeight, bubbleName } from './components/Pet.jsx';
 import { usePetMood } from './lib/pet-mood.js';
 
 /**
@@ -83,16 +83,22 @@ function Desk() {
 
   const state = mood.state !== 'idle' ? mood.state : drag ? 'wave' : walk ? 'walk' : idleAct || 'idle';
   const gender = genderFor(settings);
-  // Blase über der Figur, im Fenster gehalten
-  const bw = 340;
-  const bx = Math.min(Math.max(8, x + size / 2 - bw / 2), window.innerWidth - bw - 8);
-  const tailX = Math.min(Math.max(20, x + size / 2 - bx), bw - 20);
+  // Blase neben dem Kopf – auf der Seite mit mehr Platz; der Strich zeigt Richtung Gesicht
+  const bw = 330; const gap = 30;
+  const figH = petHeight(gender, size);
+  const headY = window.innerHeight - figH + figH * 0.12; // Gesichtshöhe (von oben)
+  let side = x + size / 2 > window.innerWidth / 2 ? 'left' : 'right';
+  if (side === 'left' && x - gap - bw < 8) side = 'right';
+  if (side === 'right' && x + size + gap + bw > window.innerWidth - 8) side = 'left';
+  // Bild ist breiter als die Figur (Haare) → Abstand zur sichtbaren Kontur
+  const bx = side === 'left' ? Math.max(8, x + size * 0.06 - gap - bw) : Math.min(window.innerWidth - bw - 8, x + size * 0.94 + gap);
+  const bottom = Math.max(8, window.innerHeight - headY - 34);
   return (
     <div class="pet-desk">
       {mood.bubble && (
         <div onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)}>
-          <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} onClose={mood.clear}
-            style={{ left: bx + 'px', bottom: petHeight(gender, size) + 10 + 'px', width: bw + 'px', '--tail-x': tailX + 'px' }} />
+          <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} onClose={mood.clear} side={side} name={bubbleName(settings)}
+            style={{ left: bx + 'px', bottom: bottom + 'px', width: bw + 'px', '--link': gap + 'px' }} />
         </div>
       )}
       <div class={`pet-walker ${drag ? 'drag' : ''}`} style={{ left: x + 'px', transition: walk ? `left ${walk.dur}s linear` : 'none' }}>

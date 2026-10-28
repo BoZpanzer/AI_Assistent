@@ -96,7 +96,7 @@ function send(type, data) {
   if (mapCorner?.visible && /^(game:|settings:)/.test(type)) mapCorner.send(type, data);
   if (pet?.visible && PET_EVENTS.has(type)) pet.send(type, data);
 }
-const PET_EVENTS = new Set(['pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'overlay:thinking', 'overlay:answer', 'settings:changed']);
+const PET_EVENTS = new Set(['pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'pet:clear', 'overlay:thinking', 'overlay:answer', 'settings:changed']);
 
 /** Ausschnitt um den Mauszeiger (Item-Scanner): ~640×420 echte Pixel, Overlays kurz ausgeblendet. */
 async function captureAroundCursor() {
@@ -237,7 +237,7 @@ function forwardEvents() {
     'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
     'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:standby',
     'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'tts:stream', 'data:imported', 'cloud:usage', 'cloud:state', 'game:stats', 'privacy:capture',
-    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'omnivoice:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data', 'pet:input', 'pet:delta', 'pet:answer', 'pet:signal'];
+    'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'omnivoice:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data', 'pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'pet:clear'];
   for (const t of types) core.bus.on(t, (d) => send(t, t === 'settings:changed' ? { keys: d.keys } : d));
 }
 

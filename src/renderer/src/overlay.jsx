@@ -4,7 +4,7 @@ import { Timer, Trophy, Sparkles, Swords, Bell, Mic, MapPin, Check, X } from 'lu
 import { rpc, on, useRpc, useEvent } from './lib/api.js';
 import { renderMarkdown } from './lib/markdown.js';
 import { countdown } from './lib/format.js';
-import { PetFigure, PetBubble, genderFor } from './components/Pet.jsx';
+import { PetFigure, PetBubble, genderFor, bubbleName } from './components/Pet.jsx';
 import { usePetMood } from './lib/pet-mood.js';
 
 /** Kompaktes In-Game-HUD. Nur lesen/anzeigen – keine Eingaben nötig. */
@@ -56,7 +56,7 @@ function OvPet({ settings }) {
   return (
     <div class="ov-pet">
       <PetFigure gender={genderFor(settings)} state={mood.state} size={92} />
-      {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} tail="left" /> : <span class="grow" />}
+      {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} side="right" name={bubbleName(settings)} style={{ '--link': '16px' }} /> : <span class="grow" />}
     </div>
   );
 }

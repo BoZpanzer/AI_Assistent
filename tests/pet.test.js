@@ -45,3 +45,15 @@ test('Fenster per Sprache: „zeig dich“ / „Fenster zu“ ohne KI, Fragen z�
     assert.deepEqual(ev, [{ show: false }]); assert.match(msg.content, /Desktop/);
   } finally { cleanup(); }
 });
+
+test('„Mach mal die Sprechblase weg“ blendet die Blase aus (ohne KI), Fragen dazu nicht', async () => {
+  const { parseBubbleCommand: p } = require('../src/main/agent/window-command');
+  for (const t of ['mach mal die sprechblase weg', 'Jarvis, Blase zu', 'Sprechblase ausblenden', 'nimm die Blase weg']) assert.equal(p(t), true, t);
+  for (const t of ['Was ist eine Sprechblase?', 'Erklär mir die Blase am Aktienmarkt']) assert.equal(p(t), false, t);
+  const { core, cleanup } = tempCore();
+  try {
+    const ev = []; for (const t of ['pet:answer', 'pet:clear', 'ui:window']) core.bus.on(t, () => ev.push(t));
+    await core.orchestrator.chat({ conversationId: core.conversations.create('X').id, text: 'Mach mal die Sprechblase weg', channel: 'voice' });
+    assert.deepEqual(ev, ['pet:answer', 'pet:clear']);
+  } finally { cleanup(); }
+});

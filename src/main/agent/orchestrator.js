@@ -112,6 +112,7 @@ class Orchestrator {
     if (det) {
       conversations.update(msg.id, { content: det.text, meta: { streaming: false, deterministic: det.deterministic, model: 'lokal (ohne KI)' } });
       bus.emit('pet:answer', { messageId: msg.id, text: det.text });
+      if (det.clearBubble) bus.emit('pet:clear', {});
       bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) {
@@ -155,6 +156,7 @@ class Orchestrator {
   /** Deterministic answers (no model): game statistics and their spoken/typed entry. */
   deterministic(text) {
     try { const v = this.voiceCommand(text); if (v) return v; } catch (e) { log.debug('voice command', e); }
+    try { if (require('./window-command').parseBubbleCommand(text)) return { text: 'Okay.', deterministic: 'bubble', clearBubble: true }; } catch (e) { log.debug('bubble command', e); }
     try {
       const w = require('./window-command').parseWindowCommand(text);
       if (w) { this.s.bus.emit('ui:window', { show: w === 'show' }); return { text: w === 'show' ? 'Hier bin ich.' : 'Alles klar, ich warte auf dem Desktop.', deterministic: 'window' }; }

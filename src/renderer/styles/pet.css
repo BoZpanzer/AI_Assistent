@@ -68,22 +68,34 @@
 .pet-img.s-wave .body { animation: pet-sway 0.5s ease-in-out infinite alternate; }
 @keyframes pet-sway { from { transform: rotate(-1.5deg); } to { transform: rotate(1.5deg); } }
 
-/* Sprechblase */
-.pet-bubble { position: relative; background: #fbfdff; color: #0f172a; border-radius: 16px; padding: 10px 14px; font: 13.5px/1.45 system-ui, 'Segoe UI', sans-serif;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(56, 225, 255, 0.55); animation: pet-pop 0.18s ease-out; overflow-wrap: anywhere; }
-.pet-bubble::after { content: ''; position: absolute; width: 14px; height: 14px; background: #fbfdff; box-shadow: 2px 2px 0 0 rgba(56, 225, 255, 0.55); }
-.pet-bubble.tail-down::after { left: var(--tail-x, 50%); bottom: -7px; transform: translateX(-50%) rotate(45deg); }
-.pet-bubble.tail-left::after { left: -7px; top: 22px; transform: rotate(135deg); }
+/* Sprechblase – neben dem Kopf, mit kurzem Verbindungsstrich zur Figur */
+.pet-bubble { position: relative; color: #0f172a; border-radius: 14px; padding: 9px 14px 11px; font: 13.5px/1.5 'Segoe UI', system-ui, sans-serif;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f8fc 100%); border: 1px solid rgba(56, 189, 248, 0.55);
+  box-shadow: 0 12px 30px rgba(2, 8, 23, 0.38), 0 2px 6px rgba(2, 8, 23, 0.18), inset 0 1px 0 #fff; animation: pet-pop 0.2s cubic-bezier(.2, 1.4, .4, 1); overflow-wrap: anywhere; }
+.pet-bubble::before { content: ''; position: absolute; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: linear-gradient(180deg, #38e1ff, #6366f1); }
+.pet-bubble.side-right::before { left: 0; } .pet-bubble.side-left::before { right: 0; }
+.pet-bubble.is-error::before { background: linear-gradient(180deg, #fb923c, #ef4444); }
+/* Verbindungsstrich: von der Blasenseite Richtung Gesicht, mit Punkt am Ende */
+.pet-bubble-link { position: absolute; bottom: 22px; width: var(--link, 24px); height: 2px; pointer-events: none; }
+.pet-bubble.side-right .pet-bubble-link { right: 100%; background: linear-gradient(270deg, rgba(56, 189, 248, 0.9), rgba(56, 225, 255, 0.35)); transform-origin: right center; transform: rotate(12deg); }
+.pet-bubble.side-left .pet-bubble-link { left: 100%; background: linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(56, 225, 255, 0.35)); transform-origin: left center; transform: rotate(-12deg); }
+.pet-bubble-link b { position: absolute; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: #38e1ff; box-shadow: 0 0 6px #38e1ff; }
+.pet-bubble.side-right .pet-bubble-link b { left: -3px; } .pet-bubble.side-left .pet-bubble-link b { right: -3px; }
+.pet-bubble-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.pet-bubble-name { font: 700 10.5px/1 'Segoe UI', system-ui, sans-serif; letter-spacing: 1.4px; text-transform: uppercase; color: #0891b2; }
+.pet-bubble.is-error .pet-bubble-name { color: #ea580c; }
+.pet-bubble-x { margin-left: auto; border: 0; background: none; color: #94a3b8; font-size: 17px; cursor: pointer; line-height: 1; padding: 0 2px; border-radius: 6px; }
+.pet-bubble-x:hover { color: #0f172a; background: #e2e8f0; }
 .pet-bubble-text p { margin: 0 0 6px; } .pet-bubble-text p:last-child { margin-bottom: 0; }
 .pet-bubble-text ul, .pet-bubble-text ol { margin: 2px 0 6px; padding-left: 18px; }
 .pet-bubble-text code { background: #e2e8f0; border-radius: 4px; padding: 0 3px; }
 .pet-bubble-text a { color: #0369a1; }
-.pet-bubble-x { position: absolute; top: 2px; right: 6px; border: 0; background: none; color: #64748b; font-size: 16px; cursor: pointer; line-height: 1; padding: 2px; }
+.pet-bubble-text::-webkit-scrollbar { width: 6px; } .pet-bubble-text::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 .pet-dots { display: flex; gap: 5px; padding: 4px 2px; }
 .pet-dots i { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; animation: pet-dot 1s ease-in-out infinite; }
 .pet-dots i:nth-child(2) { animation-delay: 0.15s; } .pet-dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes pet-dot { 0%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-4px); opacity: 1; } }
-@keyframes pet-pop { from { transform: scale(0.85); opacity: 0; } }
+@keyframes pet-pop { from { transform: scale(0.9) translateY(4px); opacity: 0; } }
 
 /* Desktop-Fenster (transparenter Streifen über der Taskleiste) */
 .pet-desk { position: fixed; inset: 0; overflow: hidden; user-select: none; }
@@ -94,7 +106,8 @@
 .pet-desk .pet-bubble-text { max-height: 230px; overflow-y: auto; }
 
 /* Overlay: Figur links, Blase rechts daneben */
-.ov-pet { display: flex; align-items: flex-end; gap: 10px; }
+.ov-pet { display: flex; align-items: flex-start; gap: 18px; }
 .ov-pet .pet-fig { flex: none; }
-.ov-pet .pet-bubble { flex: 1; min-width: 0; margin-bottom: 26px; font-size: 13px; }
+.ov-pet .pet-bubble { flex: 1; min-width: 0; margin-top: 2px; font-size: 13px; }
+.ov-pet .pet-bubble-link { bottom: auto; top: 18px; }
 .ov-pet .pet-bubble-text { max-height: 280px; overflow: hidden; }
