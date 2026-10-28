@@ -299,15 +299,24 @@ class AudioEngine {
     const st = getState().settings?.voice?.tts || {};
     const next = () => new Promise((res) => { if (q.queue.length || q.ended || q.gen !== this.tts.gen) res(); else q.wake = res; });
     const synth = (t) => { const p = rpc('tts.synthesize', { text: t, private: q.private }); p.catch(() => {}); return p; };
+    // Wartende Sätze zu einem Block bündeln (bis ≈ 350 Zeichen): jede Berechnung hat feste Anlaufzeit – viele kleine Häppchen
+    // machen die Pausen zwischen den Sätzen lang. Der allererste Satz bleibt kurz, damit es schnell losgeht.
+    let first = true;
+    const take = () => {
+      let t = q.queue.shift();
+      if (first) { first = false; return t; }
+      while (q.queue.length && t.length + 1 + q.queue[0].length <= 350) t += ' ' + q.queue.shift();
+      return t;
+    };
     this.tts.speaking = true;
     let pending = null;
     try {
       for (;;) {
         if (q.gen !== this.tts.gen) return;
-        if (!pending) { await next(); if (q.gen !== this.tts.gen) return; if (!q.queue.length) break; pending = synth(q.queue.shift()); }
+        if (!pending) { await next(); if (q.gen !== this.tts.gen) return; if (!q.queue.length) break; pending = synth(take()); }
         const cur = await pending; pending = null;
         if (q.gen !== this.tts.gen) return;
-        if (q.queue.length) pending = synth(q.queue.shift()); // schon mal den nächsten berechnen
+        if (q.queue.length) pending = synth(take()); // schon mal den nächsten berechnen
         await this.playWav(cur.audio, cur.pitch, st.volume ?? 1, q.gen);
       }
     } catch (e) {

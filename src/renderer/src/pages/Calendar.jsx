@@ -8,6 +8,10 @@ import { fmtTime, ago } from '../lib/format.js';
 
 const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const sod = (d) => { const z = new Date(d); z.setHours(0, 0, 0, 0); return z; };
+// Tage immer per Kalender rechnen, nie „+ n × 24 h“: Bei der Zeitumstellung (Ende Oktober hat ein Tag 25 Stunden) rutschte
+// sonst ab dem Umstellungstag jeder Tag in die Nachbarspalte – Freitagsvorlesungen standen beim Samstag.
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+export { addDays };
 const startOfWeek = (d) => { const z = sod(d); z.setDate(z.getDate() - ((z.getDay() + 6) % 7)); return z; };
 
 const EXPORT_KINDS = [['termine', 'Termine'], ['geburtstage', 'Geburtstage'], ['todos', 'Todos'], ['erinnerungen', 'Erinnerungen'], ['uni', 'Uni']];
@@ -18,10 +22,10 @@ export function Calendar() {
   const google = useStore((s) => s.google);
   const appSettings = useStore((s) => s.settings);
   const range = useMemo(() => {
-    if (view === 'week') { const s = startOfWeek(cursor); return [s, new Date(s.getTime() + 7 * 86400000)]; }
+    if (view === 'week') { const s = startOfWeek(cursor); return [s, addDays(s, 7)]; }
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const s = startOfWeek(first);
-    return [s, new Date(s.getTime() + 42 * 86400000)];
+    return [s, addDays(s, 42)];
   }, [view, cursor]);
   const [events] = useRpc('calendar.list', { from: range[0].toISOString(), to: range[1].toISOString() }, { events: ['calendar:changed'], initial: [] });
   const [tasks] = useRpc('tasks.list', { filter: 'all', limit: 500 }, { events: ['tasks:changed'], initial: [] });
@@ -30,7 +34,7 @@ export function Calendar() {
   const step = (n) => { const d = new Date(cursor); if (view === 'week') d.setDate(d.getDate() + 7 * n); else d.setMonth(d.getMonth() + n); setCursor(d); };
   const title = view === 'week' ? `KW ${isoWeek(range[0])} · ${range[0].toLocaleDateString('de-DE', { day: '2-digit', month: 'short' })} – ${new Date(range[1] - 1).toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}` : cursor.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   const byDay = (d) => {
-    const a = sod(d).getTime(), b = a + 86400000;
+    const a = sod(d).getTime(), b = addDays(sod(d), 1).getTime();
     return [
       ...(events || []).filter((e) => Date.parse(e.start) < b && Date.parse(e.end) > a).map((e) => ({ ...e, kind: 'event' })),
       ...(tasks || []).filter((t) => t.dueAt && Date.parse(t.dueAt) >= a && Date.parse(t.dueAt) < b).map((t) => ({ id: t.id, title: t.title, start: t.dueAt, allDay: t.allDay, kind: 'task' })),
@@ -54,7 +58,7 @@ export function Calendar() {
             <div class="cal-grid" style={{ gridTemplateRows: 'auto repeat(6, 1fr)' }}>
               {DOW.map((d) => <div class="dow">{d}</div>)}
               {Array.from({ length: 42 }, (_, i) => {
-                const d = new Date(range[0].getTime() + i * 86400000);
+                const d = addDays(range[0], i);
                 const items = byDay(d);
                 const today = sod(d).getTime() === sod(new Date()).getTime();
                 return (
@@ -138,7 +142,7 @@ function EvChip({ e }) {
 }
 
 function Week({ start, byDay, onNew }) {
-  const days = Array.from({ length: 7 }, (_, i) => new Date(start.getTime() + i * 86400000));
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const H = 48;
   const now = new Date();
   return (

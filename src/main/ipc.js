@@ -596,6 +596,9 @@ function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, 
       s.orchestrator.chat({ conversationId, text, attachments: [], channel: 'voice' }).catch((e) => log.error('chat', e));
       return { text, started: true };
     },
+    'whisper.models': () => s.whisperModels.status(),
+    'whisper.download': ({ id }) => s.whisperModels.download(id),
+    'whisper.use': ({ id }) => s.whisperModels.use(id),
     'voice.state': () => ({ state: s.voice.state, standby: !!s.voice.standby }),
     'voice.standby': ({ on } = {}) => (on === false ? { woke: s.voice.wake('ui') } : s.voice.requestStandby({ reason: 'Menü' })),
 

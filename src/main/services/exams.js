@@ -29,7 +29,7 @@ class Exams {
     const planned = sess.filter((x) => x.status === 'planned' && Date.parse(x.start_at) > now - 2 * 3600_000);
     return {
       id: r.id, title: r.title, subject: r.subject, date: r.date, targetHours: r.target_hours, sessionMinutes: r.session_minutes, notes: r.notes, archived: !!r.archived,
-      daysLeft: Math.ceil((startOfDay(new Date(r.date)) - startOfDay()) / DAY),
+      daysLeft: Math.round((startOfDay(new Date(r.date)) - startOfDay()) / DAY), // round: Tage mit 23/25 h (Zeitumstellung)
       hoursDone: +(done / 60).toFixed(1), hoursPlanned: +(planned.reduce((a, x) => a + mins(x), 0) / 60).toFixed(1),
       missed: sess.filter((x) => x.status === 'missed').length,
       nextSession: planned[0] ? this.sessionPublic(planned[0]) : null,
@@ -98,7 +98,7 @@ class Exams {
     const needed = Math.max(0, ex.target_hours * 60 - doneMin);
     const count = Math.ceil(needed / dur);
     const examDay = startOfDay(new Date(ex.date));
-    let start = from ? new Date(from) : new Date(startOfDay().getTime() + DAY);
+    let start = from ? new Date(from) : startOfDay(new Date(startOfDay().getTime() + DAY + 3600_000));
     if (start < new Date()) start = new Date(Math.ceil(Date.now() / 900000) * 900000);
     if (!count) return { examId: eid, sessions: [], needed: 0, shortfall: 0, note: 'Lernziel bereits erreicht.' };
     if (start >= examDay) return { examId: eid, sessions: [], needed: count, shortfall: count, note: 'Bis zur Klausur bleibt kein ganzer Tag mehr.' };
@@ -228,7 +228,7 @@ class Exams {
   logStudy(ref, minutes = null, topic = '') {
     const ex = this.find(ref);
     if (!ex) throw new Error('Keine passende Klausur gefunden – lege sie zuerst an.');
-    const today = this.db.get("SELECT * FROM exam_sessions WHERE exam_id=? AND status IN ('planned','missed') AND start_at>=? AND start_at<? ORDER BY start_at LIMIT 1", ex.id, startOfDay().toISOString(), new Date(startOfDay().getTime() + DAY).toISOString());
+    const today = this.db.get("SELECT * FROM exam_sessions WHERE exam_id=? AND status IN ('planned','missed') AND start_at>=? AND start_at<? ORDER BY start_at LIMIT 1", ex.id, startOfDay().toISOString(), startOfDay(new Date(startOfDay().getTime() + DAY + 3600_000)).toISOString());
     if (today && !minutes) { this.setSessionStatus(today.id, 'done'); return { exam: ex.title, session: today.id, minutes: (Date.parse(today.end_at) - Date.parse(today.start_at)) / 60000 }; }
     const m = Math.max(10, Math.min(600, Number(minutes) || ex.sessionMinutes));
     if (today) this.setSessionStatus(today.id, 'done');
@@ -267,7 +267,7 @@ class Exams {
   }
 
   todaySessions() {
-    const from = startOfDay().toISOString(); const to = new Date(startOfDay().getTime() + DAY).toISOString();
+    const from = startOfDay().toISOString(); const to = startOfDay(new Date(startOfDay().getTime() + DAY + 3600_000)).toISOString();
     return this.db.all('SELECT s.*, e.title FROM exam_sessions s JOIN exams e ON e.id=s.exam_id WHERE s.start_at>=? AND s.start_at<? ORDER BY s.start_at', from, to)
       .map((x) => ({ ...this.sessionPublic(x), exam: x.title }));
   }

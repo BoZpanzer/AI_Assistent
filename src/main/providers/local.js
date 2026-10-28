@@ -194,7 +194,9 @@ class LocalLLM {
     if (!installed.includes(model)) throw new Error('Das ausgewählte Modell ist nicht lokal installiert.');
     const details = await this.request('/api/show', { model }, signal);
     if (details.remote_host || details.remote_model || !details.model_info || !Object.keys(details.model_info).length) throw new Error('Modell ist nicht als lokales Modell verifizierbar.');
-    const messages = [{ role: 'system', content: system || '' }];
+    // Kleine lokale Modelle fragen sonst gern „Soll ich nachsehen?“ statt das Werkzeug zu benutzen, oder schmücken Daten aus
+    const rules = tools.length ? '\n\nRegeln für dich: Wenn ein Werkzeug die Frage beantworten kann, rufe es sofort auf – frag nie vorher um Erlaubnis. Nenne nur, was die Werkzeuge zurückgeben; erfinde keine Orte, Personen oder Zahlen dazu. Antworte kurz.' : '';
+    const messages = [{ role: 'system', content: (system || '') + rules }];
     for (const c of contents || []) {
       const parts = c.parts || [];
       if (parts.some((p) => p.inlineData)) throw new Error('Bilder sind im privaten Textmodus noch nicht unterstützt. Bitte Text lokal extrahieren.');

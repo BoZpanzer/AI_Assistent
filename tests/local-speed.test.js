@@ -57,3 +57,36 @@ test('Spielmodus: kleiner Kontext, nur CPU', () => {
   const o = llm.runtimeOptions();
   assert.equal(o.options.num_gpu, 0); assert.equal(o.options.num_ctx, 4096); assert.equal(o.keep_alive, '0s');
 });
+
+test('Spracherkennung: leise Aufnahme wird angehoben, Gleichanteil entfernt, Stille bleibt Stille', () => {
+  const { normalizePcm } = require('../src/main/voice/local-whisper');
+  const n = 16000; const quiet = Buffer.alloc(n * 2);
+  for (let i = 0; i < n; i++) quiet.writeInt16LE(Math.round(200 + 3000 * Math.sin(i / 8)), i * 2);
+  const out = normalizePcm(quiet); let peak = 0; let sum = 0;
+  for (let i = 0; i < n; i++) { const v = out.readInt16LE(i * 2); sum += v; peak = Math.max(peak, Math.abs(v)); }
+  assert.ok(peak > 0.8 * 32767 && peak <= 32767, 'Spitze ' + peak); // ×9 (höchstens ×10)
+  assert.ok(Math.abs(sum / n) < 50, 'kein Gleichanteil mehr');
+  const silent = Buffer.alloc(n * 2); assert.equal(normalizePcm(silent), silent);
+});
+
+test('Befehl „Stell den Chat auf öffentlich“ (auch verhört) – echte Fragen zählen nicht', () => {
+  const { parseRouteCommand: p } = require('../src/main/agent/window-command');
+  assert.equal(p('Stelle den Schät auf Publikum und beantwortet die Frage dann.'), 'public');
+  assert.equal(p('Stell den Chat auf öffentlich'), 'public');
+  assert.equal(p('beantworte das nochmal privat'), 'private');
+  assert.equal(p('Was ist öffentlicher Nahverkehr?'), null);
+  assert.equal(p('Wie stelle ich in Tarkov auf online um?'), null);
+  assert.equal(p('Mach das Licht aus'), null);
+});
+
+test('Genaueres Whisper-Modell: Auswahl nur, wenn heruntergeladen; „base“ setzt zurück', () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { WhisperModels } = require('../src/main/voice/whisper-models');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wm-')); let cfg = { whisperModel: '' };
+  const wm = new WhisperModels({ dir, settings: { get: () => cfg, update: (p) => { cfg = { ...cfg, ...p.voice }; } }, bus: { emit() {} } });
+  try {
+    assert.throws(() => wm.use('small'), /noch nicht heruntergeladen/);
+    assert.equal(wm.status().usingBundled, true);
+    wm.use('base'); assert.equal(cfg.whisperModel, '');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
