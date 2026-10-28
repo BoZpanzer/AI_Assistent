@@ -226,6 +226,7 @@ function Speech({ s }) {
       <Field label="Lautsprecher"><Select value={v.outputDeviceId} onChange={(x) => upd({ voice: { outputDeviceId: x } })} options={[{ value: 'default', label: 'Standard' }, ...devs.out.filter((d) => d.deviceId !== 'default').map((d) => ({ value: d.deviceId, label: d.label || 'Ausgabe' }))]} /></Field>
       <Field label="Mikrofon testen">{level === null ? <button class="btn xs" onClick={test}><Mic size={12} />Pegel testen</button> : <div class="meter" style={{ width: '100%' }}><i style={{ width: `${level * 100}%` }} /></div>}</Field>
       <div class="notice tiny">🔒 <b>Lokale Spracheingabe:</b> Whisper ist in der Windows-Version enthalten. Mikrofon drücken, sprechen – das Audio bleibt auf dem PC; der erkannte Text wird wie getippter Text eingeordnet (privat → lokales Modell).</div>
+      <WhisperChoice />
       <div class="row gap-s mt">
         <span class="small">{voiceLocal?.ready ? (voiceLocal.bundled ? '● Whisper bereits im JARVIS-Installer enthalten – einsatzbereit' : '● Eigenes Whisper installiert – einsatzbereit') : '○ Whisper nicht gefunden: ' + (voiceLocal?.error || 'Verfügbarkeit wird geprüft …')}</span>
         <button class="btn xs" onClick={refreshVoiceLocal}>Spracherkennung prüfen</button>
@@ -965,6 +966,24 @@ function LocalSpeed({ status }) {
     {why && <div class="warn" role="alert">⚠ {why}</div>}
     {l && <div><b>Letzte lokale Anfrage:</b> {l.seconds} s gesamt · Laden {l.loadSeconds} s · Einlesen {l.promptTokens} Tokens in {l.promptSeconds} s · Antwort {l.outTokens} Tokens ({l.tokPerSec} Tok/s){l.truncated ? ' · ⚠ Eingabe füllte den ganzen Kontext – Kontext erhöhen' : ''}</div>}
   </div>;
+}
+
+/** Spracherkennung: mitgeliefertes kleines Modell oder ein genaueres zum Nachladen (nur auf Klick). */
+function WhisperChoice() {
+  const [st, reload] = useRpc('whisper.models', {}, { events: ['settings:changed'] });
+  const [dl, setDl] = useState(null);
+  useEvent('whisper:download', (d) => { setDl(d.done || d.error ? null : d); if (d.done || d.error) reload(); });
+  if (!st) return null;
+  const active = st.models.find((m) => m.active)?.id || 'base';
+  return <Field label="Spracherkennung" hint="Leise oder genuschelte Sprache versteht ein größeres Modell deutlich besser. Download nur auf Klick, danach alles offline.">
+    <div class="col gap-s" style={{ width: '100%' }}>
+      <label class="row gap-s small"><input type="radio" name="whisper" checked={active === 'base'} onChange={() => guard(() => rpc('whisper.use', { id: 'base' }).then(reload))} />Standard (mitgeliefert, schnell)</label>
+      {st.models.map((m) => <div class="row gap-s small">
+        <label class="row gap-s grow"><input type="radio" name="whisper" disabled={!m.installed} checked={active === m.id} onChange={() => guard(() => rpc('whisper.use', { id: m.id }).then(reload))} />{m.label} <span class="tiny muted">· {m.sizeMB} MB · {m.note}</span></label>
+        {!m.installed && (dl?.id === m.id ? <span class="tiny">{dl.pct} %</span> : <button class="btn xs" disabled={!!st.busy || !!dl} onClick={() => { setDl({ id: m.id, pct: 0 }); guard(() => rpc('whisper.download', { id: m.id }), m.label + ' geladen – wird ab jetzt benutzt').finally(() => { setDl(null); reload(); }); }}>Herunterladen</button>)}
+      </div>)}
+    </div>
+  </Field>;
 }
 
 export function LocalAI({ s }) {

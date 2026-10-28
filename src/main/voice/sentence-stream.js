@@ -7,7 +7,7 @@
 const END = /[.!?…](?=["“”')\]]*\s)|:\s*\n|\n\s*\n/g;
 
 class SentenceStream {
-  constructor({ emit, id, short = true, maxChars = 420, firstMin = 8, blockChars = 100 }) {
+  constructor({ emit, id, short = true, maxChars = 420, firstMin = 8, blockChars = 160 }) {
     Object.assign(this, { emit, id, short, maxChars, firstMin, blockChars });
     this.buf = ''; this.sent = 0; this.count = 0; this.stopped = false; this.code = false;
   }

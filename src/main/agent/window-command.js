@@ -34,4 +34,21 @@ function parseStandbyCommand(text) {
   if (!t || t.length > 60 || /\?\s*$/.test(t)) return false;
   return /^(?:(?:geh|wechsel|schalt)\w*\s+(?:mal\s+)?(?:in\s+den\s+|auf\s+)?stand-?by(?:[\s-]*modus)?|stand-?by(?:[\s-]*modus)?(?:\s+bitte)?|(?:geh\s+)?schlaf(?:en)?(?:\s+(?:jetzt|gehen|mal))?|leg\s+dich\s+schlafen|(?:mach|mache)\s+(?:mal\s+)?(?:eine\s+)?pause|pause(?:\s+bitte)?|gute\s+nacht(?:\s+jarvis)?|ruhe(?:modus)?)$/.test(t);
 }
-module.exports = { parseWindowCommand, parseBubbleCommand, parseStandbyCommand };
+/**
+ * „Stell den Chat auf öffentlich“, „beantworte das nochmal privat“, „frag das online“ → 'public' | 'private' | null.
+ * Verhörer der Spracherkennung inklusive („Schät“, „Tschat“, „Publikum“, „publik“).
+ */
+function parseRouteCommand(text) {
+  const t = String(text || '').toLowerCase().replace(/^(?:hey\s+)?jarvis[,!.\s]+/, '').trim();
+  if (!t || t.length > 120) return null;
+  if (/^(?:wie|was|warum|wieso|weshalb|wo|wann|welche\w*|kann man|gibt es)\b/.test(t)) return null; // echte Fragen
+  // \b kennt keine Umlaute → eigene Wortgrenzen
+  const W = (alts) => new RegExp('(?<![a-zäöüß])(?:' + alts + ')(?![a-zäöüß])');
+  const verb = W('stell\\w*|schalt\\w*|setz\\w*|mach\\w*|wechsel\\w*|frag\\w*|beantworte?\\w*|antworte?\\w*|nimm|nutz\\w*|benutz\\w*|schick\\w*|lass').test(t);
+  const what = W('chat|tschat|tschät|schät|schat|tchat|gespräch|frage|antwort|das|es|ihn|nochmal|noch mal').test(t);
+  if (!verb || !what) return null;
+  if (W('öffentlich\\w*|oeffentlich\\w*|public|publik|publikum|online|cloud|internet|groq|gemini').test(t)) return 'public';
+  if (W('privat\\w*|lokal\\w*|offline').test(t)) return 'private';
+  return null;
+}
+module.exports = { parseWindowCommand, parseBubbleCommand, parseStandbyCommand, parseRouteCommand };

@@ -141,6 +141,7 @@ function createCore(opts) {
   s.speech = new (require('./voice/speech').Speech)(s);
   s.omnivoice = new (require('./voice/omnivoice').OmniVoice)(s);
   s.cloudTts = new (require('./voice/cloud-tts').CloudTts)(s);
+  s.whisperModels = new (require('./voice/whisper-models').WhisperModels)({ dir: require('node:path').join(data, 'voice'), settings: s.settings, bus: s.bus });
   // Spiel läuft → OmniVoice entladen (Grafikspeicher fürs Spiel), danach wieder vorladen
   bus.on('game:running', () => {
     try {

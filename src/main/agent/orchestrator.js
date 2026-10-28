@@ -95,6 +95,12 @@ class Orchestrator {
     const cid = conv.id;
     // Eine neue Nachricht von dir weckt JARVIS aus dem Standby
     if (['text', 'voice'].includes(channel)) this.s.voice?.wake?.('chat');
+    // „Stell den Chat auf öffentlich/privat“ → die letzte Frage nochmal, diesmal öffentlich (Groq/Gemini) bzw. lokal
+    if (['text', 'voice'].includes(channel) && !attachments.length && !images.length) {
+      const as = require('./window-command').parseRouteCommand(text);
+      const last = as && conversations.messages(cid, { limit: 6 }).reverse().find((m) => m.role === 'assistant');
+      if (last) { log.info('Umleiten per Befehl: ' + as); return this.reroute({ conversationId: cid, messageId: last.id, as }); }
+    }
     // Pro Nachricht entscheiden: privat → lokales Modell, sonst Gemini (nur mit nicht-privatem Verlauf).
     const scope = this.classify(cid, text, { attachments, images, screen });
     let userText = String(text || '').slice(0, 30000);

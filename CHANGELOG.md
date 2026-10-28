@@ -2,7 +2,14 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
-## 5.5.1 – Figur mit Linksklick greifbar
+## 5.6.0 – Flüssigeres Vorlesen, bessere Spracherkennung, „Chat auf öffentlich“
+
+- **Vorlesen ohne lange Pausen:** Wartende Sätze werden zu Blöcken gebündelt (bis ≈ 350 Zeichen) statt einzeln berechnet – jede Berechnung hat eine feste Anlaufzeit, die sich bei vielen kleinen Häppchen zu spürbaren Pausen addiert hat. Der erste Satz bleibt kurz, damit es schnell losgeht.
+- **Versteht dich besser, auch leise und genuschelt:** Leise Aufnahmen werden vor der Erkennung angehoben (bis ×10), Whisper sucht gründlicher (Strahlsuche) und bekommt typische Wörter als Starthilfe (Jarvis, Chat, öffentlich, League of Legends, Statistik, Tarkov, Campus Dual …). Neu in Einstellungen → Spracheingabe: genauere Erkennungsmodelle zum Herunterladen (small, 190 MB, oder large-v3-turbo, 574 MB) – nur auf Klick, danach offline.
+- **„Stell den Chat auf öffentlich“ / „beantworte das nochmal privat“:** beantwortet die letzte Frage neu – öffentlich (Groq/Gemini) bzw. lokal. Klappt auch mit Verhörern wie „Schät auf Publikum“. Früher wurde der Satz als neue Frage behandelt und bekam eine unpassende Antwort.
+- **Lokale KI hält sich an die Werkzeuge:** Sie fragt nicht mehr „Soll ich nachsehen?“, sondern ruft das passende Werkzeug direkt auf, und soll nichts dazuerfinden (Orte, Personen, Zahlen).
+
+### Figur mit Linksklick greifbar
 
 - **Behoben:** Linksklick und Ziehen gingen nur, nachdem man vorher einmal rechts geklickt hatte. Windows gibt Linksklicks an Fenster, die keinen Fokus annehmen dürfen, nicht zuverlässig weiter (Rechtsklick schon). Die Figur darf jetzt den Fokus annehmen, solange die Maus über ihr ist, und gibt ihn danach wieder ab; in Alt+Tab und der Taskleiste taucht sie trotzdem nicht auf.
 - Während die Maus auf der Figur ist, wird das Fenster nicht mehr umgestellt (das konnte einen Klick oder das Ziehen mittendrin abbrechen).

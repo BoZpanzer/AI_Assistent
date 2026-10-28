@@ -37,12 +37,32 @@ function pcmToWav(pcm) {
   return Buffer.concat([header, pcm]);
 }
 
+/**
+ * Leise/genuschelte Aufnahmen anheben: Gleichanteil entfernen, dann auf ≈ -1,5 dBFS Spitze verstärken (höchstens ×10).
+ * Whisper erkennt leise Sprache deutlich schlechter – das Mikrofon liefert bei leisem Sprechen oft nur 5–15 % Pegel.
+ */
+function normalizePcm(pcm) {
+  const n = pcm.length >> 1; if (!n) return pcm;
+  let sum = 0; for (let i = 0; i < n; i++) sum += pcm.readInt16LE(i * 2);
+  const dc = sum / n; let peak = 0;
+  for (let i = 0; i < n; i++) { const v = Math.abs(pcm.readInt16LE(i * 2) - dc); if (v > peak) peak = v; }
+  if (peak < 50) return pcm; // Stille – nichts zu verstärken
+  const gain = Math.min(10, (0.84 * 32767) / peak);
+  if (gain <= 1.05 && Math.abs(dc) < 64) return pcm;
+  const out = Buffer.alloc(pcm.length);
+  for (let i = 0; i < n; i++) out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round((pcm.readInt16LE(i * 2) - dc) * gain))), i * 2);
+  return out;
+}
+
+/** Wörter, die JARVIS oft hört – als Starthilfe für Whisper (Eigennamen, Befehle). */
+const VOCAB = 'Jarvis, Chat, öffentlich, privat, Standby, Sprechblase, League of Legends, LoL, Statistik, Champion, Tarkov, Raid, Quests, Campus Dual, Klausur, Vorlesung, Termin, Aufgabe, Kalender, Alya.';
+
 function decodePcm(audio) {
   if (typeof audio !== 'string' || audio.length > Math.ceil(MAX_BYTES / 3) * 4 + 4 ||
       !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(audio)) {
     throw new Error('Ungültige lokale Sprachaufnahme.');
   }
-  return pcmToWav(Buffer.from(audio, 'base64'));
+  return pcmToWav(normalizePcm(Buffer.from(audio, 'base64')));
 }
 
 function checkInstallation(executable, model) {
@@ -70,9 +90,12 @@ function resolveWhisperPaths(settings = {}, { resourcesPath = process.resourcesP
     return { ...custom, bundled: false };
   } catch { /* custom files missing: try official packaged defaults */ }
   if (resourcesPath && path.isAbsolute(resourcesPath)) {
+    // Ein heruntergeladenes, genaueres Modell (Einstellungen → Spracheingabe) läuft mit dem mitgelieferten Programm
+    let better = '';
+    try { if (settings.whisperModel && path.isAbsolute(settings.whisperModel) && fs.statSync(settings.whisperModel).size > 1e6) better = settings.whisperModel; } catch { /* fehlt */ }
     const bundled = {
       executable: path.join(resourcesPath, 'voice', 'whisper-cli.exe'),
-      model: path.join(resourcesPath, 'voice', 'ggml-base.bin'),
+      model: better || path.join(resourcesPath, 'voice', 'ggml-base.bin'),
     };
     try {
       checkInstallation(bundled.executable, bundled.model);
@@ -97,7 +120,8 @@ async function transcribeLocal({ audio, executable, model, threads = 4, lowPrior
   try {
     fs.writeFileSync(input, wav, { mode: 0o600, flag: 'wx' });
     const t = Math.max(1, Math.min(16, Number.isInteger(threads) ? threads : 4));
-    const args = ['-m', model, '-f', input, '-l', 'de', '-t', String(t), '-nt', '-otxt', '-of', output];
+    // Strahlsuche (5) + Starthilfe-Wörter: spürbar weniger Verhörer bei leiser/undeutlicher Sprache, kostet kaum Zeit
+    const args = ['-m', model, '-f', input, '-l', 'de', '-t', String(t), '-bs', '5', '--prompt', VOCAB, '-nt', '-otxt', '-of', output];
     await new Promise((resolve, reject) => {
       let child;
       try { child = run(executable, args, { shell: false, windowsHide: true, stdio: 'ignore' }); }
@@ -128,4 +152,4 @@ async function transcribeLocal({ audio, executable, model, threads = 4, lowPrior
   }
 }
 
-module.exports = { decodePcm, pcmToWav, checkInstallation, resolveWhisperPaths, transcribeLocal, MAX_SECONDS, MAX_BYTES, SAMPLE_RATE };
+module.exports = { normalizePcm, VOCAB, decodePcm, pcmToWav, checkInstallation, resolveWhisperPaths, transcribeLocal, MAX_SECONDS, MAX_BYTES, SAMPLE_RATE };
