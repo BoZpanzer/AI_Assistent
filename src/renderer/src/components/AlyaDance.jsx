@@ -20,10 +20,16 @@ export function AlyaDance({ size, onPointerDown, onContextMenu, onMouseEnter, on
     const load = urls.map(src => {
       const im = new Image(); im.src = src; cache.set(src, im); return im;
     });
+    let ready = false;
+    Promise.all(load.map(im => im.decode().catch(() => null))).then(() => {
+      ready = alive && load.every(im => im.naturalWidth > 0);
+      if (ready) start = performance.now();
+    });
     let start = performance.now();
     let last = -1;
     const tick = now => {
       if (!alive) return;
+      if (!ready) { raf.current = requestAnimationFrame(tick); return; }
       const t = (now - start) % total;
       let elapsed = 0, idx = 0;
       while (idx < durations.length - 1 && elapsed + durations[idx] <= t) elapsed += durations[idx++];
@@ -40,6 +46,6 @@ export function AlyaDance({ size, onPointerDown, onContextMenu, onMouseEnter, on
   }, []);
   return <div class="pet-fig pet-img s-dance has-pose" style={{ width: size + 'px', height: Math.round(size * 1.6) + 'px' }}
     onPointerDown={onPointerDown} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
-    <div class="body"><img ref={image} src={ROOT + front[0] + '.png'} width={size} height={Math.round(size * 1.6)} draggable={false} alt="Alya tanzt" /></div>
+    <div class="body"><img ref={image} src="assets/pet/frau/idle.webp" width={size} height={Math.round(size * 1.6)} draggable={false} alt="Alya tanzt" /></div>
   </div>;
 }
