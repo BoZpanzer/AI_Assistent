@@ -11,13 +11,13 @@ function service(platform = 'win32') {
   const context = { module: { exports: {} }, __dirname: '/app/resources/app.asar/src/main/services', process: { platform }, Date: { now: () => now }, require: name => name === 'node:child_process' ? { spawn: (cmd, args) => {
     const p = new EventEmitter(); p.stdout = new EventEmitter(); p.stdout.setEncoding = () => {};
     p.kill = () => { p.killed = true; }; p.unref = () => {}; p.args = args; children.push(p); return p;
-  } } : require(name) };
+  } } : name === 'node:path' ? path.win32 : require(name) };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/main/services/spotify-playback.js'), 'utf8'), context);
   return { api: context.module.exports, children, advance: ms => { now += ms; } };
 }
 test('Spotify: split output, pause/resume, one process and unpacked script', () => {
   const s = service(); assert.equal(s.api.status().playing, false);
-  const p = s.children[0]; assert.ok(p.args.includes('/app/resources/app.asar.unpacked/src/main/services/spotify-session.ps1'));
+  const p = s.children[0]; assert.ok(p.args.includes(path.win32.normalize('/app/resources/app.asar.unpacked/src/main/services/spotify-session.ps1')));
   p.stdout.emit('data', 'PLAY'); assert.equal(s.api.status().playing, false);
   p.stdout.emit('data', 'ING\r\n'); assert.equal(s.api.status().playing, true);
   p.stdout.emit('data', 'STOPPED\n'); assert.equal(s.api.status().playing, false);
