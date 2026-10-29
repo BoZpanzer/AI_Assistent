@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.6.4 – Alya-Tanzbilder bereinigt & 60-FPS-Animation
+
+- **Alle 22 Tanzbilder im `dance`-Ordner bereinigt & vervollständigt:** Abgeschnittene Hände, Finger, Haarspitzen und Schuhsohlen wurden aus dem ursprünglichen Sprite-Sheet nahtlos wieder an die jeweilige Figur angefügt; sämtliche fremden Bildreste an den Rändern sowie halbtransparente Hintergrund-Schatten unter den Haaren sind restlos entfernt.
+- **Vertauschte Rückseiten-Frames & Standlinie korrigiert:** `tanz_hinten_01_seite_a` und `tanz_hinten_05_seite_b` sind jetzt anatomisch passend zur Hüftschwingung geordnet, alle Stand- und Sprung-Frames auf dieselbe Bodenlinie und Drehachse zentriert.
+- **Flüssige 60-FPS-Tanzanimation:** `AlyaDance` rendert jetzt mit 60 FPS auf einem High-DPI-Canvas mit 48-Streifen-Körperachsen-Interpolation (Zwischenbilder ohne Doppelkonturen), sanftem Beat-Bounce und doppeltem Hüftschwung-Zyklus vor jedem Drehsprung.
+
 ## 5.6.3 – Kalender direkt beschreibbar & Alya Spotify-Tanz Fix
 
 - **Kalender schreibt Termine sofort rein:** `create_event`, `schedule_events` und `update_event` tragen Termine jetzt wie alle anderen Alltags-Werkzeuge direkt in den Kalender ein (mit Rückgängig-Knopf auf der Karte) statt auf eine Bestätigungskarte zu warten, die im Pet-Fenster und im Sprachmodus nicht sichtbar war.
