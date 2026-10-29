@@ -92,6 +92,12 @@ function Desk() {
 
   // Aktivität weckt die Figur
   useEffect(() => { if (busy) { lastActive.current = Date.now(); setIdleAct(null); } }, [busy, mood.bubble?.kind]);
+  // Spotify startet → Bummeln/Ruhe-Geste beenden, damit sofort getanzt werden kann
+  useEffect(() => {
+    if (!spotifyPlaying) return;
+    setIdleAct(null);
+    if (!hadBubble.current) { clearTimeout(walkTimer.current); setWalk(null); }
+  }, [spotifyPlaying]);
   // Blase erscheint → ein Stück vom Rand weg nach links, damit sie neben dem Kopf Platz hat
   const hadBubble = useRef(false);
   useEffect(() => {
@@ -192,9 +198,10 @@ function Desk() {
   };
   const menu = (e) => { if (!(over.current || hit(e.clientX, e.clientY))) return; e.preventDefault(); rpc('pet.menu').catch(() => {}); };
 
+  const active = !!(mood.speaking || mood.listening || mood.standby || mood.bubble?.kind === 'think');
   const state = drag?.moved || (drag && tilt) ? 'oops' : mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : ['talk', 'listen', 'think', 'think_high'].includes(mood.state) ? mood.state : walk ? 'walk' : mood.state !== 'idle' ? mood.state : drag ? 'wave' : idleAct || 'idle';
   const gender = genderFor(settings);
-  const dance = gender === 'female' && spotifyPlaying && !busy && !drag && !walk && !mood.standby && (!idleAct || idleAct === 'sleep') && mood.state === 'idle';
+  const dance = gender === 'female' && spotifyPlaying && !active && !drag && !walk && !mood.standby && (!idleAct || idleAct === 'sleep');
   // Blase neben dem Kopf – auf der Seite mit mehr Platz; die Spitze zeigt Richtung Gesicht
   const bw = mood.bubble?.kind === 'think' ? 120 : 330; const gap = 16; // „denkt …“-Blase nur so breit wie die Punkte
   const figH = petHeight(gender, size);

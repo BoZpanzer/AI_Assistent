@@ -23,7 +23,15 @@ test('Agenda ohne KI: „Was hab ich nächste Woche zu tun?“ listet die echten
   assert.equal(parseAgendaQuery('Was kann ich heute alles tun?', now).label, 'Heute');
   assert.equal(parseAgendaQuery('Welche Termine hab ich am Freitag?', now).from.getDate(), 30);
   assert.equal(parseAgendaQuery('Trag mir nächste Woche Mathe ein', now), null);
+  assert.equal(parseAgendaQuery('Schreib mir morgen 14 Uhr Zahnarzt in meine Termine rein', now), null);
+  assert.equal(parseAgendaQuery('Kannst du morgen um 15 Uhr Sport eintragen?', now), null);
+  assert.equal(parseAgendaQuery('Ich habe morgen um 14 Uhr einen Termin', now), null);
   assert.equal(parseAgendaQuery('Wie spät ist es?', now), null);
+  const privacy = require('../src/main/core/privacy');
+  assert.equal(privacy.privateText('Was sind meine Termine morgen?'), true);
+  assert.equal(privacy.privateText('Morgen 14 Uhr Zahnarzttermin'), true);
+  assert.equal(privacy.personalText('Kannst du morgen um 15 Uhr Sport eintragen?'), true);
+  assert.equal(privacy.personalText('Schreib mir morgen 14 Uhr Training rein'), true);
   const { core, cleanup } = tempCore();
   try {
     core.calendar.create({ title: 'VS Betriebssysteme', start: new Date(2026, 10, 3, 9, 0).toISOString(), end: new Date(2026, 10, 3, 10, 30).toISOString(), location: '204 PC-Kabinett, Staatliche Studienakademie' });

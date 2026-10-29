@@ -117,16 +117,13 @@ app.whenReady().then(async () => {
     await waitFor(() => js(`document.querySelector('.chat-list').textContent.includes('Überblick')`), 15000);
     await shot('10-dashboard');
   });
-  await step('Chat: Termin mit Bestätigungskarte', async () => {
+  await step('Chat: Termin direkt eintragen mit Aktionskarte', async () => {
     await nav('chat');
-    await say('Trag morgen um 16 Uhr Mathe lernen ein');
-    await waitFor(() => js(`!!document.querySelector('.card-confirm')`), 15000);
-    await shot('20-chat-confirm');
     const before = core.calendar.list(new Date(), new Date(Date.now() + 3 * 86400000)).length;
-    await js(`[...document.querySelectorAll('.card-confirm .btn')].find(b=>b.textContent.includes('Bestätigen')).click()`);
-    await waitFor(() => core.calendar.list(new Date(), new Date(Date.now() + 3 * 86400000)).length === before + 1, 8000);
-    await waitFor(() => js(`document.querySelector('.card-confirm').textContent.includes('Ausgeführt')`), 5000);
-    await shot('21-chat-confirmed');
+    await say('Trag morgen um 16 Uhr Mathe lernen ein');
+    await waitFor(() => core.calendar.list(new Date(), new Date(Date.now() + 3 * 86400000)).length === before + 1, 15000);
+    await waitFor(() => js(`document.querySelector('.chat-list').textContent.includes('Termin eingetragen')`), 8000);
+    await shot('20-chat-confirm');
   });
   await step('Aufgaben: Board, Detail, Abhaken', async () => {
     await nav('tasks');

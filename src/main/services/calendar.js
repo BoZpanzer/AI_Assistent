@@ -59,7 +59,7 @@ class Calendar {
     this.lastSync = null; this.lastError = null;
     this.ensureLocal();
     // Änderungen an Terminen/Aufgaben → kurz danach nach Google übertragen (nicht während eines Abgleichs)
-    const soon = () => { if (!this.syncing) this.exportSoon(); };
+    const soon = () => { if (this.syncing) this._exportPending = true; else this.exportSoon(); };
     this.bus?.on?.('tasks:changed', soon);
     this.bus?.on?.('calendar:changed', soon);
   }
@@ -67,7 +67,7 @@ class Calendar {
   /** Google-Kalender, die JARVIS für die Übertragung je Art angelegt hat. */
   exportTargets() { return Object.values(this.settings.get('google').exportCalendars || {}).filter(Boolean); }
 
-  exportSoon(ms = 20000) {
+  exportSoon(ms = 3000) {
     const g = this.settings.get('google');
     if (!g.exportLocalToGoogle || !this.connected()) return;
     clearTimeout(this._export);
@@ -90,7 +90,7 @@ class Calendar {
   }
 
   toPublic(r) {
-    const cal = this.db.get('SELECT name,color FROM calendars WHERE id=?', r.calendar_id);
+    const cal = this.db.get('SELECT name,color,writable FROM calendars WHERE id=?', r.calendar_id);
     const cat = categorize(r.title, cal?.name, r.event_type);
     const own = r.color && COLORS[r.color] ? COLORS[r.color][1] : null;
     return {
@@ -98,7 +98,7 @@ class Calendar {
       color: own || cat?.color || cal?.color || '#22d3ee', colorId: r.color || 'auto', category: cat?.id || null, categoryLabel: cat?.label || null, icon: cat?.icon || null, eventType: r.event_type || null,
       title: r.title, description: r.description, location: r.location, start: r.start_at, end: r.end_at, allDay: !!r.all_day,
       recurrence: r.rrule ? rec.fromRRule(r.rrule) : null, recurring: !!(r.rrule || r.recurring_event_id),
-      source: r.calendar_id === LOCAL_CAL ? 'local' : String(r.calendar_id).startsWith('feed:') ? 'feed' : 'google', syncState: r.sync_state, readOnly: String(r.calendar_id).startsWith('feed:'),
+      source: r.calendar_id === LOCAL_CAL ? 'local' : String(r.calendar_id).startsWith('feed:') ? 'feed' : 'google', syncState: r.sync_state, readOnly: String(r.calendar_id).startsWith('feed:') || (cal ? !cal.writable : false),
       conflict: r.sync_state === 'conflict' ? JSON.parse(r.conflict_data || 'null') : null,
     };
   }
@@ -206,13 +206,22 @@ class Calendar {
 
   /** Creates an event (Google if connected, else local). */
   async create(input) {
+    this.ensureLocal();
     const d = this.normalizeInput(input);
-    const calId = d.calendarId || LOCAL_CAL;
-    if (calId !== LOCAL_CAL && !this.connected()) throw new Error('Google ist nicht verbunden');
-    if (calId !== LOCAL_CAL && !this.settings.get('google').exportLocalToGoogle) throw new Error('Google-Schreibzugriff ist deaktiviert');
-    const cal = this.db.get('SELECT * FROM calendars WHERE id=?', calId);
-    if (!cal) throw new Error('Kalender nicht gefunden');
-    if (!cal.writable) throw new Error('Dieser Kalender ist schreibgeschützt');
+    const privacy = require('../core/privacy');
+    let calId = d.calendarId || LOCAL_CAL;
+    if (calId !== LOCAL_CAL) {
+      const own = new Set(this.exportTargets());
+      if (privacy.isPrivate() || ['primary', 'default', 'jarvis'].includes(String(calId).toLowerCase()) || own.has(calId)) {
+        calId = LOCAL_CAL;
+      } else {
+        if (!this.connected()) throw new Error('Google ist nicht verbunden');
+        if (!this.settings.get('google').exportLocalToGoogle) throw new Error('Google-Schreibzugriff ist deaktiviert');
+        const cal = this.db.get('SELECT * FROM calendars WHERE id=?', calId);
+        if (!cal) throw new Error('Kalender nicht gefunden');
+        if (!cal.writable) throw new Error('Dieser Kalender ist schreibgeschützt');
+      }
+    }
     const eid = id('e');
     const now = nowIso();
     this.db.run(`INSERT INTO events(id,calendar_id,title,description,location,start_at,end_at,all_day,time_zone,rrule,sync_state,local_updated,color)
@@ -237,7 +246,10 @@ class Calendar {
     const r = this.db.get('SELECT * FROM events WHERE id=?', eventId);
     if (!r) throw new Error('Termin nicht gefunden');
     if (String(r.calendar_id).startsWith('feed:')) throw new Error('Termine aus einem abonnierten Stundenplan sind schreibgeschützt');
-    if (r.calendar_id !== LOCAL_CAL) throw new Error('Importierte Termine sind schreibgeschützt. Bitte einen lokalen Termin anlegen.');
+    if (r.calendar_id !== LOCAL_CAL) {
+      const cal = this.db.get('SELECT writable FROM calendars WHERE id=?', r.calendar_id);
+      if (!cal?.writable) throw new Error('Importierte Termine sind schreibgeschützt. Bitte einen lokalen Termin anlegen.');
+    }
     const d = this.normalizeInput(patch, true);
     if (d.start && !patch.end) d.end = new Date(Date.parse(d.start) + (Date.parse(r.end_at) - Date.parse(r.start_at))).toISOString();
     const cols = { title: d.title, description: d.description, location: d.location, start_at: d.start && new Date(d.start).toISOString(), end_at: d.end && new Date(d.end).toISOString(), all_day: d.allDay === undefined ? undefined : (d.allDay ? 1 : 0) };
@@ -248,7 +260,8 @@ class Calendar {
     sets.push('local_updated=?'); vals.push(nowIso());
     if (r.calendar_id !== LOCAL_CAL) { sets.push("sync_state=CASE WHEN sync_state='pending_create' THEN 'pending_create' ELSE 'pending_update' END"); }
     this.db.run(`UPDATE events SET ${sets.join(',')} WHERE id=?`, ...vals, eventId);
-    if (r.calendar_id !== LOCAL_CAL && r.google_id) {
+    const privacy = require('../core/privacy');
+    if (r.calendar_id !== LOCAL_CAL && r.google_id && !privacy.isPrivate()) {
       try {
         const full = this.db.get('SELECT * FROM events WHERE id=?', eventId);
         const g = await this.google.patchEvent(r.calendar_id, r.google_id, this.toGoogle({
@@ -383,6 +396,7 @@ class Calendar {
     } finally {
       this.syncing = false;
       this.bus.emit('calendar:sync', { state: 'idle', at: this.lastSync, error: this.lastError });
+      if (this._exportPending) { this._exportPending = false; this.exportSoon(); }
     }
   }
 
@@ -410,6 +424,7 @@ class Calendar {
     }
     result.createdCalendars = created;
     result.at = nowIso();
+    this.lastMirror = result;
     if (result.failed) {
       const top = Object.entries(result.reasons || {}).sort((a, b) => b[1] - a[1])[0];
       throw Object.assign(new Error('Google-Kalender-Übertragung: ' + result.failed + ' Eintrag/Einträge nicht übertragen' + (top ? ` (Grund: ${top[0]})` : '')), { result });

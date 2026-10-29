@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.6.3 – Kalender direkt beschreibbar & Alya Spotify-Tanz Fix
+
+- **Kalender schreibt Termine sofort rein:** `create_event`, `schedule_events` und `update_event` tragen Termine jetzt wie alle anderen Alltags-Werkzeuge direkt in den Kalender ein (mit Rückgängig-Knopf auf der Karte) statt auf eine Bestätigungskarte zu warten, die im Pet-Fenster und im Sprachmodus nicht sichtbar war.
+- **Alle Kalender-Schreibbefehle werden zuverlässig erkannt:** Sätze wie „Schreib mir morgen 14 Uhr Zahnarzt rein“, „Kannst du … eintragen?“, „Notier mir …“ oder „Trägst du … ein“ werden nicht mehr von der Schnell-Agenda abgefangen und landen zuverlässig im lokalen Assistenten mit Kalender-Werkzeugen.
+- **Kalender-Oberfläche:** Neuer Button „+ Neuer Termin“ direkt oben in der Kalender-Kopfzeile; einfacher Klick auf einen Tag (Monatsansicht) oder eine Stunde (Wochenansicht) öffnet sofort das Termin-Fenster.
+- **Alya tanzt zuverlässig bei Spotify:** Die Tanz-Animation friert nicht mehr auf dem ersten Bild ein, wenn Windows-Clientbereich-Animationen (`prefers-reduced-motion`) ausgeschaltet sind. Offene Sprechblasen oder Antworten mit Fragezeichen blockieren den Tanz nicht mehr dauerhaft, und auch die Pet-Vorschau in der Seitenleiste sowie im Gaming-Overlay tanzt mit.
+
 ## 5.6.2 – Alyas Spotify-Tanz und Kalenderkorrekturen
 
 - Alya tanzt bei Spotify-Wiedergabe mit 22 transparenten Originalbildern: Hüfttanz vorne, Drehsprung, Hüfttanz hinten und Rückdrehung.

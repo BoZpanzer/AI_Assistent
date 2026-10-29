@@ -70,7 +70,7 @@ function findBirthdays(text, { title = '' } = {}) {
       const plain = line.slice(0, date.index) + ' ' + line.slice(date.index + date.length);
       for (const re of PATTERNS) { const m = re.exec(plain); if (m && (name = cleanName(m[1]))) break; }
       if (!name && multi) { const m = new RegExp(String.raw`^\s*${NAME}\s+(?:am|on|:)`, 'u').exec(plain); if (m) name = cleanName(m[1]); }
-      if (!name && /\b(?:ich|mein(?:em)?)\b/i.test(line.slice(0, date.index)) && /\b(?:ich habe|ich hab|ich bin|ich wurde|mein(?:em)? (?:Geburtstag|Geburtsdatum))\b/i.test(line)) name = 'ich';
+      if (!name && /\b(?:ich|mein(?:em)?)\b/i.test(line.slice(0, date.index)) && (/\b(?:ich habe|ich hab|ich bin|ich wurde|mein(?:em)? (?:Geburtstag|Geburtsdatum))\b/i.test(line) || /\b(?:bin|wurde)\b[^.\n]{0,30}?\bgeboren\b/i.test(line))) name = 'ich';
     }
     if (!name && titleIsList) {
       // Listen wie „Geburtstage“ → „Max: 12.03.“ / „Lisa – 4. Mai“

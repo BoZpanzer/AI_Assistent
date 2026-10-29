@@ -52,10 +52,24 @@ function OvScan({ s }) {
 /** JARVIS als Figur mit Sprechblase – die Blase bleibt bis zur nächsten Eingabe stehen. */
 function OvPet({ settings }) {
   const mood = usePetMood({ max: 600 });
+  const [spotifyPlaying, setSpotifyPlaying] = useState(false);
+  useEffect(() => {
+    let active = true, timer;
+    const poll = async () => {
+      try { const r = await rpc('spotify.playback'); if (active) setSpotifyPlaying(!!r?.playing); }
+      catch { if (active) setSpotifyPlaying(false); }
+      if (active) timer = setTimeout(poll, 1500);
+    };
+    poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, []);
   if (settings?.pet?.overlay === false) return null;
+  const gender = genderFor(settings);
+  const busy = !!(mood.speaking || mood.listening || mood.standby || mood.bubble?.kind === 'think');
+  const dance = gender === 'female' && spotifyPlaying && !busy;
   return (
     <div class="ov-pet">
-      <PetFigure gender={genderFor(settings)} state={mood.state} size={92} />
+      <PetFigure gender={gender} state={dance ? 'dance' : mood.state} size={92} />
       {mood.bubble ? <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} side="right" name={bubbleName(settings)} /> : <span class="grow" />}
     </div>
   );

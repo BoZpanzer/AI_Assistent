@@ -371,7 +371,8 @@ class Orchestrator {
         contents.push({ role: 'user', parts: responses });
         if (step === MAX_STEPS - 1) full += '\n\n_(Abgebrochen: zu viele Werkzeugschritte.)_';
       }
-      const final = conversations.update(msg.id, { content: full.trim() || (cards.length ? '' : '…'), meta: { streaming: false, cards, sources: sources.slice(0, 12), model, scope, local: isLocal } });
+      const finalContent = full.trim() || (cards.length ? '' : '…');
+      const final = conversations.update(msg.id, { content: finalContent, meta: { streaming: false, cards, sources: sources.slice(0, 12), model, scope, local: isLocal } }) || { ...msg, content: finalContent };
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
       clearTimeout(petTimer); bus.emit('pet:answer', { messageId: msg.id, text: final.content, mood: moodFor({ userText: text, answer: final.content }) });
       // Brain selbstständig erweitern (Hintergrund; privat → lokales Modell, sonst Gemini-Sparmodell)

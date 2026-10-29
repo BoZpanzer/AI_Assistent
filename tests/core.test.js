@@ -82,9 +82,11 @@ test('Kalender: lokale Termine, Serien, freie Slots, ohne Google', async () => {
 test('Kalender: Google-Pull bleibt möglich; neue private Termine werden niemals gepusht', async () => {
   const { core, cleanup } = tempCore();
   let writes = 0;
-  core.calendar.google = { isConnected: () => true,
+  core.calendar.google = {
+    isConnected: () => true,
     listCalendars: async () => ({ items: [{ id: 'primary@x', summary: 'Google', primary: true, accessRole: 'owner' }] }),
-    listEvents: async () => [], insertEvent: async () => { writes++; }, patchEvent: async () => { writes++; }, deleteEvent: async () => { writes++; } };
+    listEvents: async () => [], insertEvent: async () => { writes++; }, patchEvent: async () => { writes++; }, deleteEvent: async () => { writes++; }
+  };
   try {
     await core.calendar.sync();
     const e = await core.calendar.create({ title: 'Familientermin', start: new Date(Date.now() + 86400e3).toISOString() });
@@ -178,25 +180,27 @@ test('Gaming: Kontext aktiv vs. besprochen, Prozess-Erkennung, manuelle Auswahl 
 
 test('Orchestrator: Werkzeugschleife, Bestätigungspflicht, Einmal-Token, Quellen', async () => {
   const script = [
-    { calls: [{ name: 'create_task', args: { title: 'Mathe lernen', category: 'Studium' } }, { name: 'create_event', args: { title: 'Mathe lernen', start: new Date(Date.now() + 86400e3).toISOString() } }] },
-    { text: 'Aufgabe angelegt, Termin wartet auf deine Bestätigung, Chef.' },
+    { calls: [{ name: 'create_task', args: { title: 'Mathe lernen', category: 'Studium' } }, { name: 'create_event', args: { title: 'Mathe lernen', start: new Date(Date.now() + 86400e3).toISOString() } }, { name: 'delete_task', args: { id: 'PLACEHOLDER' } }] },
+    { text: 'Aufgabe und Termin angelegt, Löschung wartet auf deine Bestätigung, Chef.' },
   ];
   const { core, fake, cleanup } = tempCore({ script, local: true });
+  const toDelete = core.tasks.create({ title: 'Altlast' });
+  script[0].calls[2].args.id = toDelete.id;
   core.secrets.set('gemini.api_key', 'AIza-test-key-123456789');
   await core.gemini.discover();
   const cards = [];
   core.bus.on('chat:card', (c) => cards.push(c.card));
   const msg = await core.orchestrator.chat({ text: 'Jarvis, trag morgen Mathe lernen ein' });
   assert.match(msg.content, /Bestätigung/);
-  assert.equal(core.tasks.list().length, 1, 'Aufgabe ohne Rückfrage');
-  assert.equal(core.calendar.list(new Date(), new Date(Date.now() + 3 * 86400e3)).length, 0, 'Termin NICHT ohne Bestätigung');
+  assert.equal(core.tasks.list().length, 2, 'Aufgabe ohne Rückfrage angelegt, Altlast noch nicht gelöscht');
+  assert.equal(core.calendar.list(new Date(), new Date(Date.now() + 3 * 86400e3)).length, 1, 'Termin sofort ohne Bestätigung eingetragen');
   const confirm = cards.find((c) => c.kind === 'confirm');
   assert.ok(confirm);
-  // tool response told the model it is not executed yet
-  const fr = fake.requests[1].contents.flatMap((c) => c.parts).find((p) => p.functionResponse?.name === 'create_event');
+  // tool response told the model delete_task is not executed yet
+  const fr = fake.requests[1].contents.flatMap((c) => c.parts).find((p) => p.functionResponse?.name === 'delete_task');
   assert.equal(fr.functionResponse.response.status, 'awaiting_user_confirmation');
   await core.orchestrator.resolveConfirmation(confirm.token, true);
-  assert.equal(core.calendar.list(new Date(), new Date(Date.now() + 3 * 86400e3)).length, 1);
+  assert.equal(core.tasks.list().length, 1);
   await assert.rejects(core.orchestrator.resolveConfirmation(confirm.token, true), /abgelaufen oder wurde bereits verwendet/);
   // invalid tool args are rejected, not executed
   const bad = await core.orchestrator.execute('create_task', { title: 5 });

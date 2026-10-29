@@ -51,6 +51,7 @@ export function Calendar() {
             <button class="btn icon sm" onClick={() => step(-1)}><ChevronLeft size={18} /></button>
             <button class="btn sm" onClick={() => setCursor(new Date())}>Heute</button>
             <button class="btn icon sm" onClick={() => step(1)}><ChevronRight size={18} /></button>
+            <button class="btn sm primary" onClick={() => openNew(new Date())}><CirclePlus size={15} />Neuer Termin</button>
             <span class="grow" />
             <div class="tabs sm"><button class={view === 'month' ? 'active' : ''} onClick={() => setView('month')}>Monat</button><button class={view === 'week' ? 'active' : ''} onClick={() => setView('week')}>Woche</button></div>
           </div>
@@ -62,7 +63,7 @@ export function Calendar() {
                 const items = byDay(d);
                 const today = sod(d).getTime() === sod(new Date()).getTime();
                 return (
-                  <div class={`cal-cell ${d.getMonth() !== cursor.getMonth() ? 'other' : ''} ${today ? 'today' : ''}`} onDblClick={() => openNew(d, true)}>
+                  <div class={`cal-cell ${d.getMonth() !== cursor.getMonth() ? 'other' : ''} ${today ? 'today' : ''}`} onClick={() => openNew(d, true)} onDblClick={() => openNew(d, true)}>
                     <div class="d">{d.getDate()}</div>
                     {items.slice(0, 4).map((e) => <EvChip e={e} />)}
                     {items.length > 4 && <div class="tiny muted">+{items.length - 4} weitere</div>}
@@ -71,7 +72,7 @@ export function Calendar() {
               })}
             </div>
           ) : <Week start={range[0]} byDay={byDay} onNew={openNew} />}
-          <div class="tiny muted">Doppelklick auf einen Tag (ganztägig) oder eine Stunde legt einen Termin an · gelb = Aufgaben · 🎂 Geburtstage · 🎉 Feiertage · 📝 Prüfungen · 📚 Lernen</div>
+          <div class="tiny muted">Klick auf einen Tag (ganztägig) oder eine Stunde legt einen Termin an · gelb = Aufgaben · 🎂 Geburtstage · 🎉 Feiertage · 📝 Prüfungen · 📚 Lernen</div>
         </section>
         <div class="col scroll" style={{ minHeight: 0 }}>
           <Panel icon={google.connected ? Cloud : CloudOff} title="Google Kalender" sub={google.connected ? (status?.account || 'verbunden') : 'nicht verbunden'}>
@@ -124,7 +125,7 @@ export function Calendar() {
           <Conflicts events={events} />
         </div>
       </div>
-      <ChatBar actions={[
+      <ChatBar placeholder="Termin eintragen oder fragen … (z. B. „Trag morgen um 14 Uhr Zahnarzt ein“)" actions={[
         { icon: CirclePlus, label: 'Neuer Termin', onClick: () => openNew(new Date()) },
         { icon: Sparkles, label: 'Planen', onClick: () => setState({ page: 'chat', chatDraft: 'Plane mir diese Woche drei Lerneinheiten à 90 Minuten in freien Zeitfenstern für: ' }) },
         { icon: Upload, label: 'Import', onClick: () => guard(() => rpc('study.import'), 'Importiert') },
@@ -158,7 +159,7 @@ function Week({ start, byDay, onNew }) {
               {DOW[(d.getDay() + 6) % 7]} {d.getDate()}.
               {items.filter((e) => e.allDay).map((e) => <EvChip e={e} />)}
             </div>
-            {Array.from({ length: 24 }, (_, h) => <div class="hour" onDblClick={() => { const s = new Date(d); s.setHours(h); onNew(s); }} />)}
+            {Array.from({ length: 24 }, (_, h) => <div class="hour" onClick={() => { const s = new Date(d); s.setHours(h); onNew(s); }} onDblClick={() => { const s = new Date(d); s.setHours(h); onNew(s); }} />)}
             {items.filter((e) => !e.allDay).map((e) => {
               const s = new Date(e.start); const en = e.end ? new Date(e.end) : new Date(s.getTime() + 1800000);
               const top = (s.getHours() + s.getMinutes() / 60) * H + 30; const h = Math.max(20, ((en - s) / 3600000) * H);

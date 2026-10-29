@@ -121,17 +121,17 @@ function buildTools(s) {
     e.setHours(0, 0, 0, 0); e.setDate(e.getDate() + 1);
     return { ...a, end: e.toISOString() };
   };
-  def({ name: 'create_event', mode: 'confirm', description: 'Kalendertermin anlegen (Google Kalender, falls verbunden). Erzeugt eine Bestätigungskarte.', schema: evSchema,
-    summarize: (a) => { s.calendar.normalizeInput({ title: a.title, start: a.start, end: a.end, allDay: a.allDay }); return { summary: `Termin „${a.title}“ eintragen`, details: evLines(a) }; },
+  def({ name: 'create_event', mode: 'write', description: 'Kalendertermin direkt im Kalender eintragen (umkehrbar).', schema: evSchema,
+    card: (a, r) => ({ icon: 'calendar', title: 'Termin eingetragen', lines: [a.title, ...evLines(a)], navigate: 'calendar', undo: r?.created?.id ? { tool: 'delete_event_silent', args: { id: r.created.id } } : undefined }),
     run: async (a) => { const e = await s.calendar.create(inclusiveEnd(a)); return { created: { id: e.id, title: e.title, start: e.start, end: e.end, calendar: e.calendarName, pending: e.pending || false } }; } });
 
-  def({ name: 'schedule_events', mode: 'confirm', description: 'Mehrere Termine auf einmal vorschlagen und nach EINER Bestätigung anlegen (z. B. Lerneinheiten).',
+  def({ name: 'schedule_events', mode: 'write', description: 'Mehrere Termine auf einmal im Kalender eintragen (z. B. Lerneinheiten, umkehrbar).',
     schema: { type: 'object', required: ['events'], properties: { events: { type: 'array', maxItems: 20, items: evSchema }, reason: { type: 'string' } } },
-    summarize: ({ events, reason }) => { events.forEach((e) => s.calendar.normalizeInput({ title: e.title, start: e.start, end: e.end })); return { summary: `${events.length} Termine eintragen${reason ? ' – ' + reason : ''}`, details: events.map((e) => `${e.title}: ${fmt(e.start)}`) }; },
+    card: ({ reason }, r) => ({ icon: 'calendar', title: `${r?.created?.length || 0} Termine eingetragen${reason ? ' – ' + reason : ''}`, lines: (r?.created || []).slice(0, 6).map((e) => `${e.title}: ${fmt(e.start)}`), navigate: 'calendar', undo: r?.created?.length ? { tool: 'delete_events_silent', args: { ids: r.created.map((e) => e.id) } } : undefined }),
     run: async ({ events }) => { const out = []; for (const e of events) out.push(await s.calendar.create(inclusiveEnd(e))); return { created: out.map((e) => ({ id: e.id, title: e.title, start: e.start })) }; } });
 
-  def({ name: 'update_event', mode: 'confirm', description: 'Kalendertermin verschieben/ändern.', schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, title: { type: 'string' }, start: { type: 'string' }, end: { type: 'string' }, location: { type: 'string' }, description: { type: 'string' } } },
-    summarize: ({ id, ...p }) => { const e = s.calendar.get(id); if (!e) throw new Error('Termin nicht gefunden'); return { summary: `Termin „${e.title}“ ändern`, details: [p.start ? `Neu: ${fmt(p.start)} (bisher ${fmt(e.start)})` : null, p.title ? 'Neuer Titel: ' + p.title : null, p.location ? 'Ort: ' + p.location : null].filter(Boolean) }; },
+  def({ name: 'update_event', mode: 'write', description: 'Kalendertermin verschieben/ändern.', schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, title: { type: 'string' }, start: { type: 'string' }, end: { type: 'string' }, location: { type: 'string' }, description: { type: 'string' } } },
+    card: (_a, r) => ({ icon: 'calendar', title: 'Termin geändert', lines: [r?.updated?.title, r?.updated?.start ? fmt(r.updated.start) : null, r?.updated?.location ? 'Ort: ' + r.updated.location : null].filter(Boolean), navigate: 'calendar' }),
     run: async ({ id, ...p }) => ({ updated: await s.calendar.update(id, p) }) });
 
   def({ name: 'delete_event', mode: 'confirm', description: 'Kalendertermin löschen.', schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
@@ -611,6 +611,8 @@ function summarizeGame(st) {
 function internalTools(s) {
   return {
     delete_task_silent: ({ id }) => s.tasks.remove(id),
+    delete_event_silent: ({ id }) => s.calendar.remove(id),
+    delete_events_silent: async ({ ids }) => { for (const x of ids || []) await s.calendar.remove(x); return true; },
     forget_silent: ({ id }) => s.brain.remove(id),
     remove_game_timer: ({ id }) => s.gaming.removeTimer(id),
     complete_task: ({ id, done }) => s.tasks.complete(id, done),

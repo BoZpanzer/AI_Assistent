@@ -13,41 +13,46 @@ const urls = [...new Set(frames)].map(s => ROOT + s + '.png');
 
 // Decode once per renderer. A failed load stays on the normal animated pet.
 let loaded;
+let kept = [];
 function preload() {
   return loaded ||= Promise.all(urls.map(src => new Promise(resolve => {
     const im = new Image();
     im.onload = () => resolve(im);
     im.onerror = () => resolve(null);
     im.src = src;
-  }))).then(images => images.every(im => im?.naturalWidth > 0));
+  }))).then(images => {
+    const ok = images.every(im => im?.naturalWidth > 0);
+    if (ok) kept = images; else loaded = null;
+    return ok;
+  });
 }
 
 export function AlyaDance({ size, fallback, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
   const image = useRef(null);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(() => kept.length === urls.length);
   useEffect(() => {
+    if (ready) return undefined;
     let alive = true;
     preload().then(ok => { if (alive) setReady(ok); });
     return () => { alive = false; };
-  }, []);
+  }, [ready]);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready) return undefined;
     let timer;
-    const motion = matchMedia('(prefers-reduced-motion: reduce)');
-    let start = performance.now();
+    // Auch wenn Windows Animationseffekte (prefers-reduced-motion) deaktiviert hat, soll die Spotify-Tanzreaktion animiert laufen.
+    const start = performance.now();
     const tick = () => {
       clearTimeout(timer);
       if (!image.current) return;
       const t = (performance.now() - start) % total;
       let elapsed = 0, idx = 0;
       while (idx < durations.length - 1 && elapsed + durations[idx] <= t) elapsed += durations[idx++];
-      image.current.src = ROOT + frames[motion.matches ? 0 : idx] + '.png';
-      if (!motion.matches) timer = setTimeout(tick, Math.max(16, elapsed + durations[idx] - t));
+      const next = ROOT + frames[idx] + '.png';
+      if (image.current.getAttribute('src') !== next) image.current.src = next;
+      timer = setTimeout(tick, Math.max(16, elapsed + durations[idx] - t));
     };
-    const restart = () => { start = performance.now(); tick(); };
-    motion.addEventListener('change', restart);
     tick();
-    return () => { clearTimeout(timer); motion.removeEventListener('change', restart); };
+    return () => clearTimeout(timer);
   }, [ready]);
   if (!ready) return fallback;
   return <div class="pet-fig pet-img s-dance has-pose" style={{ width: size + 'px', height: Math.round(size * 1.6) + 'px' }}

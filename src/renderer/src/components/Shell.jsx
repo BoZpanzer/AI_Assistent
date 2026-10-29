@@ -65,14 +65,28 @@ function SidebarPet() {
   const settings = useStore((s) => s.settings);
   const mood = usePetMood();
   const [act, setAct] = useState(null);
+  const [spotifyPlaying, setSpotifyPlaying] = useState(false);
+  useEffect(() => {
+    let active = true, timer;
+    const poll = async () => {
+      try { const r = await rpc('spotify.playback'); if (active) setSpotifyPlaying(!!r?.playing); }
+      catch { if (active) setSpotifyPlaying(false); }
+      if (active) timer = setTimeout(poll, 1500);
+    };
+    poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, []);
   const play = (a, ms) => { setAct(a); setTimeout(() => setAct((x) => (x === a ? null : x)), ms); };
   useEffect(() => {
     let t;
-    const tick = () => { t = setTimeout(tick, 15000 + Math.random() * 20000); if (Math.random() < 0.5) play(Math.random() < 0.6 ? 'wave' : 'lean', 2600); };
+    const tick = () => { t = setTimeout(tick, 15000 + Math.random() * 20000); if (!spotifyPlaying && Math.random() < 0.5) play(Math.random() < 0.6 ? 'wave' : 'lean', 2600); };
     t = setTimeout(tick, 8000);
     return () => clearTimeout(t);
-  }, []);
-  const state = mood.state !== 'idle' ? mood.state : act || 'idle';
+  }, [spotifyPlaying]);
+  const gender = genderFor(settings);
+  const busy = !!(mood.speaking || mood.listening || mood.standby || mood.bubble?.kind === 'think');
+  const dance = gender === 'female' && spotifyPlaying && !busy && !act;
+  const state = dance ? 'dance' : mood.state !== 'idle' ? mood.state : act || 'idle';
   // Figur füllt den Platz unten links (Größe folgt dem Fenster)
   const box = useRef(null);
   const [size, setSize] = useState(120);

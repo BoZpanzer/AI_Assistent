@@ -26,8 +26,10 @@ class Conversations {
   list({ q, limit = 100 } = {}) {
     if (q) {
       const fts = q.split(/\s+/).filter(Boolean).map((t) => `"${t.replace(/"/g, '')}"*`).join(' ');
-      return this.db.all(`SELECT DISTINCT c.*, snippet(messages_fts, 0, '‹', '›', '…', 12) snip FROM messages_fts f JOIN messages m ON m.rowid=f.rowid
-        JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ? GROUP BY c.id ORDER BY c.updated_at DESC LIMIT ?`, fts, limit)
+      const rows = this.db.all(`SELECT c.*, snippet(messages_fts, 0, '‹', '›', '…', 12) snip FROM messages_fts f JOIN messages m ON m.rowid=f.rowid
+        JOIN conversations c ON c.id=m.conversation_id WHERE messages_fts MATCH ? ORDER BY c.updated_at DESC LIMIT ?`, fts, limit * 4);
+      const seen = new Set();
+      return rows.filter((r) => !seen.has(r.id) && seen.add(r.id)).slice(0, limit)
         .map((r) => ({ id: r.id, title: r.title, privacy: r.privacy, updatedAt: r.updated_at, snippet: r.snip }));
     }
     return this.db.all(`SELECT c.*, (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY created_at DESC LIMIT 1) last,

@@ -27,7 +27,7 @@ class GoogleGenAI {
           if (r.name === 'get_today_overview') {
             const o = r.response;
             parts = [{ text: `Hier ist dein Überblick für **${o.date}**, Chef:\n\n| Bereich | Stand |\n|---|---|\n| Termine | ${o.events.length ? o.events.map((e) => e.title).join(', ') : 'keine'} |\n| Fällige Aufgaben | ${o.tasksDue.length} |\n| Überfällig | ${o.overdue} |\n| Spiel-Timer | ${o.gameTimers.length} |\n\n- Wichtigste Aufgabe: ${o.tasksDue[0]?.title || '—'}\n- Tipp: Plane einen Fokusblock am Vormittag.` }];
-          } else if (r.name === 'create_event') parts = [{ text: 'Ich habe den Termin vorbereitet – bitte kurz bestätigen.' }];
+          } else if (r.name === 'create_event') parts = [{ text: 'Ich habe den Termin eingetragen, Chef.' }];
           else if (r.name === 'update_game_progress') parts = [{ text: 'Stark, Chef – Sun Tzu auf 40! Als Nächstes lohnt sich der Ausbau des Rathauses.' }];
           else if (r.name === 'set_game_context') parts = [{ text: `Alles klar, ${r.response.game} ist jetzt dein aktives Spiel. Die Gaming-Seite ist angepasst.` }];
           else parts = [{ text: 'Erledigt.' }];

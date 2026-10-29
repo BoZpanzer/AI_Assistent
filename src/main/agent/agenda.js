@@ -13,7 +13,8 @@ const nextMonday = (d) => at(d, ((8 - d.getDay()) % 7) || 7);
 function parseAgendaQuery(text, now = new Date()) {
   const t = String(text || '').toLowerCase().replace(/^(?:hey\s+)?jarvis[,!.\s]+/, '').trim();
   if (!t || t.length > 140) return null;
-  if (/(?<![a-zäöüß])(?:trag\w*|eintrag\w*|plan\w*|verschieb\w*|lösch\w*|erstell\w*|leg\w* .{0,20}an|erinner\w*|füg\w*|setz\w*|mach mir|buch\w*)(?![a-zäöüß])/.test(t)) return null;
+  if (/(?<![a-zäöüß])(?:tr[aä]g[a-zäöüß]*|eintrag[a-zäöüß]*|einzutragen|schreib[a-zäöüß]*|reinschreib[a-zäöüß]*|notier[a-zäöüß]*|speicher[a-zäöüß]*|plan[a-zäöüß]*|verschieb[a-zäöüß]*|[aä]nder[a-zäöüß]*|bearbeit[a-zäöüß]*|l[öo]sch[a-zäöüß]*|entfern[a-zäöüß]*|absag[a-zäöüß]*|streich[a-zäöüß]*|erstell[a-zäöüß]*|anleg[a-zäöüß]*|hinzuf[üu]g[a-zäöüß]*|leg[a-zäöüß]* .{0,30}an|nimm[a-zäöüß]*|pack[a-zäöüß]*|erinner[a-zäöüß]*|f[üu]g[a-zäöüß]*|setz[a-zäöüß]*|mach mir|buch[a-zäöüß]*)(?![a-zäöüß])/.test(t)) return null;
+  if (/\b\d{1,2}(?:[:.]\d{2})?\s*uhr\b/.test(t) && !/(?<![a-zäöüß])(?:was|welche\w*|wie|wann|zeig|sag mir|gibt'?s|gibt es|steht|stehen)(?![a-zäöüß])|\?/.test(t)) return null;
   const intent = /(?<![a-zäöüß])(?:zu tun|an ?(?:steht|stehen)|ansteht|steht .{0,25}an|vor ?(?:habe|hab)|vor\?|geplant|termine?|aufgaben|programm|los|frei|beschäftigt|uni|vorlesung\w*)(?![a-zäöüß])/.test(t)
     && /(?<![a-zäöüß])(?:was|welche\w*|wie sieht|hab ich|habe ich|zeig|sag mir|gibt'?s|gibt es|steht|stehen|mein\w*)(?![a-zäöüß])/.test(t);
   if (!intent && !/was (?:kann|soll|muss) ich .{0,25}(?:tun|machen)/.test(t)) return null;

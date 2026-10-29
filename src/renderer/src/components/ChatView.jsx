@@ -11,11 +11,11 @@ import { audio } from '../lib/audio.js';
 const TOOL_LABEL = {
   quota_wait: 'Gemini-Minutenlimit erreicht – JARVIS wartet kurz und versucht es dann automatisch erneut',
   get_today_overview: 'Tagesüberblick', list_tasks: 'Aufgaben', create_task: 'Aufgabe anlegen', update_task: 'Aufgabe ändern', complete_task: 'Aufgabe abhaken', list_events: 'Kalender',
-  find_free_slots: 'Freie Zeiten', create_event: 'Termin vorbereiten', schedule_events: 'Termine planen', search_brain: 'Brain-Suche', remember: 'Merken', search_study: 'Studium durchsuchen',
+  find_free_slots: 'Freie Zeiten', create_event: 'Termin eintragen', update_event: 'Termin ändern', schedule_events: 'Termine planen', search_brain: 'Brain-Suche', remember: 'Merken', search_study: 'Studium durchsuchen',
   read_document: 'Dokument lesen', web_research: 'Webrecherche', read_webpage: 'Webseite lesen', save_webpage: 'Quelle speichern', set_game_context: 'Spielkontext', show_game_widget: 'Gaming-Widget',
   add_game_timer: 'Timer', tarkov_lookup: 'Tarkov-Daten', league_stats: 'LoL-Statistik', league_live: 'LoL Live', league_champion: 'Championinfo', wiki_lookup: 'Wiki', analyze_study_page: 'Seitenanalyse',
 };
-const CARD_ICON = { task: SquareCheckBig, check: CircleCheck, brain: Brain, timer: Timer, game: Gamepad2, note: NotebookPen, link: LinkIcon, study: BookOpen };
+const CARD_ICON = { task: SquareCheckBig, check: CircleCheck, calendar: CalendarDays, brain: Brain, timer: Timer, game: Gamepad2, note: NotebookPen, link: LinkIcon, study: BookOpen };
 
 /** Live message list for a conversation (streaming deltas, cards, voice transcripts). */
 /** Wer hat geantwortet (lokal / Groq / Gemini) – und falls falsch eingeordnet: mit einem Klick andersherum beantworten. */
