@@ -92,7 +92,7 @@ function SidebarPet() {
   const [size, setSize] = useState(120);
   useEffect(() => {
     const el = box.current; if (!el) return undefined;
-    const ro = new ResizeObserver(([e]) => { const { width, height } = e.contentRect; setSize(Math.max(70, Math.floor(Math.min(width - 8, (height - 6) / 1.5)))); });
+    const ro = new ResizeObserver(([e]) => { const { width, height } = e.contentRect; setSize(Math.max(70, Math.floor(Math.min(width - 8, (height - 6) / 1.6)))); });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);

@@ -2,6 +2,12 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.6.5 – Flackerfreie Tanzanimation, neue Sprung-Frames & Sprechblase ohne Abschneiden
+
+- **Kein Flackern mehr beim Tanzen:** Der 60-FPS-Canvas-Streifen-Crossfader wurde durch vorgeladene, im Grafikspeicher gehaltene `<img>`-Ebenen (`decoding="sync"`) ersetzt, bei denen nur die Sichtbarkeit der aktiven Ebene wechselt – kein Alpha-Einbruch, keine Streifen-Übergänge und kein Windows-DWM-Flackern mehr.
+- **Standfuß-Verankerung & hochauflösende Drehsprung-Frames:** Die neuen hochauflösenden Einzelbilder für Vorderansicht und Drehsprünge (mit durchgehendem „JARVIS“-Shirt und sauberer Sprungparabel) wurden übernommen, fehlerhafte KI-Richtungswechsel bereinigt und Vorder-/Rückseite exakt auf gleiche Körpergröße (`502 px`), Standlinie und Hüftachse ausgerichtet.
+- **Sprechblase wird oben nicht mehr abgeschnitten:** Das Desktop-Figur-Fenster bietet mehr Kopffreiheit (`640 px` Höhe) und begrenzt die vertikale Position sowie Maximalhöhe der Sprechblase dynamisch an der oberen Fenstergrenze, sodass Kopfzeile (`ALYA` / `×`) und oberer Rand auch bei großer Figur nie mehr abgeschnitten werden.
+
 ## 5.6.4 – Alya-Tanzbilder bereinigt & 60-FPS-Animation
 
 - **Alle 22 Tanzbilder im `dance`-Ordner bereinigt & vervollständigt:** Abgeschnittene Hände, Finger, Haarspitzen und Schuhsohlen wurden aus dem ursprünglichen Sprite-Sheet nahtlos wieder an die jeweilige Figur angefügt; sämtliche fremden Bildreste an den Rändern sowie halbtransparente Hintergrund-Schatten unter den Haaren sind restlos entfernt.

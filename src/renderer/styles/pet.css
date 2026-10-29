@@ -109,7 +109,7 @@
 @media (prefers-reduced-motion: reduce) { .pet-desk .pet-walker.drag .pet-lift, .pet-desk .pet-lift.landed { animation: none; } }
 .pet-desk .pet-bubble-wrap { position: absolute; }
 .pet-desk .pet-bubble { max-width: 340px; }
-.pet-desk .pet-bubble-text { max-height: 230px; overflow-y: auto; }
+.pet-desk .pet-bubble-text { max-height: var(--bubble-max-h, 230px); overflow-y: auto; }
 
 /* Overlay: Figur links, Blase rechts daneben */
 .ov-pet { display: flex; align-items: flex-start; gap: 18px; }

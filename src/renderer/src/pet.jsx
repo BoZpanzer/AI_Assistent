@@ -151,6 +151,7 @@ function Desk() {
     if (b && cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom) return true;
     const el = walker.current?.querySelector('.pet-lift')?.firstElementChild; const r = el?.getBoundingClientRect();
     if (!r || cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return false;
+    if (el.classList.contains('s-dance')) return cx >= r.left + r.width * 0.12 && cx <= r.right - r.width * 0.12;
     const img = el.querySelector('img');
     if (!img) return true; // Ersatzfigur (SVG): ganze Fläche
     let fx = (cx - r.left) / r.width; const fy = (cy - r.top) / r.height;
@@ -211,11 +212,13 @@ function Desk() {
   if (side === 'right' && x + size + gap + bw > window.innerWidth - 8) side = 'left';
   // Bild ist breiter als die Figur (Haare) → Abstand zur sichtbaren Kontur
   const bx = side === 'left' ? Math.max(8, x + size * 0.1 - gap - bw) : Math.min(window.innerWidth - bw - 8, x + size * 0.9 + gap);
-  const bottom = Math.max(8, window.innerHeight - headY - 34);
+  const maxBottom = Math.max(12, window.innerHeight - 300);
+  const bottom = Math.min(maxBottom, Math.max(12, Math.round(window.innerHeight - headY - 34)));
+  const bubbleMaxH = Math.max(120, Math.min(230, Math.round(window.innerHeight - bottom - 66)));
   return (
     <div class="pet-desk">
       {mood.bubble && (
-        <div ref={bubbleBox} class="pet-bubble-wrap" style={{ left: bx + 'px', bottom: bottom + 'px', width: bw + 'px', transition: walk ? `left ${walk.dur}s linear` : 'none' }}>
+        <div ref={bubbleBox} class="pet-bubble-wrap" style={{ left: bx + 'px', bottom: bottom + 'px', width: bw + 'px', '--bubble-max-h': bubbleMaxH + 'px', transition: walk ? `left ${walk.dur}s linear` : 'none' }}>
           <PetBubble bubble={mood.bubble} html={renderMarkdown(mood.bubble.text || '')} onClose={mood.close} side={side} name={bubbleName(settings)} />
         </div>
       )}

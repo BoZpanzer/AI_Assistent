@@ -7,7 +7,7 @@ const log = require('./core/logger').scope('pet');
  * in dem die JARVIS-Figur herumläuft und in Sprechblasen antwortet. Nur über Figur/Blase nimmt das Fenster
  * die Maus an (pet.mouse). Während ein Spiel läuft, verschwindet sie – dann wohnt sie im Overlay.
  */
-const HEIGHT = 520;
+const HEIGHT = 640;
 
 class Pet {
   constructor({ core, preload, isDev, showWindow, startVoice, uiShown = () => false, display = () => screen.getPrimaryDisplay() }) {
