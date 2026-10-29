@@ -1,3 +1,4 @@
+import { AlyaDance } from './AlyaDance.jsx';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { PET_ART, PET_ART_RATIO } from '../pet-art.js';
 /**
@@ -260,6 +261,7 @@ function PetImage({ art, state, facing, size, handlers }) {
 
 export function PetFigure({ gender = 'male', state = 'idle', facing = 1, size = 100, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
   const art = PET_ART[gender];
+  if (gender === 'female' && state === 'dance') return <AlyaDance size={size} onPointerDown={onPointerDown} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} />;
   if (art?.idle) return <PetImage art={art} state={state} facing={facing} size={size} handlers={{ onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }} />;
   // Ersatzfigur kennt nur die Grundposen
   state = { think_high: 'think', gesture: 'happy', lean: 'listen' }[state] || state;
