@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 // Source frames: Jarvis_Tanz_Einzelbilder.zip (320x512 transparent PNGs).
 const ROOT = 'assets/pet/frau/dance/';
@@ -11,41 +11,47 @@ const durations = [...front.map(() => 260), ...[160,130,140,140,160,220], ...bac
 const total = durations.reduce((a,b) => a+b, 0);
 const urls = [...new Set(frames)].map(s => ROOT + s + '.png');
 
-export function AlyaDance({ size, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
+// Decode once per renderer. A failed load stays on the normal animated pet.
+let loaded;
+function preload() {
+  return loaded ||= Promise.all(urls.map(src => new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = src;
+  }))).then(images => images.every(im => im?.naturalWidth > 0));
+}
+
+export function AlyaDance({ size, fallback, onPointerDown, onContextMenu, onMouseEnter, onMouseLeave }) {
   const image = useRef(null);
-  const raf = useRef(0);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    const cache = new Map();
     let alive = true;
-    const load = urls.map(src => {
-      const im = new Image(); im.src = src; cache.set(src, im); return im;
-    });
-    let ready = false;
-    Promise.all(load.map(im => im.decode().catch(() => null))).then(() => {
-      ready = alive && load.every(im => im.naturalWidth > 0);
-      if (ready) start = performance.now();
-    });
+    preload().then(ok => { if (alive) setReady(ok); });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!ready) return;
+    let timer;
+    const motion = matchMedia('(prefers-reduced-motion: reduce)');
     let start = performance.now();
-    let last = -1;
-    const tick = now => {
-      if (!alive) return;
-      if (!ready) { raf.current = requestAnimationFrame(tick); return; }
-      const t = (now - start) % total;
+    const tick = () => {
+      clearTimeout(timer);
+      if (!image.current) return;
+      const t = (performance.now() - start) % total;
       let elapsed = 0, idx = 0;
       while (idx < durations.length - 1 && elapsed + durations[idx] <= t) elapsed += durations[idx++];
-      if (idx !== last) {
-        last = idx;
-        const src = ROOT + frames[idx] + '.png';
-        const im = cache.get(src);
-        if (image.current && im?.complete && im.naturalWidth) image.current.src = src;
-      }
-      raf.current = requestAnimationFrame(tick);
+      image.current.src = ROOT + frames[motion.matches ? 0 : idx] + '.png';
+      if (!motion.matches) timer = setTimeout(tick, Math.max(16, elapsed + durations[idx] - t));
     };
-    raf.current = requestAnimationFrame(tick);
-    return () => { alive = false; cancelAnimationFrame(raf.current); load.forEach(im => { im.onload = null; }); };
-  }, []);
+    const restart = () => { start = performance.now(); tick(); };
+    motion.addEventListener('change', restart);
+    tick();
+    return () => { clearTimeout(timer); motion.removeEventListener('change', restart); };
+  }, [ready]);
+  if (!ready) return fallback;
   return <div class="pet-fig pet-img s-dance has-pose" style={{ width: size + 'px', height: Math.round(size * 1.6) + 'px' }}
     onPointerDown={onPointerDown} onContextMenu={onContextMenu} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
-    <div class="body"><img ref={image} src="assets/pet/frau/idle.webp" width={size} height={Math.round(size * 1.6)} draggable={false} alt="Alya tanzt" /></div>
+    <div class="body"><img ref={image} src={ROOT + frames[0] + '.png'} width={size} height={Math.round(size * 1.6)} draggable={false} alt="Alya tanzt" onError={() => setReady(false)} /></div>
   </div>;
 }

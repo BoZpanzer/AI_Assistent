@@ -1,4 +1,5 @@
-$ErrorActionPreference = 'SilentlyContinue'
+param([switch]$Probe)
+$ErrorActionPreference = 'Stop'
 try {
   Add-Type -AssemblyName System.Runtime.WindowsRuntime
   $type = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
@@ -21,7 +22,8 @@ try {
       }
     } catch { $playing = $false }
     if ($playing) { [Console]::WriteLine('PLAYING') } else { [Console]::WriteLine('STOPPED') }
-    Start-Sleep -Seconds 3
+    if ($Probe) { exit 0 }
+    Start-Sleep -Seconds 1
   }
 } catch {
   [Console]::WriteLine('STOPPED')
