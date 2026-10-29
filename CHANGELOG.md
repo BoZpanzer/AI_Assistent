@@ -2,6 +2,13 @@
 
 Jeder Abschnitt `## x.y.z` erscheint als Changelog im Update-Dialog von JARVIS.
 
+## 5.6.2 – Alyas Spotify-Tanz und Kalenderkorrekturen
+
+- Alya tanzt bei Spotify-Wiedergabe mit 22 transparenten Originalbildern: Hüfttanz vorne, Drehsprung, Hüfttanz hinten und Rückdrehung.
+- Pause und Stopp beenden den Tanz; Sprache, Zuhören, Denken und Benutzerinteraktionen haben Vorrang. Fehlende Bilder fallen auf die normale Figur zurück.
+- Windows-Medienerkennung ohne Spotify-API-Schlüssel; ein wiederverwendeter Hintergrundprozess mit Ausfallschutz und korrektem Skriptpfad im installierten Programm.
+- Explizite Google-Zielkalender werden beim Anlegen berücksichtigt; fehlgeschlagene Exporte werden als Fehler angezeigt.
+
 ## 5.6.1 – Kein Ruckeln mehr, Sprachmodus als Schalter, Terminfragen ohne KI
 
 - **PC ruckelt nicht mehr:** Die Desktop-Figur hat in ihrem großen durchsichtigen Fenster dauernd kleine Animationen abgespielt (Atmen, Leuchten) und das Fenster jede Sekunde umgestellt. Windows musste das Fenster dafür ständig neu zusammensetzen – die Grafikkarte sprang im Sekundentakt auf Volllast und alles ruckelte. Jetzt bewegt sich die Figur dort nur noch über ihre Bildwechsel, das Fenster wird nur noch bei echten Änderungen umgestellt, und der systemweite Maus-Hook ist weg (die Zeigerposition kommt aus einer leichten Abfrage). Gilt auch für die Figur im Overlay.

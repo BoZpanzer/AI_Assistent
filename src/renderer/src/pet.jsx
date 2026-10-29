@@ -41,6 +41,17 @@ function alphaAt(img, fx, fy) {
 function Desk() {
   const [settings, setSettings] = useState(null);
   const mood = usePetMood();
+  const [spotifyPlaying, setSpotifyPlaying] = useState(false);
+  useEffect(() => {
+    let active = true, timer;
+    const poll = async () => {
+      try { const r = await rpc('spotify.playback'); if (active) setSpotifyPlaying(!!r?.playing); }
+      catch { if (active) setSpotifyPlaying(false); }
+      if (active) timer = setTimeout(poll, 1000);
+    };
+    poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, []);
   const [x, setX] = useState(() => Math.max(40, window.innerWidth - 200));
   const [facing, setFacing] = useState(-1);
   const [walk, setWalk] = useState(null); // { dur }
@@ -98,7 +109,7 @@ function Desk() {
     let t;
     const tick = () => {
       t = setTimeout(tick, 7000 + Math.random() * 10000);
-      if (busy || drag || over.current || walk) return;
+      if (busy || drag || over.current || walk || spotifyPlaying) return;
       if (Date.now() - lastActive.current > 8 * 60_000) { setIdleAct('sleep'); return; }
       if (idleAct === 'sleep') return;
       const r = Math.random();
@@ -113,7 +124,7 @@ function Desk() {
     };
     t = setTimeout(tick, 5000);
     return () => clearTimeout(t);
-  }, [busy, drag, idleAct, x, size, cfg.walk, walk]);
+  }, [busy, drag, idleAct, x, size, cfg.walk, walk, spotifyPlaying]);
 
   // Auflösung geändert → wieder an den Rand
   useEffect(() => { const f = () => setX(() => home()); addEventListener('resize', f); return () => removeEventListener('resize', f); }, [size, cfg.homeX]);
@@ -183,6 +194,7 @@ function Desk() {
 
   const state = drag?.moved || (drag && tilt) ? 'oops' : mood.standby && !mood.speaking ? (walk ? 'walk' : 'sleep') : ['talk', 'listen', 'think', 'think_high'].includes(mood.state) ? mood.state : walk ? 'walk' : mood.state !== 'idle' ? mood.state : drag ? 'wave' : idleAct || 'idle';
   const gender = genderFor(settings);
+  const dance = gender === 'female' && spotifyPlaying && !busy && !drag && !walk && !mood.standby && (!idleAct || idleAct === 'sleep') && mood.state === 'idle';
   // Blase neben dem Kopf – auf der Seite mit mehr Platz; die Spitze zeigt Richtung Gesicht
   const bw = mood.bubble?.kind === 'think' ? 120 : 330; const gap = 16; // „denkt …“-Blase nur so breit wie die Punkte
   const figH = petHeight(gender, size);
@@ -202,7 +214,7 @@ function Desk() {
       )}
       <div ref={walker} class={`pet-walker ${drag ? 'drag' : ''}`} style={{ left: x + 'px', transition: walk ? `left ${walk.dur}s linear` : 'none' }}>
         <div key={landed} class={`pet-lift ${landed && !drag ? 'landed' : ''}`} style={{ '--tilt': tilt + 'deg' }}>
-        <PetFigure gender={gender} state={state} facing={facing} size={size} onPointerDown={down} onContextMenu={menu} />
+        <PetFigure gender={gender} state={dance ? 'dance' : state} facing={facing} size={size} onPointerDown={down} onContextMenu={menu} />
         </div>
       </div>
     </div>

@@ -353,6 +353,19 @@ async function runSmoke() {
     if (!ui) report.debug = await win.webContents.executeJavaScript('JSON.stringify({rs: document.readyState, bridge: !!window.jarvis, html: document.body?.innerHTML?.slice(0, 300), title: document.title})').catch((e) => 'exec failed: ' + e.message);
     const wake = await win.webContents.executeJavaScript(`new Promise((res) => { try { const w = new Worker('audio/wakeword-worker.js', { type: 'module' }); const t = setTimeout(() => res('timeout'), 20000); w.onmessage = (e) => { if (e.data.type === 'ready' || e.data.type === 'error') { clearTimeout(t); w.terminate(); res(e.data.type === 'ready' ? 'ready' : e.data.error); } }; w.onerror = (e) => res('worker error: ' + e.message); w.postMessage({ type: 'init', threshold: 0.5 }); } catch (e) { res(String(e)); } })`).catch((e) => e.message);
     report.steps.push({ name: 'Wake-Word-Modelle (ONNX/WASM, lokal)', ok: wake === 'ready', detail: wake });
+    const danceDir = path.join(RENDERER_DIR, 'assets/pet/frau/dance');
+    const danceNames = fs.readdirSync(danceDir).filter(n => n.endsWith('.png'));
+    const danceImages = await win.webContents.executeJavaScript(`Promise.all(${JSON.stringify(danceNames)}.map(name => new Promise(resolve => {
+      const im = new Image(); im.onload = () => resolve(im.naturalWidth === 320 && im.naturalHeight === 512);
+      im.onerror = () => resolve(false); im.src = 'assets/pet/frau/dance/' + name;
+    }))).then(results => results.length === 22 && results.every(Boolean))`);
+    report.steps.push({ name: 'Alya: 22 PNGs über App-Protokoll geladen', ok: danceImages });
+    if (process.platform === 'win32') {
+      const mediaProbe = await new Promise(resolve => require('node:child_process').execFile('powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', require('./services/spotify-playback').scriptPath(), '-Probe'],
+        { windowsHide: true, timeout: 15000 }, (error, stdout) => resolve(!error && /^(PLAYING|STOPPED)$/m.test(stdout.trim()))));
+      report.steps.push({ name: 'Windows-Mediensitzung aus installiertem Skript', ok: mediaProbe });
+    }
     const { selfTest } = require('./ipc');
     for (const st of await selfTest(core)) report.steps.push({ name: st.name, ok: st.ok || /optional|nicht hinterlegt/.test(String(st.detail)), detail: st.detail });
     // Manuelle Weiterleitungen (Update-Download aus privatem Repo, SSRF-geprüfte Webabrufe) müssen die 3xx-Antwort liefern
@@ -380,7 +393,7 @@ async function runSmoke() {
 }
 
 app.on('second-instance', () => { showWindow(); });
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', () => { quitting = true; require('./services/spotify-playback').stop(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); overlay?.destroy(); mapCorner?.destroy(); pet?.destroy(); fsWatch?.stop(); try { core?.stop(); } catch { /* ignore */ } });
 app.on('window-all-closed', () => { /* tray keeps running */ });
 process.on('uncaughtException', (e) => logger.scope('main').error('Unerwarteter Fehler', e));

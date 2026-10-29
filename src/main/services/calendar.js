@@ -207,7 +207,9 @@ class Calendar {
   /** Creates an event (Google if connected, else local). */
   async create(input) {
     const d = this.normalizeInput(input);
-    const calId = LOCAL_CAL;
+    const calId = d.calendarId || LOCAL_CAL;
+    if (calId !== LOCAL_CAL && !this.connected()) throw new Error('Google ist nicht verbunden');
+    if (calId !== LOCAL_CAL && !this.settings.get('google').exportLocalToGoogle) throw new Error('Google-Schreibzugriff ist deaktiviert');
     const cal = this.db.get('SELECT * FROM calendars WHERE id=?', calId);
     if (!cal) throw new Error('Kalender nicht gefunden');
     if (!cal.writable) throw new Error('Dieser Kalender ist schreibgeschützt');
@@ -364,7 +366,13 @@ class Calendar {
           this.db.run('UPDATE calendars SET synced_at=? WHERE id=?', nowIso(), c.id);
         });
       }
-      if (this.settings.get('google').exportLocalToGoogle) this.lastMirror = await this.exportAll({ from: timeMin, to: timeMax });
+      if (this.settings.get('google').exportLocalToGoogle) {
+        this.lastMirror = await this.exportAll({ from: timeMin, to: timeMax });
+        if (this.lastMirror?.failed) {
+          const reasons = Object.entries(this.lastMirror.reasons || {}).slice(0, 3).map(([reason, count]) => `${reason} (${count}x)`).join('; ');
+          throw new Error(`${this.lastMirror.failed} Google-Kalendereintraege nicht uebertragen: ${reasons}`);
+        }
+      }
       this.lastSync = nowIso(); this.lastError = null;
       this.bus.emit('calendar:changed', {});
       return { ok: true, at: this.lastSync, mirror: this.lastMirror || null };

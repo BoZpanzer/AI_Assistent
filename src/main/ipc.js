@@ -702,6 +702,7 @@ function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, 
     'screen.recent': () => s.db.all('SELECT id, question, answer, game, created_at AS createdAt FROM screenshots ORDER BY created_at DESC LIMIT 10'),
     'overlay.toggle': () => overlay?.()?.toggle(),
     // Desktop-Figur
+    'spotify.playback': () => require('./services/spotify-playback').status(),
     'pet.mouse': ({ over }) => pet?.()?.setMouse(!!over),
     'pet.open': () => setUi(true),
     'pet.hideUi': () => setUi(false),

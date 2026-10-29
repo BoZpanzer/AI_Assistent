@@ -123,3 +123,7 @@
    ausgelastet und den PC ruckeln lassen. Bewegung kommt dort nur noch aus den Bildwechseln (Blinzeln, Mund, Schritte). */
 .pet-desk .pet-fig, .pet-desk .pet-fig *, .ov-pet .pet-fig, .ov-pet .pet-fig *, .pet-desk .pet-dots i, .ov-pet .pet-dots i { animation: none !important; }
 .pet-desk .pet-fig .zzz, .ov-pet .pet-fig .zzz { opacity: 0.85; }
+
+/* Keep source PNG proportions, with no extra transform over the authored frames. */
+.pet-img.s-dance .body { animation: none; transform: none; }
+.pet-img.s-dance img { object-fit: contain; }
