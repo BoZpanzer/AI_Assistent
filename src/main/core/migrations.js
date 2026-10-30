@@ -250,5 +250,20 @@ module.exports = [
     ALTER TABLE expense_buckets ADD COLUMN series_id TEXT;
     CREATE UNIQUE INDEX ix_buckets_series_month ON expense_buckets(series_id, month) WHERE series_id IS NOT NULL;
   `),
+  // v13 — geführte Bestandsaufnahme; Antworten referenzieren den Originalchat.
+  (db) => db.exec(`
+    CREATE TABLE life_intake_session(
+      id INTEGER PRIMARY KEY CHECK(id=1), conversation_id TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+      round INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL CHECK(status IN ('active','paused','review','done')),
+      topics TEXT NOT NULL, cursor INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+      completed_at TEXT, snoozed_until TEXT);
+    CREATE TABLE life_intake_answers(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, round INTEGER NOT NULL, topic TEXT NOT NULL,
+      message_id TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+      source_message_id TEXT REFERENCES messages(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK(status IN ('captured','unknown','skipped','not_applicable')),
+      captured_at TEXT NOT NULL, reviewed_at TEXT);
+    CREATE INDEX ix_life_intake_answers ON life_intake_answers(topic, id);
+  `),
 ];
 

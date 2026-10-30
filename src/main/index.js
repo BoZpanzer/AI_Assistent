@@ -238,7 +238,7 @@ function applyScanHotkey() {
 
 function forwardEvents() {
   const types = ['message', 'message:update', 'chat:delta', 'chat:card', 'chat:tool', 'chat:done', 'confirm:new', 'confirm:resolved', 'confirm:expired',
-    'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
+    'tasks:changed', 'calendar:changed', 'calendar:sync', 'brain:changed', 'intake:changed', 'study:progress', 'study:changed', 'notification', 'notifications:changed',
     'game:context', 'game:design', 'game:position', 'eft:raid', 'eft:scan', 'game:focus', 'game:progress', 'game:timers', 'game:markers', 'game:data', 'game:running', 'lol:live', 'orb:state', 'voice:standby',
     'ui:navigate', 'settings:changed', 'conversations:changed', 'research:new', 'tts:speak', 'tts:stream', 'data:imported', 'cloud:usage', 'cloud:state', 'game:stats', 'privacy:capture',
     'overlay:thinking', 'overlay:answer', 'lol:champselect', 'lol:review', 'exams:changed', 'github:changed', 'telegram:status', 'pc:focus', 'feeds:changed', 'tarkovtracker:status', 'omnivoice:status', 'update:state', 'drive:status', 'game:profiles', 'backup:drive', 'lol:replay', 'life:data', 'life:rest', 'deadlines:changed', 'transit:data', 'pet:input', 'pet:delta', 'pet:answer', 'pet:signal', 'pet:clear', 'local:pull', 'whisper:download'];

@@ -96,6 +96,7 @@ function createCore(opts) {
   s.gaming.lolflow = new LolFlow(s);
   s.gaming.playtime = new Playtime(s);
   s.life = new Life(s);
+  s.intake = new (require('./services/life-intake').LifeIntake)(s);
   s.deadlines = new Deadlines(s);
   s.transit = new Transit(s);
   s.gaming.news = new GameNews(s);

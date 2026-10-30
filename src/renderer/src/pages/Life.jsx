@@ -5,6 +5,7 @@ import { guard, setState } from '../lib/store.js';
 import { ChatBar } from '../components/Shell.jsx';
 import { Panel, Spinner, Empty, Select, useNow, ask, Toggle } from '../components/ui.jsx';
 import { fmtDateTime, ago, countdown } from '../lib/format.js';
+import { LifeIntake } from '../components/LifeIntake.jsx';
 
 const eur = (v) => (v == null ? '–' : `${Number(v).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
 const dmy = (d) => (d ? d.split('-').reverse().join('.') : '–');
@@ -15,6 +16,7 @@ export function Life() {
     <div class="page">
       <div class="page-body" style={{ overflow: 'auto' }}>
         <div class="widgets">
+          <div class="w-12"><LifeIntake /></div>
           <div class="w-6"><Transit /></div>
           <div class="w-6"><DeadlinesPanel /></div>
           <div class="w-6"><Finance /></div>
@@ -45,7 +47,8 @@ function Finance() {
   const pct = m.budget ? Math.min(100, Math.round((m.totalWithSubs + (m.reserved || 0)) / m.budget * 100)) : null;
   return (
     <Panel icon={Wallet} title="Ausgaben" sub={`${m.month.split('-').reverse().join('/')} · nur was du einträgst, bleibt auf deinem PC`}>
-      {m.income ? <div class="row wrap gap-s mb" style={{ alignItems: 'baseline' }}><span style={{ fontSize: 22, fontWeight: 700, color: m.balance < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>{eur(m.balance)}</span><span class="small muted">frei bis Monatsende{m.perDay != null ? ` · ${eur(m.perDay)} pro Tag` : ''}</span></div> : null}
+      {m.income ? <div class="row wrap gap-s mb" style={{ alignItems: 'baseline' }}><span style={{ fontSize: 22, fontWeight: 700, color: m.balance < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>{eur(m.balance)}</span><span class="small muted">rechnerischer Rest aus erfassten Angaben{m.perDay != null ? ` · rechnerisch ${eur(m.perDay)} pro Tag` : ''}</span></div> : null}
+      <p class="tiny muted">Kein Kontostand oder sicher verfügbares Budget. Nicht erfasste Ausgaben, offene Zahlungen und unvollständige Angaben fehlen in dieser Rechnung.</p>
       {m.income ? <div class="tiny muted mb">Einnahmen {eur(m.income)} − Fixkosten {eur(m.fixedOut)} − Abos {eur(m.subsThisMonth)} − Ausgaben {eur(m.total)} − reserviert {eur(m.reserved)}</div> : <div class="tiny muted mb">Trag deine festen Einnahmen ein (rechts), dann zeigt JARVIS, was bis Monatsende frei ist.</div>}
       <div class="row wrap gap-s"><span class="chip static">Ausgegeben {eur(m.total)}</span><span class="chip static">Reserviert {eur(m.reserved)}</span><span class="chip static">Abos {eur(m.subscriptions)}/Monat</span>{m.budget ? <span class="chip static" style={{ color: m.left < 0 ? 'var(--red, #e5484d)' : 'var(--green)' }}>Budget übrig {eur(m.left)}</span> : null}{m.forecast != null && <span class="chip static" title="Hochrechnung bis Monatsende (ohne Abos)">Prognose {eur(m.forecast)}</span>}</div>
       {pct != null && <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, marginTop: 8 }}><div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: pct >= 100 ? 'var(--red, #e5484d)' : pct >= 80 ? 'var(--orange)' : 'var(--cyan)' }} /></div>}

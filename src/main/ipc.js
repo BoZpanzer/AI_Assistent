@@ -87,6 +87,9 @@ function registerIpc({ core: s, getWin, app, showWindow, setUi, quit, relaunch, 
     'gemini.usageReport': ({ days } = {}) => s.gemini.usageReport(Math.min(31, Math.max(1, Number(days) || 7))),
 
     // --- chat ---
+    'intake.status': () => s.intake.snapshot(),
+    'intake.open': () => s.intake.open(),
+    'intake.snooze': () => s.intake.snooze(),
     'chat.reroute': ({ conversationId, messageId, as }) => { s.orchestrator.reroute({ conversationId, messageId, as }).catch((e) => log.error('chat.reroute', e)); return { ok: true }; },
     'chat.retry': ({ conversationId, messageId }) => { s.orchestrator.retry({ conversationId, messageId }).catch((e) => log.error('chat.retry', e)); return { ok: true }; },
     'chat.send': async ({ conversationId, text, attachments }) => {
