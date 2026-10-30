@@ -96,7 +96,7 @@ class Orchestrator {
     // Eine neue Nachricht von dir weckt JARVIS aus dem Standby
     if (['text', 'voice'].includes(channel)) this.s.voice?.wake?.('chat');
     // „Stell den Chat auf öffentlich/privat“ → die letzte Frage nochmal, diesmal öffentlich (Groq/Gemini) bzw. lokal
-    if (['text', 'voice'].includes(channel) && !attachments.length && !images.length) {
+    if (['text', 'voice'].includes(channel) && !attachments.length && !images.length && !this.s.intake?.active(cid)) {
       const as = require('./window-command').parseRouteCommand(text);
       const last = as && conversations.messages(cid, { limit: 6 }).reverse().find((m) => m.role === 'assistant');
       if (last) { log.info('Umleiten per Befehl: ' + as); return this.reroute({ conversationId: cid, messageId: last.id, as }); }
@@ -110,21 +110,28 @@ class Orchestrator {
       userText += `\n\n[Anhang: ${a.name}${a.docId ? ` (docId ${a.docId}, mit read_document lesbar)` : ''}]`;
     }
     for (const im of images.slice(0, 3)) attachInfo.push({ name: im.name || 'Bild', image: true });
-    conversations.add(cid, { role: 'user', content: userText, meta: { scope, ...(attachInfo.length ? { attachments: attachInfo } : {}) }, channel });
+    const userMessage = conversations.add(cid, { role: 'user', content: userText, meta: { scope, ...(attachInfo.length ? { attachments: attachInfo } : {}) }, channel });
     conversations.autoTitle(cid, text || attachInfo[0]?.name || 'Gespräch');
     const msg = conversations.add(cid, { role: 'assistant', content: '', meta: { streaming: true, scope }, channel });
     // Desktop-Figur/Overlay: neue Eingabe → Sprechblase „denkt …“
     if (['text', 'voice'].includes(channel)) bus.emit('pet:input', { conversationId: cid, messageId: msg.id, channel, think: thinkPose(text) });
 
     // Feste Fragen (Statistiken, Erfassungen) ohne Sprachmodell beantworten – kostenlos und lokal.
-    const det = !images.length && !attachments.length ? this.deterministic(text) : null;
+    const intakeTurn = this.s.intake?.active(cid) || this.s.intake?.wantsStart(text);
+    const det = intakeTurn
+      ? (images.length || attachments.length
+        ? { text: 'Für diese Bestandsaufnahme antworte bitte zunächst in Worten. Dokumente prüfen wir danach gezielt; deine aktuelle Frage bleibt offen.', deterministic: 'life-intake' }
+        : this.s.intake.handle({ cid, messageId: userMessage.id, text }))
+      : !images.length && !attachments.length ? this.deterministic(text) : null;
     if (det) {
       conversations.update(msg.id, { content: det.text, meta: { streaming: false, deterministic: det.deterministic, model: 'lokal (ohne KI)' } });
       bus.emit('pet:answer', { messageId: msg.id, text: det.text, mood: moodFor({ userText: text, answer: det.text }) });
       if (det.clearBubble) bus.emit('pet:clear', {});
       bus.emit('chat:delta', { conversationId: cid, messageId: msg.id, delta: det.text });
       bus.emit('chat:done', { conversationId: cid, messageId: msg.id });
-      if (channel === 'voice' && this.s.settings.get('voice').speakVoiceReplies !== false) {
+      // Intake replies can quote financial notes. Keep this first version text-only;
+      // the configured cloud voice must never receive them implicitly.
+      if (channel === 'voice' && det.deterministic !== 'life-intake' && this.s.settings.get('voice').speakVoiceReplies !== false) {
         if (scope === 'private' ? this.quietPrivate() : this.quietPublic()) bus.emit('overlay:answer', { question: text, answer: det.text, cards: [], private: true, mood: moodFor({ userText: text, answer: det.text }) });
         else bus.emit('tts:speak', { text: det.text, private: scope === 'private' });
       }
@@ -231,6 +238,7 @@ class Orchestrator {
    * Kurze Folgefragen direkt nach einer privaten Nachricht bleiben privat, solange sie kein eigenes öffentliches Thema haben.
    */
   classify(cid, text, { attachments = [], images = [], screen = false } = {}) {
+    if (this.s.intake?.active(cid) || this.s.intake?.wantsStart(text)) return 'private';
     const conv = this.s.conversations.get(cid);
     if (conv?.privacy === 'private') return 'private';
     if (attachments.length || (images.length && !screen)) return 'private';

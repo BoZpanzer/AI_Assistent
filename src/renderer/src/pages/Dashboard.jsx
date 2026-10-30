@@ -6,12 +6,14 @@ import { useStore, setState } from '../lib/store.js';
 import { rpc } from '../lib/api.js';
 import { audio } from '../lib/audio.js';
 import { fmtDateLong } from '../lib/format.js';
+import { LifeIntake } from '../components/LifeIntake.jsx';
 
 export function Dashboard() {
   const cid = useStore((s) => s.conversationId);
   return (
     <div class="page">
-      <div class="page-body">
+      <div class="page-body" style={{ overflowY: 'auto' }}>
+        <LifeIntake compact />
         <section class="panel glow" style={{ flex: '1.1 1 0', minHeight: 220 }}>
           <Orb onClick={() => audio.toggleVoice()} />
         </section>

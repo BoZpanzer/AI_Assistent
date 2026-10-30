@@ -17,6 +17,8 @@ Persönlicher KI-Assistent für Windows: privater Chat über lokales Ollama, fre
 
 Weitere Dokumente: [TESTBERICHT.md](TESTBERICHT.md) · [MIGRATION.md](MIGRATION.md) · [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md) · [docs/UPDATES.md](docs/UPDATES.md)
 
+**Alltagsbriefing:** Dashboard → „Startgespräch beginnen“ oder im Chat „Starte mein Startbriefing“. JARVIS führt durch Wohnen, Studium, Einnahmen, Kosten, Verträge, Fristen und Prioritäten. „Weiß ich nicht“, „später“, „Pause“ und „zurück“ sind möglich; mit „übernehmen“ bestätigst du am Ende deine Notizen. Der Stand bleibt unter Alltag sichtbar. Diese erste Stufe erfasst Originalangaben, noch keine automatisch gebuchten Finanzwerte oder strukturierten Verträge. Funktionsumfang und weiterer Plan: [Second Brain für den Alltag](docs/SECOND_BRAIN_ALLTAG.md).
+
 ---
 
 ## Architektur
